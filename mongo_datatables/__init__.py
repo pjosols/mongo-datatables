@@ -1,2 +1,2 @@
-from .datatables import DataTablesServer
+from .datatables import DataTables
 from .editor import DataTablesEditor
