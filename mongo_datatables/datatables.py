@@ -4,6 +4,8 @@ Supports column sorting and filtering by search terms.  Also supports custom fil
 the search server side, for example send a value like days_til_expiration=60 and convert to Mongo search like
 {'ExpiryDate': {'$gt': ts, '$lt': ds}} where ts is today's date like 2017-09-12 and ds is today's date plus 60 days.
 """
+import json
+from bson.objectid import ObjectId
 
 
 class DataTables(object):
@@ -12,8 +14,8 @@ class DataTables(object):
 
         :param pymongo_object: The PyMongo object representing the connection to a Mongo instance.
         :param collection: The Mongo collection
-        :param request_args: The Flask request args, which is just a dictionary.
-        :param custom_filter: A dictionary to be used as a custom Mongo filter, like {key: value}
+        :param request_args: The Flask request args, from request.args.to_dict()
+        :param custom_filter: kwargs to be used as a custom Mongo filter, like key=value
         """
 
         self.mongo = pymongo_object
@@ -140,16 +142,22 @@ class DataTables(object):
 
     def results(self):
         _results = list(self.db[self.collection]
-                       .find(self.filter,
-                             self.projection)
-                       .skip(self.start)
-                       .limit(self.length)
-                       .sort(self.order_column, self.order_dir))
+                        .find(self.filter,
+                              self.projection)
+                        .skip(self.start)
+                        .limit(self.length)
+                        .sort(self.order_column, self.order_dir))
 
         processed_results = []
         for result in _results:
             result = dict(result)
             result["DT_RowId"] = str(result.pop('_id'))  # rename the _id and convert ObjectId to str
+
+            # go through every val in result and try to json.dumps objects and arrays - skip this if strings are okay
+            for key, val in result.items():
+                if type(val) not in [str, int, ObjectId]:
+                    result[key] = json.dumps(val)
+
             processed_results.append(result)
 
         return processed_results

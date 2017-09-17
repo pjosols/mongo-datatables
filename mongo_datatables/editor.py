@@ -1,4 +1,5 @@
 from bson.objectid import ObjectId
+import json
 
 
 class Editor(object):
@@ -11,26 +12,26 @@ class Editor(object):
         :param doc_id:
         """
 
-        self._mongo = pymongo_object
-        self._collection = collection
-        self._request_args = request_args
-        self._doc_id = doc_id
+        self.mongo = pymongo_object
+        self.collection = collection
+        self.request_args = request_args
+        self.doc_id = doc_id
 
     @property
     def db(self):
-        return self._mongo.db
+        return self.mongo.db
 
     @property
     def action(self):
-        return self._request_args.get("action")
+        return self.request_args.get("action")
 
     @property
     def data(self):
-        return self._request_args.get("data")
+        return self.request_args.get("data")
 
     @property
     def list_of_ids(self):
-        return self._doc_id.split(",")
+        return self.doc_id.split(",")
 
     def remove(self):
         """
@@ -38,7 +39,7 @@ class Editor(object):
         :return: empty {}
         """
         for _id in self.list_of_ids:
-            self.db[self._collection].delete_one({"_id": ObjectId(_id)})
+            self.db[self.collection].delete_one({"_id": ObjectId(_id)})
         return {}
 
     def create(self):
@@ -50,23 +51,15 @@ class Editor(object):
         """
 
         data_obj = self.data['0']
+
+        # try to save an object or array
         for key, val in data_obj.items():
+            try:
+                data_obj[key] = json.loads(val)
+            except json.decoder.JSONDecodeError:
+                pass
 
-            # Try to save it as an array
-            if type(val) == str and ',' in val:
-                data_obj[key] = val.split(',')
-
-            else:  # Try to save it as an integer
-                try:
-                    data_obj[key] = int(val)
-                except ValueError:
-                    pass
-                except SyntaxError:
-                    pass
-                else:
-                    pass
-
-        self.db[self._collection].insert_one(data_obj)
+        self.db[self.collection].insert_one(data_obj)
 
         # After insert, data_obj now includes an _id of type ObjectId, but we need it named DT_RowId and of type str.
         data_obj["DT_RowId"] = str(data_obj.pop("_id", None))
@@ -82,23 +75,14 @@ class Editor(object):
         for _id in self.list_of_ids:
             doc = self.data[_id]
 
+            # try to save an object or array
             for key, val in doc.items():
+                try:
+                    doc[key] = json.loads(val)
+                except json.decoder.JSONDecodeError:
+                    pass
 
-                # Try to save it as an array
-                if type(val) == str and ',' in val:
-                    doc[key] = val.split(',')
-
-                else:  # Try to save it as an integer
-                    try:
-                        doc[key] = int(val)
-                    except ValueError:
-                        pass
-                    except SyntaxError:
-                        pass
-                    else:
-                        pass
-
-            self.db[self._collection].update_one({"_id": ObjectId(_id)}, {"$set": doc}, upsert=False)
+            self.db[self.collection].update_one({"_id": ObjectId(_id)}, {"$set": doc}, upsert=False)
 
             # add the _id to the doc object
             doc["DT_RowId"] = _id
