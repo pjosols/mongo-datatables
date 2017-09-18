@@ -37,7 +37,7 @@ class DataTables(object):
 
     @property
     def search_terms_with_a_colon(self):
-        return [term for term in self.search_terms if ":" in term]
+        return [term for term in self.search_terms if term.count(":") == 1]
 
     @property
     def requested_columns(self):
