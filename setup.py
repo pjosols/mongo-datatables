@@ -6,10 +6,10 @@ def readme():
         return f.read()
 
 setup(name='mongo_datatables',
-      version='0.2.1',
+      version='0.2.2',
       description='Classes for connecting DataTables and Editor to MongoDB',
       long_description=readme(),
-      url='http://github.com/pauljolsen/mongo_datatables',
+      url='http://github.com/wholeshoot/mongo_datatables',
       author='Paul Olsen',
       author_email='python@wholeshoot.com',
       license='MIT',
