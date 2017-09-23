@@ -50,7 +50,7 @@ class Editor(object):
         :return: output like {'data': [{'DT_RowID': 'x', ... }]}
         """
 
-        data_obj = self.data['0']
+        data_obj = {k: v for k, v in self.data['0'].items() if v}  # ignore keys that might not exist
 
         # try to save an object or array
         for key, val in data_obj.items():
@@ -73,7 +73,7 @@ class Editor(object):
         data = []
 
         for _id in self.list_of_ids:
-            doc = self.data[_id]
+            doc = {k: v for k, v in self.data[_id].items() if v}  # ignore keys that might not exist
 
             # try to save an object or array
             for key, val in doc.items():

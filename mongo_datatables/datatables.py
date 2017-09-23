@@ -14,7 +14,7 @@ class DataTables(object):
 
         :param pymongo_object: The PyMongo object representing the connection to a Mongo instance.
         :param collection: The Mongo collection
-        :param request_args: The args from DataTables, passed as Flask request.values.get('args')
+        :param request_args: The Flask request args, from request.args.to_dict()
         :param custom_filter: kwargs to be used as a custom Mongo filter, like key=value
         """
 
@@ -52,10 +52,10 @@ class DataTables(object):
         return self.request_args.get("start")
 
     @property
-    def length(self):
+    def limit(self):
         _length = self.request_args.get("length")
         if _length == -1:
-            return 0
+            return None
         return _length
 
     @property
@@ -89,7 +89,7 @@ class DataTables(object):
     def projection(self):
         p = {}
         for key in self.requested_columns:
-            p.update({key: 1})
+            p.update({key: {'$ifNull': ['$' + key, '']}})
         return p
 
     def search_specific_key(self):
@@ -116,7 +116,7 @@ class DataTables(object):
             and_filter_on_all_terms = []
             for term in self.search_terms_without_a_colon:
                 # D2
-                _or_filter = {}
+                or_filter = {}
                 # L1
                 or_filter_on_all_columns = []
                 for column in self.requested_columns:
@@ -125,8 +125,8 @@ class DataTables(object):
                         column: {'$regex': term, '$options': 'i'}
                     }
                     or_filter_on_all_columns.append(column_filter)
-                _or_filter['$or'] = or_filter_on_all_columns
-                and_filter_on_all_terms.append(_or_filter)
+                or_filter['$or'] = or_filter_on_all_columns
+                and_filter_on_all_terms.append(or_filter)
 
             _search_query['$and'] = and_filter_on_all_terms
 
@@ -141,12 +141,18 @@ class DataTables(object):
         return _filter
 
     def results(self):
-        _results = list(self.db[self.collection]
-                        .find(self.filter,
-                              self.projection)
-                        .skip(self.start)
-                        .limit(self.length)
-                        .sort(self.order_column, self.order_dir))
+
+        _agg = [
+                {'$match': self.filter},
+                {'$sort': {self.order_column: self.order_dir}},
+                {'$skip': self.start},
+                {'$project': self.projection}
+            ]
+
+        if self.limit:
+            _agg.append({'$limit': self.limit})
+
+        _results = list(self.db[self.collection].aggregate(_agg))
 
         processed_results = []
         for result in _results:
