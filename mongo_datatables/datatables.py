@@ -14,7 +14,7 @@ class DataTables(object):
 
         :param pymongo_object: The PyMongo object representing the connection to a Mongo instance.
         :param collection: The Mongo collection
-        :param request_args: The Flask request args, from request.args.to_dict()
+        :param request_args: The args from DataTables, passed as Flask request.values.get('args')
         :param custom_filter: kwargs to be used as a custom Mongo filter, like key=value
         """
 
