@@ -56,7 +56,7 @@ class Editor(object):
         for key, val in data_obj.items():
             try:
                 data_obj[key] = json.loads(val)
-            except json.decoder.JSONDecodeError:
+            except (json.decoder.JSONDecodeError, TypeError):
                 pass
 
         self.db[self.collection].insert_one(data_obj)
@@ -79,7 +79,7 @@ class Editor(object):
             for key, val in doc.items():
                 try:
                     doc[key] = json.loads(val)
-                except json.decoder.JSONDecodeError:
+                except (json.decoder.JSONDecodeError, TypeError):
                     pass
 
             self.db[self.collection].update_one({"_id": ObjectId(_id)}, {"$set": doc}, upsert=False)
