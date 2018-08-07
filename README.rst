@@ -1,6 +1,7 @@
 ================
 mongo_datatables
 ================
+[![Downloads](http://pepy.tech/badge/mongo-datatables)](http://pepy.tech/project/mongo-datatables)
 
 A script for using the jQuery plug-in DataTables server-side processing (and DataTables Editor) with MongoDB.
 
