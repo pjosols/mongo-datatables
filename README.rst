@@ -10,12 +10,12 @@ See an example of Django and mongo-datatables on `GitHub`_.
 
 .. _GitHub: https://github.com/wholeshoot/django-and-mongo-datatables
 
+See below for examples using Flask.
+
 |Downloads|
 
 .. |Downloads| image:: http://pepy.tech/badge/mongo-datatables
    :target: http://pepy.tech/project/mongo-datatables
-
-See below for examples using Flask.
 
 ----
 
