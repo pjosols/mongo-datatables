@@ -15,6 +15,8 @@ See an example of Django and mongo-datatables on `GitHub`_.
 .. |Downloads| image:: http://pepy.tech/badge/mongo-datatables
    :target: http://pepy.tech/project/mongo-datatables
 
+See below for examples using Flask.
+
 ----
 
 
@@ -26,8 +28,8 @@ You can install with pip::
 
 ..
 
-Basic Usage
-===========
+Basic Usage (Flask)
+===================
 
 In your ``views.py``::
 
@@ -131,8 +133,8 @@ In your ``table_view.html``::
 
 ..
 
-Advanced Usage, With A Custom Filter
-====================================
+Advanced Usage, With A Custom Filter (Flask)
+============================================
 
 In your ``views.py``::
 
@@ -179,8 +181,8 @@ In your ``views.py``::
 ..
 
 
-DataTables Editor Usage
-=======================
+DataTables Editor Usage (Flask)
+===============================
 
 In your ``views.py``::
 
