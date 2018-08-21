@@ -3,8 +3,17 @@ mongo_datatables
 ================
 A script for using the jQuery plug-in DataTables server-side processing (and DataTables Editor) with MongoDB.
 
-Works with Flask and Pymongo. Supports column sorting and filtering by multiple search terms and/or column specific
+Works with Flask and Django. Supports column sorting and filtering by multiple search terms and/or column specific
 searches like column:keyword.
+
+See an example of Django and mongo-datatables on `GitHub`_.
+
+.. _GitHub: https://github.com/wholeshoot/django-and-mongo-datatables
+
+|Downloads|
+
+.. |Downloads| image:: http://pepy.tech/badge/mongo-datatables
+   :target: http://pepy.tech/project/mongo-datatables
 
 ----
 
