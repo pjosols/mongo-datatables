@@ -161,7 +161,7 @@ class DataTables(object):
 
             # go through every val in result and try to json.dumps objects and arrays - skip this if strings are okay
             for key, val in result.items():
-                if type(val) not in [str, int, ObjectId]:
+                if type(val) in [list, dict, float]:
                     result[key] = json.dumps(val)
 
             processed_results.append(result)
