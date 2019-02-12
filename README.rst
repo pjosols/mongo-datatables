@@ -8,7 +8,7 @@ searches like column:keyword.
 
 See an example of Django and mongo-datatables on `GitHub`_.
 
-.. _GitHub: https://github.com/wholeshoot/django-and-mongo-datatables
+.. _GitHub: https://github.com/pauljolsen/django-and-mongo-datatables
 
 See below for examples using Flask.
 
