@@ -6,7 +6,7 @@ def readme():
         return f.read()
 
 setup(name='mongo_datatables',
-      version='0.2.6',
+      version='0.3.0',
       description='Classes for connecting DataTables and Editor to MongoDB',
       long_description=readme(),
       url='http://github.com/wholeshoot/mongo_datatables',
