@@ -40,6 +40,21 @@ class DataTables(object):
         return [term for term in self.search_terms if term.count(":") == 1]
 
     @property
+    def dt_column_search(self):
+        """
+        Adds support for datatables own column search functionality.
+
+        documented here: https://datatables.net/manual/server-side
+
+        :return:
+        """
+        return [{
+            "column": column['data'],
+            "value":  column['search']['value'],
+            "regex":  column['search']['regex']
+        } for column in self.request_args.get("columns") if column['search']["value"] != ""]
+
+    @property
     def requested_columns(self):
         return [column["data"] for column in self.request_args.get("columns")]
 
@@ -98,6 +113,17 @@ class DataTables(object):
         :return:
         """
         _col_specific_search = {}
+
+        for column_search in self.dt_column_search:
+            col = column_search['column']
+            term = column_search['value']
+
+            if column_search.get("regex", False) is True:
+                _col_specific_search.update({col: {'$regex': term, '$options': 'i'}})
+            else:
+                _col_specific_search.update({col: term})
+
+        # Putting the global search variant last, should overwrite all DT-searches
         for term in self.search_terms_with_a_colon:
             col, term = term.split(':')
             _col_specific_search.update({col: {'$regex': term, '$options': 'i'}})
