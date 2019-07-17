@@ -1,5 +1,5 @@
 ================
-mongo_datatables
+mongo-datatables
 ================
 A script for using the jQuery plug-in DataTables server-side processing (and DataTables Editor) with MongoDB.
 
