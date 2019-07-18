@@ -25,7 +25,7 @@ class DataTables(object):
 
     @property
     def db(self):
-        return self.mongo.db
+        return self.mongo
 
     @property
     def search_terms(self):
