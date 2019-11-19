@@ -19,6 +19,11 @@ See below for examples using Flask.
 
 ----
 
+Examples
+========
+- https://github.com/pauljolsen/django-and-mongo-datatables
+- https://github.com/pauljolsen/flask-and-mongo-datatables
+
 
 Install
 =======
