@@ -6,11 +6,6 @@ A script for using the jQuery plug-in DataTables server-side processing (and Dat
 Works with Flask and Django. Supports column sorting and filtering by multiple search terms and/or column specific
 searches like column:keyword.
 
-See an example of Django and mongo-datatables on `GitHub`_.
-
-.. _GitHub: https://github.com/pauljolsen/django-and-mongo-datatables
-
-See below for examples using Flask.
 
 |Downloads|
 
