@@ -505,6 +505,127 @@ class TestDataTables(unittest.TestCase):
         # Should handle empty results gracefully
         self.assertEqual(results, [])
 
+    def test_process_value_by_type(self):
+        """Test the _process_value_by_type method for different field types and values"""
+        datatables = DataTables(self.mongo, "test_collection", self.request_args)
+
+        # First, we need to set the field_types directly
+        datatables.field_types = {
+            "number_field": "number",
+            "date_field": "date",
+            "bool_field": "boolean"
+        }
+
+        # Test text field (default behavior)
+        result = datatables._process_value_by_type("unknown_field", "some text")
+        self.assertEqual(result, {"$regex": "some text", "$options": "i"})
+
+        # Test number field - exact value
+        result = datatables._process_value_by_type("number_field", "42")
+        self.assertEqual(result, 42.0)
+
+        # Test number field - invalid number
+        result = datatables._process_value_by_type("number_field", "not-a-number")
+        self.assertEqual(result, {"$regex": "not-a-number", "$options": "i"})
+
+        # Test boolean field
+        result = datatables._process_value_by_type("bool_field", "true")
+        self.assertEqual(result, True)
+
+        result = datatables._process_value_by_type("bool_field", "false")
+        self.assertEqual(result, False)
+
+        result = datatables._process_value_by_type("bool_field", "invalid-bool")
+        self.assertEqual(result, {"$regex": "invalid-bool", "$options": "i"})
+
+        # Test date field with valid ISO date
+        from datetime import datetime
+        iso_date = "2023-01-01"
+        result = datatables._process_value_by_type("date_field", iso_date)
+
+        # Let's verify the structure matches what we expect from a date query
+        self.assertIn("$gte", result)
+        self.assertIn("$lt", result)
+        self.assertTrue(isinstance(result["$gte"], datetime))
+        self.assertTrue(isinstance(result["$lt"], datetime))
+
+        # Invalid date should fall back to regex
+        result = datatables._process_value_by_type("date_field", "not-a-date")
+        self.assertEqual(result, {"$regex": "not-a-date", "$options": "i"})
+
+    def test_number_field_operators(self):
+        """Test numeric field with different operators"""
+        datatables = DataTables(self.mongo, "test_collection", self.request_args)
+        datatables.field_types = {"number_field": "number"}
+
+        # Greater than
+        result = datatables._process_value_by_type("number_field", ">10")
+        self.assertEqual(result, {"$gt": 10.0})
+
+        # Less than
+        result = datatables._process_value_by_type("number_field", "<10")
+        self.assertEqual(result, {"$lt": 10.0})
+
+        # Range query (e.g., "10-20")
+        result = datatables._process_value_by_type("number_field", "10-20")
+        self.assertEqual(result, {"$gte": 10.0, "$lte": 20.0})
+
+        # Test negative number
+        result = datatables._process_value_by_type("number_field", "-10")
+        self.assertEqual(result, -10.0)
+
+    def test_date_field_operators(self):
+        """Test date field with different operators"""
+        datatables = DataTables(self.mongo, "test_collection", self.request_args)
+        datatables.field_types = {"date_field": "date"}
+
+        from datetime import datetime
+
+        # Greater than date
+        result = datatables._process_value_by_type("date_field", ">2023-01-01")
+        expected_date = datetime.fromisoformat("2023-01-01")
+        self.assertEqual(result, {"$gt": expected_date})
+
+        # Less than date
+        result = datatables._process_value_by_type("date_field", "<2023-01-01")
+        expected_date = datetime.fromisoformat("2023-01-01")
+        self.assertEqual(result, {"$lt": expected_date})
+
+    def test_boolean_field_values(self):
+        """Test boolean field with different values"""
+        datatables = DataTables(self.mongo, "test_collection", self.request_args)
+        datatables.field_types = {"bool_field": "boolean"}
+
+        # Test various true values
+        true_values = ["true", "yes", "1", "t", "y", "TRUE", "Yes"]
+        for val in true_values:
+            result = datatables._process_value_by_type("bool_field", val)
+            self.assertEqual(result, True, f"Failed for true value: {val}")
+
+        # Test various false values
+        false_values = ["false", "no", "0", "f", "n", "FALSE", "No"]
+        for val in false_values:
+            result = datatables._process_value_by_type("bool_field", val)
+            self.assertEqual(result, False, f"Failed for false value: {val}")
+
+    def test_numeric_comparison_operators(self):
+        """Test all numeric comparison operators work correctly"""
+        datatables = DataTables(self.mongo, "test_collection", self.request_args)
+        datatables.field_types = {"number_field": "number"}
+
+        # Test greater than or equal to
+        result = datatables._process_value_by_type("number_field", ">=10")
+        self.assertEqual(result, {"$gte": 10.0})
+
+        # Test less than or equal to
+        result = datatables._process_value_by_type("number_field", "<=20")
+        self.assertEqual(result, {"$lte": 20.0})
+
+        # Make sure operators are properly distinguished
+        result = datatables._process_value_by_type("number_field", ">10")
+        self.assertEqual(result, {"$gt": 10.0})
+        self.assertNotEqual(result, {"$gte": 10.0})
+
 
 if __name__ == '__main__':
     # Run tests with increased verbosity for more detailed output
