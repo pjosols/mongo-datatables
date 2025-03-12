@@ -156,7 +156,7 @@ Optimized Search Performance
 
 For large datasets, the DataTables processor implements several optimizations:
 
-1. **Text index utilization**: Automatically uses MongoDB text indexes when available for improved search performance
+1. **Text index utilization**: Automatically uses MongoDB text indexes for global searches when a single search term is provided
 2. **Efficient query structure**: Prioritizes specific column searches over global searches
 3. **Optimized aggregation pipeline**: Structures the MongoDB pipeline for best performance
 4. **Type-specific filtering**: Only searches relevant fields based on the search term type
@@ -238,15 +238,20 @@ Performance Tips
 
 For large MongoDB collections, consider the following optimizations:
 
-1. **Create text indexes** for fields commonly used in global search:
+1. **Create both text and regular indexes** for fields used in searches:
 
    .. code-block:: python
 
-       # Create a text index on multiple fields
+       # Text indexes improve global search performance
        db.collection.create_index([
            ('name', 'text'),
            ('description', 'text')
        ])
+
+       # Regular indexes improve field-specific searches and sorting
+       # Important: Create regular indexes even for text-indexed fields
+       db.collection.create_index('name')
+       db.collection.create_index('description')
 
 2. **Use field_types parameter** to enable type-specific optimizations:
 
@@ -272,3 +277,9 @@ For large MongoDB collections, consider the following optimizations:
        # Create indexes for commonly sorted/filtered fields
        db.collection.create_index('price')
        db.collection.create_index('created_at')
+
+5. **Important note on index types**:
+   - Text indexes are only used for global searches with a single term
+   - Field-specific searches (either through field:value syntax or column-specific search)
+     use regular indexes, not text indexes
+   - For optimal performance, create both types of indexes for frequently searched fields
