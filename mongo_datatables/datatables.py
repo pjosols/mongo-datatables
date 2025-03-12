@@ -349,15 +349,16 @@ class DataTables:
         if field_type == 'number':
             # Try to parse as number for numeric fields
             try:
-                # Check for comparison operators
-                if value.startswith('>'):
-                    return {'$gt': float(value[1:])}
-                elif value.startswith('>='):
+                # Check for comparison operators - longer operators must be checked first
+                # to prevent '>' from matching the start of '>='
+                if value.startswith('>='):
                     return {'$gte': float(value[2:])}
-                elif value.startswith('<'):
-                    return {'$lt': float(value[1:])}
+                elif value.startswith('>'):
+                    return {'$gt': float(value[1:])}
                 elif value.startswith('<='):
                     return {'$lte': float(value[2:])}
+                elif value.startswith('<'):
+                    return {'$lt': float(value[1:])}
                 elif '-' in value and not (value.startswith('-') or value.endswith('-')):
                     # Range query (e.g., "10-20")
                     start, end = value.split('-', 1)
