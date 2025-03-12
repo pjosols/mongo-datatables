@@ -39,11 +39,6 @@ def get_data(collection):
     return jsonify(results)
 ```
 
-## Reference Implementations
-
-- [Flask Implementation](https://github.com/pauljolsen/flask-and-mongo-datatables)
-- [Django Implementation](https://github.com/pauljolsen/django-and-mongo-datatables)
-
 ## Documentation
 
 For comprehensive documentation, visit [mongo-datatables.readthedocs.io](https://mongo-datatables.readthedocs.io/)
