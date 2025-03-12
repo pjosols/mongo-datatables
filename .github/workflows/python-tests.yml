@@ -34,4 +34,4 @@ jobs:
         file: ./coverage.xml
         fail_ci_if_error: true
         # Uncomment the line below if your repository is private
-        # token: ${{ secrets.CODECOV_TOKEN }}
+        token: ${{ secrets.CODECOV_TOKEN }}
