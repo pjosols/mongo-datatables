@@ -1,0 +1,23 @@
+[run]
+source = mongo_datatables
+omit =
+    */tests/*
+    */site-packages/*
+    setup.py
+    run_*.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    pass
+    raise ImportError
+    except ImportError:
+
+# Fail if coverage falls below 80%
+fail_under = 80
+
+[html]
+directory = htmlcov
