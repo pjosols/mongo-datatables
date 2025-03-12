@@ -42,6 +42,10 @@ setup(
             'pytest-cov',
             'coverage',
         ],
+        'docs': [
+            'sphinx',
+            'sphinx-rtd-theme'
+        ],
     },
     classifiers=[
         'Development Status :: 4 - Beta',
