@@ -13,38 +13,6 @@ Changelog
 * Extensive test coverage
 * Documentation on Read the Docs
 
-0.0.3 (2024-12-15)
-------------------
-
-* Added support for DataTables Editor integration
-* CRUD operations for MongoDB documents
-* Automatic handling of MongoDB ObjectIds
-* Support for complex data types (arrays, objects, dates)
-* Error handling and validation improvements
-
-0.0.2 (2024-10-20)
-------------------
-
-* Enhanced search functionality
-  * Added support for column-specific searching
-  * Added 'field:value' search syntax
-  * Added regex search with case-insensitive matching
-* Added custom MongoDB filter support
-* Improved handling of MongoDB data types
-* Bug fixes for pagination and sorting
-
-0.0.1 (2024-09-05)
-------------------
-
-* Initial release of the rewritten package
-* Basic support for DataTables server-side processing
-* Server-side pagination, sorting and filtering
-* Global search across columns
-* Basic MongoDB integration
-
-Historical Versions
-===================
-
 0.3.0 (2019-07-17)
 ------------------
 
