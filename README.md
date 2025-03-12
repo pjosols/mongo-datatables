@@ -12,7 +12,7 @@ Server-side processing for jQuery DataTables with MongoDB.
 If you find this project helpful, consider buying me a coffee!
 
 <p>
-  <a href="https://www.buymeacoffee.com/yourusername" target="_blank">
+  <a href="https://www.buymeacoffee.com/pjosols" target="_blank">
     <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="160">
   </a>
 </p>
