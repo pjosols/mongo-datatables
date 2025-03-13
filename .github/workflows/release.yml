@@ -8,6 +8,8 @@ on:
 jobs:
   release:
     name: Create Release and Publish to PyPI
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
