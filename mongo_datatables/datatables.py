@@ -314,23 +314,26 @@ class DataTables:
     def projection(self) -> Dict[str, Any]:
         """Build the MongoDB projection to return requested fields.
 
-        Uses $ifNull to handle missing fields gracefully.
+        Handles nested fields properly to avoid path collisions.
 
         Returns:
             MongoDB projection specification
         """
         projection = {"_id": 1}  # Always include _id
 
+        # Track parent fields that we've already included
+        included_parents = set()
+
         for key in self.requested_columns:
             # Handle nested fields with dot notation
             if "." in key:
-                # For nested fields, we need to include the parent fields
-                parts = key.split(".")
-                for i in range(1, len(parts)):
-                    parent = ".".join(parts[:i])
+                # For nested fields, include the entire parent object
+                parent = key.split(".")[0]
+                if parent not in included_parents:
                     projection[parent] = 1
-
-            projection[key] = {"$ifNull": [f"${key}", ""]}
+                    included_parents.add(parent)
+            else:
+                projection[key] = {"$ifNull": [f"${key}", ""]}
 
         return projection
 
@@ -599,17 +602,8 @@ class DataTables:
                 # Handle ObjectId for row identifier
                 result_dict["DT_RowId"] = str(result_dict.pop('_id'))
 
-                # Format complex values
-                for key, val in result_dict.items():
-                    if isinstance(val, (list, dict)):
-                        result_dict[key] = json.dumps(val)
-                    elif isinstance(val, float):
-                        # Format floats to 2 decimal places by default
-                        result_dict[key] = f"{val:.2f}" if val == int(val) else f"{val:.2f}"
-                    elif isinstance(val, ObjectId):
-                        result_dict[key] = str(val)
-                    elif hasattr(val, 'isoformat'):  # Handle date objects
-                        result_dict[key] = val.isoformat()
+                # Format complex values and handle nested objects
+                self._format_result_values(result_dict)
 
                 processed_results.append(result_dict)
 
@@ -620,6 +614,35 @@ class DataTables:
             # Log the error and return empty results
             print(f"Error executing MongoDB query: {str(e)}")
             return []
+
+    def _format_result_values(self, result_dict, parent_key=""):
+        """Recursively format values in result dictionary for JSON serialization.
+
+        Args:
+            result_dict: Dictionary to process
+            parent_key: Key of parent for nested dictionaries
+        """
+        items = list(result_dict.items())
+        for key, val in items:
+            full_key = f"{parent_key}.{key}" if parent_key else key
+
+            if isinstance(val, dict):
+                # Recursively process nested dictionaries
+                self._format_result_values(val, full_key)
+            elif isinstance(val, list):
+                # Process lists - may contain dictionaries or other complex types
+                for i, item in enumerate(val):
+                    if isinstance(item, dict):
+                        self._format_result_values(item, f"{full_key}[{i}]")
+                    elif hasattr(item, 'isoformat'):
+                        val[i] = item.isoformat()
+            elif isinstance(val, (ObjectId,)):
+                result_dict[key] = str(val)
+            elif hasattr(val, 'isoformat'):  # Handle date objects
+                result_dict[key] = val.isoformat()
+            elif isinstance(val, float):
+                # Format floats to 2 decimal places by default
+                result_dict[key] = f"{val:.2f}" if val == int(val) else f"{val:.2f}"
 
     def get_rows(self) -> Dict[str, Any]:
         """Get the complete formatted response for DataTables.
