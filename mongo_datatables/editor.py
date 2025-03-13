@@ -46,7 +46,8 @@ class Editor:
         pymongo_object: Any,
         collection_name: str,
         request_args: Dict[str, Any],
-        doc_id: Optional[str] = None
+        doc_id: Optional[str] = None,
+        field_types: Optional[Dict[str, str]] = None
     ) -> None:
         """Initialize the Editor processor.
 
@@ -55,22 +56,14 @@ class Editor:
             collection_name: Name of the MongoDB collection
             request_args: Editor request parameters (from request.get_json())
             doc_id: Comma-separated list of document IDs for edit/remove operations
-
-        Example:
-            ```python
-            # Flask route example
-            @app.route('/api/editor', methods=['POST'])
-            def editor_endpoint():
-                data = request.get_json()
-                doc_id = request.args.get('id', '')
-                result = Editor(mongo, 'users', data, doc_id).process()
-                return jsonify(result)
-            ```
+            field_types: Optional mapping of field names to their types for specialized handling
+                         Supported types: 'date', 'number', 'boolean', 'text', 'array'
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
         self.request_args = request_args or {}
         self.doc_id = doc_id or ""
+        self.field_types = field_types or {}
 
     @property
     def db(self) -> Database:
@@ -119,42 +112,6 @@ class Editor:
             return []
         return self.doc_id.split(",")
 
-    def _preprocess_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
-        """Process document data before database operations.
-
-        - Converts string JSON to Python objects
-        - Handles special data types
-        - Removes empty values
-
-        Args:
-            doc: Document data from Editor
-
-        Returns:
-            Processed document ready for database operation
-        """
-        # Remove empty values to avoid overwriting with nulls
-        processed_doc = {k: v for k, v in doc.items() if v is not None}
-
-        # Process each field
-        for key, val in processed_doc.items():
-            # Try to parse JSON strings into objects/arrays
-            if isinstance(val, str):
-                try:
-                    processed_doc[key] = json.loads(val)
-                except json.JSONDecodeError:
-                    # Not valid JSON, keep as string
-                    pass
-
-            # Handle date strings with ISO format
-            if isinstance(val, str) and key.lower().endswith(('date', 'time', 'at')):
-                try:
-                    processed_doc[key] = datetime.fromisoformat(val.replace('Z', '+00:00'))
-                except (ValueError, TypeError):
-                    # Not a valid date string, keep as is
-                    pass
-
-        return processed_doc
-
     def _format_response_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         """Format document for response to Editor.
 
@@ -202,20 +159,30 @@ class Editor:
             return {"error": str(e)}
 
     def create(self) -> Dict[str, Any]:
-        """Create a new document in the collection.
-
-        Returns:
-            Dict with 'data' key containing the created document
-
-        Raises:
-            ValueError: If no data is provided
-        """
+        """Create a new document in the collection."""
         if not self.data or '0' not in self.data:
             raise ValueError("Data is required for create operation")
 
         try:
-            # Process the document
-            data_obj = self._preprocess_document(self.data['0'])
+            # Process the document using our updated method
+            main_data, dot_notation_data = self._preprocess_document(self.data['0'])
+
+            # Build the combined document for creation
+            data_obj = main_data.copy()
+
+            # Handle nested fields by parsing dot notation
+            for dot_key, value in dot_notation_data.items():
+                parts = dot_key.split('.')
+                current = data_obj
+
+                # Build nested structure
+                for i, part in enumerate(parts[:-1]):
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+
+                # Set the final value
+                current[parts[-1]] = value
 
             # Insert the document
             result = self.collection.insert_one(data_obj)
@@ -228,17 +195,79 @@ class Editor:
 
             return {"data": [response_data]}
         except Exception as e:
+            print(f"Error in create operation: {e}")
             return {"error": str(e)}
 
-    def edit(self) -> Dict[str, Any]:
-        """Edit one or more documents in the collection.
+    def _preprocess_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Process document data before database operations.
+
+        - Converts string JSON to Python objects
+        - Handles special data types including dates
+        - Properly structures nested fields using dot notation
+        - Removes empty values
+
+        Args:
+            doc: Document data from Editor
 
         Returns:
-            Dict with 'data' key containing the updated documents
-
-        Raises:
-            ValueError: If no document IDs are provided
+            Processed document ready for database operation
         """
+        # Remove empty values to avoid overwriting with nulls
+        processed_doc = {k: v for k, v in doc.items() if v is not None}
+
+        # Store dot notation fields for MongoDB update operations
+        dot_notation_updates = {}
+
+        # Process each field
+        for key, val in processed_doc.items():
+            # Try to parse JSON strings into objects/arrays
+            if isinstance(val, str):
+                try:
+                    parsed_val = json.loads(val)
+                    if '.' in key:
+                        # Store with dot notation for MongoDB update
+                        dot_notation_updates[key] = parsed_val
+                    else:
+                        processed_doc[key] = parsed_val
+                    continue  # Skip further processing for this field
+                except json.JSONDecodeError:
+                    # Not valid JSON, continue with other processing
+                    pass
+
+            # Handle date strings - check both the key itself and the final segment after a dot
+            is_date_field = (
+                    key.lower().endswith(('date', 'time', 'at')) or
+                    (key.split('.')[-1].lower().endswith(('date', 'time', 'at')))
+            )
+
+            if isinstance(val, str) and is_date_field and val.strip():
+                try:
+                    # Convert to datetime object for MongoDB
+                    date_obj = datetime.fromisoformat(val.replace('Z', '+00:00'))
+
+                    if '.' in key:
+                        # Store with dot notation for MongoDB update
+                        dot_notation_updates[key] = date_obj
+                    else:
+                        processed_doc[key] = date_obj
+                except (ValueError, TypeError):
+                    # If date parsing fails, keep as string but still handle dot notation
+                    if '.' in key:
+                        dot_notation_updates[key] = val
+            elif '.' in key:
+                # Non-date field with dot notation
+                dot_notation_updates[key] = val
+
+        # Remove all dot notation fields from the main doc since we'll handle them separately
+        for key in list(processed_doc.keys()):
+            if '.' in key:
+                del processed_doc[key]
+
+        # Return both the processed document and dot notation fields
+        return processed_doc, dot_notation_updates
+
+    def edit(self) -> Dict[str, Any]:
+        """Edit one or more documents in the collection."""
         if not self.list_of_ids:
             raise ValueError("Document ID is required for edit operation")
 
@@ -249,26 +278,91 @@ class Editor:
                 if doc_id not in self.data:
                     continue
 
-                # Process the document
-                update_data = self._preprocess_document(self.data[doc_id])
+                # Get the update data for this document
+                update_data = self.data[doc_id]
 
-                # Update the document
-                self.collection.update_one(
-                    {"_id": ObjectId(doc_id)},
-                    {"$set": update_data}
-                )
+                # Process document with recursive function
+                updates = {}
+                self._process_updates(update_data, updates, "")
 
-                # Get the updated document for the response
+                # If we have updates, apply them all at once
+                if updates:
+                    self.collection.update_one(
+                        {"_id": ObjectId(doc_id)},
+                        {"$set": updates}
+                    )
+
+                # Get the updated document
                 updated_doc = self.collection.find_one({"_id": ObjectId(doc_id)})
 
-                # Format the response
+                # Format response
                 response_data = self._format_response_document(updated_doc)
-
                 data.append(response_data)
 
             return {"data": data}
         except Exception as e:
+            print(f"Edit error: {e}")
             return {"error": str(e)}
+
+    def _process_updates(self, data, updates, prefix=""):
+        """Recursively process updates at any nesting level.
+
+        Args:
+            data: Data to process (dict or value)
+            updates: Updates dict to populate (will be modified in-place)
+            prefix: Dot notation prefix for the current nesting level
+        """
+        if not isinstance(data, dict):
+            return
+
+        for key, value in data.items():
+            if value is None:
+                continue
+
+            # Build the full key path with dot notation
+            full_key = f"{prefix}.{key}" if prefix else key
+
+            if isinstance(value, dict):
+                # Recurse into nested dictionaries
+                self._process_updates(value, updates, full_key)
+            else:
+                # Process leaf value
+                field_type = self.field_types.get(full_key, 'text')
+
+                if field_type == 'date' and isinstance(value, str):
+                    try:
+                        # Convert to datetime
+                        if 'T' in value:
+                            date_obj = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                        else:
+                            date_obj = datetime.fromisoformat(f"{value}T00:00:00")
+
+                        updates[full_key] = date_obj
+                    except Exception as e:
+                        print(f"Date conversion error for {full_key}: {e}")
+                        updates[full_key] = value
+                elif field_type == 'number' and isinstance(value, str):
+                    try:
+                        # Convert string to number
+                        if '.' in value:
+                            updates[full_key] = float(value)
+                        else:
+                            updates[full_key] = int(value)
+                    except ValueError:
+                        updates[full_key] = value
+                elif field_type == 'boolean' and isinstance(value, str):
+                    # Convert string to boolean
+                    updates[full_key] = value.lower() in ('true', 'yes', '1', 't', 'y')
+                elif field_type == 'array' and isinstance(value, str):
+                    try:
+                        # Try to parse JSON array
+                        updates[full_key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        # If not valid JSON, use as single value
+                        updates[full_key] = [value]
+                else:
+                    # Standard field
+                    updates[full_key] = value
 
     def process(self) -> Dict[str, Any]:
         """Process the Editor request based on the action.

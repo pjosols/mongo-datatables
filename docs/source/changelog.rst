@@ -2,6 +2,20 @@
 Changelog
 =========
 
+1.0.1 (2025-03-13)
+------------------
+
+* Fixed path collision error when using dotted notation for nested fields in projection
+* Added recursive processing of nested documents to ensure proper JSON serialization
+* Fixed datetime serialization issue to properly handle date objects at any nesting level
+* Improved handling of complex MongoDB document structures
+* Enhanced Editor handling for nested document fields
+* Implemented proper data transformation in Editor for nested fields
+* Resolved field mapping issues between Editor and MongoDB documents
+* Added support for array field editing in Editor component
+* Fixed UI rendering issues with special characters in JavaScript
+* Added bidirectional field mapping for Editor to handle both flat and nested data structures
+
 1.0.0 (2025-03-11)
 ------------------
 
@@ -78,9 +92,9 @@ Changelog
 ------------------
 
 * Initial implementation with:
-  * Basic DataTables server-side processing
-  * Support for MongoDB integration
-  * Simple filtering and sorting
-  * Custom filter support
-  * Basic Editor implementation for CRUD operations
-  * Basic type conversion for data fields
+* Basic DataTables server-side processing
+* Support for MongoDB integration
+* Simple filtering and sorting
+* Custom filter support
+* Basic Editor implementation for CRUD operations
+* Basic type conversion for data fields
