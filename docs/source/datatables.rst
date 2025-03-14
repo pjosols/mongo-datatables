@@ -10,7 +10,7 @@ It handles all aspects of integrating MongoDB with DataTables, including paginat
 and filtering with optimizations for large datasets.
 
 Class Documentation
-=================
+===================
 
 .. py:class:: mongo_datatables.datatables.DataTables(pymongo_object, collection_name, request_args, field_types=None, **custom_filter)
 
@@ -75,7 +75,7 @@ Class Documentation
       :return: Processed value with appropriate type or query operator
 
 Key Properties
-=============
+==============
 
 .. py:attribute:: db
 
@@ -127,10 +127,10 @@ Key Properties
    :return: MongoDB projection specification
 
 Advanced Features
-================
+=================
 
 Type-Aware Search
-----------------
+-----------------
 
 The DataTables processor supports specialized handling for different field types:
 
@@ -152,7 +152,7 @@ To use type-aware search, provide a field_types mapping during initialization:
     results = DataTables(mongo, 'products', data, field_types=field_types).get_rows()
 
 Optimized Search Performance
----------------------------
+----------------------------
 
 For large datasets, the DataTables processor implements several optimizations:
 
@@ -169,7 +169,7 @@ Field-specific search syntax (field:value) offers better performance than global
     "status:active price:>100"  // Will efficiently search only status and price fields
 
 Example Usage
-============
+=============
 
 Basic usage with Flask:
 
@@ -234,7 +234,7 @@ Advanced filtering with date range:
         return jsonify(results)
 
 Performance Tips
-===============
+================
 
 For large MongoDB collections, consider the following optimizations:
 
@@ -280,6 +280,5 @@ For large MongoDB collections, consider the following optimizations:
 
 5. **Important note on index types**:
    - Text indexes are only used for global searches with a single term
-   - Field-specific searches (either through field:value syntax or column-specific search)
-     use regular indexes, not text indexes
+   - Field-specific searches (either through field:value syntax or column-specific search) use regular indexes, not text indexes
    - For optimal performance, create both types of indexes for frequently searched fields
