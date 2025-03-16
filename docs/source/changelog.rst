@@ -5,11 +5,6 @@ Changelog
 1.1.1 (2025-03-16)
 ------------------
 
-* Convenience import DataField from __init__
-
-1.1.0 (2025-03-15)
-------------------
-
 * Added new ``DataField`` class for improved field type management, nested field support, and UI-to-database field mapping
 * Implemented index-optimized fast text searches that automatically utilize MongoDB text indexes when available
 * Added advanced date filtering with comparison operators (>, <, >=, <=, =) for date fields
