@@ -11,7 +11,7 @@ Server-side processing for jQuery DataTables with MongoDB.
 ## Support
 If you find this project helpful, consider buying me a coffee!
 
-[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/pjosols)
+<a href="https://www.buymeacoffee.com/pjosols"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="150" alt="Buy Me A Coffee"></a>
 
 
 ## Overview
