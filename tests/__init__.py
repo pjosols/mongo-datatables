@@ -5,16 +5,16 @@ from tests.test_init import TestInit
 from tests.test_editor import TestEditor
 
 # DataTables functionality tests
-from tests.test_initialization import *
+from tests.test_datatables_initialization import *
 from tests.test_datatables_query_building import *
 from tests.test_datatables_edge_cases import *
-from tests.test_filtering import *
-from tests.test_pagination import *
-from tests.test_results import *
-from tests.test_search import *
-from tests.test_sorting import *
-from tests.test_text_search import *
-from tests.test_query_stats import *
+from tests.test_datatables_filtering import *
+from tests.test_datatables_pagination import *
+from tests.test_datatables_results import *
+from tests.test_datatables_search import *
+from tests.test_datatables_sorting import *
+from tests.test_datatables_text_search import *
+from tests.test_datatables_query_stats import *
 
 # Editor functionality tests
 from tests.test_editor_advanced import *
