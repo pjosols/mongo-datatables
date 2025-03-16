@@ -103,6 +103,15 @@ class Editor:
         return self.ui_to_db_field_map.get(field_name, field_name)
 
     @property
+    def action(self) -> str:
+        """Get the Editor action type.
+
+        Returns:
+            Action type (create, edit, remove)
+        """
+        return self.request_args.get("action", "")
+
+    @property
     def data(self) -> Dict[str, Any]:
         """Get the data payload from the request.
 
