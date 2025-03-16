@@ -31,7 +31,6 @@ If you find this project helpful, consider buying me a coffee!
    editor
    examples
    changelog
-   contributing
 
 Features
 ========

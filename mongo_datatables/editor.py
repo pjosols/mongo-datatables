@@ -33,6 +33,9 @@ from pymongo.database import Database
 from pymongo.collection import Collection
 from datetime import datetime
 
+# Import DataField from datatables module
+from mongo_datatables.datatables import DataField
+
 
 class Editor:
     """Server-side processor for DataTables Editor with MongoDB.
@@ -47,7 +50,7 @@ class Editor:
         collection_name: str,
         request_args: Dict[str, Any],
         doc_id: Optional[str] = None,
-        field_types: Optional[Dict[str, str]] = None
+        data_fields: Optional[List[DataField]] = None
     ) -> None:
         """Initialize the Editor processor.
 
@@ -56,14 +59,19 @@ class Editor:
             collection_name: Name of the MongoDB collection
             request_args: Editor request parameters (from request.get_json())
             doc_id: Comma-separated list of document IDs for edit/remove operations
-            field_types: Optional mapping of field names to their types for specialized handling
-                         Supported types: 'date', 'number', 'boolean', 'text', 'array'
+            data_fields: List of DataField objects defining database fields with UI mappings
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
         self.request_args = request_args or {}
         self.doc_id = doc_id or ""
-        self.field_types = field_types or {}
+        
+        # Store data fields
+        self.data_fields = data_fields or []
+        
+        # Create internal mappings from data_fields
+        self.field_types = {field.name: field.data_type for field in self.data_fields} if self.data_fields else {}
+        self.ui_to_db_field_map = {field.alias: field.name for field in self.data_fields} if self.data_fields else {}
 
     @property
     def db(self) -> Database:
@@ -82,15 +90,17 @@ class Editor:
             The PyMongo collection instance
         """
         return self.db[self.collection_name]
-
-    @property
-    def action(self) -> str:
-        """Get the Editor action type.
-
+        
+    def map_ui_field_to_db_field(self, field_name: str) -> str:
+        """Map a UI field name to its corresponding database field name.
+        
+        Args:
+            field_name: The UI field name to map
+            
         Returns:
-            Action type (create, edit, remove)
+            The corresponding database field name, or the original field name if no mapping exists
         """
-        return self.request_args.get("action", "")
+        return self.ui_to_db_field_map.get(field_name, field_name)
 
     @property
     def data(self) -> Dict[str, Any]:
@@ -327,7 +337,7 @@ class Editor:
                 self._process_updates(value, updates, full_key)
             else:
                 # Process leaf value
-                field_type = self.field_types.get(full_key, 'text')
+                field_type = self.field_types.get(full_key, 'string')
 
                 if field_type == 'date' and isinstance(value, str):
                     try:

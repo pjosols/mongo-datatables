@@ -2,6 +2,18 @@
 Changelog
 =========
 
+1.1.0 (2025-03-15)
+------------------
+
+* Added new ``DataField`` class for improved field type management, nested field support, and UI-to-database field mapping
+* Implemented index-optimized fast text searches that automatically utilize MongoDB text indexes when available
+* Added advanced date filtering with comparison operators (>, <, >=, <=, =) for date fields
+* Added support for quoted string searches (preserves phrases as single search terms)
+* Enhanced search implementation with exact phrase matching for quoted terms
+* Improved handling of complex search queries with multiple terms
+* Added comparison operators (>, <, >=, <=, =) for numeric field-specific searches
+* Added debug mode with detailed query statistics for performance monitoring and troubleshooting
+
 1.0.1 (2025-03-13)
 ------------------
 
@@ -16,12 +28,15 @@ Changelog
 * Fixed UI rendering issues with special characters in JavaScript
 * Added bidirectional field mapping for Editor to handle both flat and nested data structures
 
-1.0.0 (2025-03-11)
-------------------
+1.0.0 (2025-03-11) [YANKED]
+---------------------------
+
+.. warning::
+   This release was yanked from PyPI due to a critical bug with nested document field handling that could cause path collision errors. Please use version 1.0.1 or later.
 
 * First stable release of the rewritten package
 * Comprehensive docstrings and inline documentation
-* Performance optimizations for large datasets
+* Basic support for regex-based searches (not optimized for large collections)
 * Added support for nested document field handling
 * Improved error handling and validation
 * Extensive test coverage

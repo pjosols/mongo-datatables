@@ -13,7 +13,7 @@ the ability to create, edit and delete entries in a DataTable. This implementati
 translates Editor requests into MongoDB operations.
 
 Class Documentation
-=================
+===================
 
 .. py:class:: mongo_datatables.editor.Editor(pymongo_object, collection_name, request_args, doc_id=None)
 
@@ -35,32 +35,8 @@ Class Documentation
       :rtype: dict
       :raises ValueError: If action is not supported
 
-   .. py:method:: create()
-
-      Create a new document in the collection.
-
-      :return: Dict with 'data' key containing the created document
-      :rtype: dict
-      :raises ValueError: If no data is provided
-
-   .. py:method:: edit()
-
-      Edit one or more documents in the collection.
-
-      :return: Dict with 'data' key containing the updated documents
-      :rtype: dict
-      :raises ValueError: If no document IDs are provided
-
-   .. py:method:: remove()
-
-      Remove one or more documents from the collection.
-
-      :return: Empty dict on success
-      :rtype: dict
-      :raises ValueError: If no document IDs are provided
-
 Key Properties
-=============
+==============
 
 .. py:attribute:: db
 
@@ -93,7 +69,7 @@ Key Properties
    :return: List of document ID strings
 
 Example Usage
-============
+=============
 
 Basic usage with Flask:
 
@@ -126,7 +102,7 @@ Supporting multiple collections:
         return jsonify(result)
 
 Editor Actions
-=============
+==============
 
 The Editor class handles three main actions:
 

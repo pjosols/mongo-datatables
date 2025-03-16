@@ -5,7 +5,7 @@ Examples
 This page provides various examples of using mongo-datatables in different scenarios.
 
 Basic DataTables Setup
-=====================
+======================
 
 A simple setup with Flask and PyMongo:
 
@@ -26,7 +26,7 @@ A simple setup with Flask and PyMongo:
         return jsonify(results)
 
 Filtering with Custom Criteria
-=============================
+==============================
 
 Add custom MongoDB filtering criteria:
 
@@ -45,7 +45,7 @@ Add custom MongoDB filtering criteria:
         return jsonify(results)
 
 Date Range Filtering
-===================
+====================
 
 Filter documents based on date ranges:
 
@@ -69,7 +69,7 @@ Filter documents based on date ranges:
         return jsonify(results)
 
 Working with Nested Documents
-===========================
+=============================
 
 MongoDB supports nested documents, and mongo-datatables handles them using dot notation:
 
@@ -106,7 +106,7 @@ MongoDB supports nested documents, and mongo-datatables handles them using dot n
     ]
 
 Advanced Editor Example
-=====================
+=======================
 
 Complete DataTables Editor integration with custom fields:
 
@@ -177,7 +177,7 @@ Complete DataTables Editor integration with custom fields:
     });
 
 Using with Flask
-==============
+================
 
 mongo-datatables works perfectly with Flask and Flask-PyMongo:
 
@@ -223,7 +223,7 @@ mongo-datatables works perfectly with Flask and Flask-PyMongo:
         app.run(debug=True)
 
 Using with Django
-===============
+=================
 
 mongo-datatables also works with Django and django-pymongo:
 
@@ -245,26 +245,6 @@ mongo-datatables also works with Django and django-pymongo:
         results = DataTables(db, 'users', data).get_rows()
         return JsonResponse(results)
 
-Using with FastAPI
-================
-
-Example with FastAPI:
-
-.. code-block:: python
-
-    from fastapi import FastAPI, Request
-    from motor.motor_asyncio import AsyncIOMotorClient
-    from mongo_datatables import DataTables
-
-    app = FastAPI()
-    client = AsyncIOMotorClient('mongodb://localhost:27017')
-    db = client.my_database
-
-    @app.post('/api/data')
-    async def get_data(request: Request):
-        data = await request.json()
-        results = DataTables(db, 'users', data).get_rows()
-        return results
 
 Custom Search Fields
 ====================

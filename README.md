@@ -11,11 +11,8 @@ Server-side processing for jQuery DataTables with MongoDB.
 ## Support
 If you find this project helpful, consider buying me a coffee!
 
-<p>
-  <a href="https://www.buymeacoffee.com/pjosols" target="_blank">
-    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="160">
-  </a>
-</p>
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/pjosols)
+
 
 ## Overview
 
@@ -51,6 +48,45 @@ def get_data(collection):
 ## Documentation
 
 For comprehensive documentation, visit [mongo-datatables.readthedocs.io](https://mongo-datatables.readthedocs.io/)
+
+## Performance Optimization
+
+### Importance of Indexes for Large Collections
+
+When working with large MongoDB collections, creating proper indexes is **critical** for performance. Without appropriate indexes, queries can become extremely slow or timeout entirely.
+
+#### Text Indexes for Search Performance
+
+The DataTables class is designed to leverage MongoDB text indexes for efficient search operations:
+
+```python
+# Create a text index in MongoDB (do this once in your setup script)
+db.your_collection.create_index([("field1", "text"), ("field2", "text")])
+
+# DataTables will automatically use the text index when available
+datatables = DataTables(mongo, 'your_collection', request_args)
+```
+
+Benefits of text indexes:
+
+- **Dramatically faster search** on large collections
+- **Better relevance scoring** for search results
+- **Language-aware stemming** for more natural search
+- **Support for exact phrase queries** using quotes
+
+If a text index is not available, the library will fall back to regex-based search, which is significantly slower for large collections.
+
+#### Regular Indexes for Sorting and Filtering
+
+In addition to text indexes, create regular indexes for fields used in sorting and filtering:
+
+```python
+# Create indexes for commonly sorted/filtered fields
+db.your_collection.create_index("created_at")
+db.your_collection.create_index("status")
+```
+
+> **Note:** MongoDB has a limit of one text index per collection, but you can include multiple fields in a single text index.
 
 ## Development
 
