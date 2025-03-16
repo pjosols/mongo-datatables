@@ -13,6 +13,26 @@ Install the package using pip:
 
     pip install mongo-datatables
 
+Performance Optimization
+========================
+
+Creating Indexes for Large Collections
+--------------------------------------
+
+Before setting up your application, it's important to create appropriate indexes in your MongoDB collections, especially if you're working with large datasets. This step is **critical** for ensuring good performance with DataTables server-side processing.
+
+.. code-block:: python
+
+    # Create a text index for efficient text search
+    db.users.create_index([("name", "text"), ("email", "text")])
+    
+    # Create regular indexes for fields used in sorting and filtering
+    db.users.create_index("created_at")
+    db.users.create_index("status")
+
+.. note::
+   Without proper indexes, queries on large collections can become extremely slow or timeout entirely.
+
 Basic Setup with Flask
 ======================
 
@@ -36,6 +56,11 @@ Create a basic Flask application with MongoDB integration:
     def get_data():
         data = request.get_json()
         results = DataTables(mongo, 'users', data).get_rows()
+        
+        # Optional: Access query statistics for performance monitoring
+        # query_stats = results['_query_stats']
+        # app.logger.info(f"Search using text index: {query_stats['used_text_index']}")
+        
         return jsonify(results)
 
 HTML Template
@@ -97,17 +122,10 @@ To add DataTables Editor for CRUD operations:
 
    .. code-block:: html
 
-       <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
-       <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/2.2.2/css/buttons.dataTables.min.css">
-       <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.4/css/select.dataTables.min.css">
-       <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/datetime/1.1.2/css/dataTables.dateTime.min.css">
+       <!-- DataTables Editor CSS -->
        <link rel="stylesheet" type="text/css" href="editor/css/editor.dataTables.min.css">
-
-       <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-       <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-       <script src="https://cdn.datatables.net/buttons/2.2.2/js/dataTables.buttons.min.js"></script>
-       <script src="https://cdn.datatables.net/select/1.3.4/js/dataTables.select.min.js"></script>
-       <script src="https://cdn.datatables.net/datetime/1.1.2/js/dataTables.dateTime.min.js"></script>
+       
+       <!-- DataTables Editor JS -->
        <script src="editor/js/dataTables.editor.min.js"></script>
 
 2. Create the Editor endpoint in Flask:
@@ -168,13 +186,3 @@ To add DataTables Editor for CRUD operations:
                ]
            });
        });
-
-Advanced Features
-=================
-
-Check out the next sections for more advanced features like:
-
-* Custom filters and advanced MongoDB queries
-* Working with nested documents
-* Search optimization techniques
-* Custom field mapping
