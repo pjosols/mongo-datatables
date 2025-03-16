@@ -49,9 +49,27 @@ def get_data(collection):
 
 For comprehensive documentation, visit [mongo-datatables.readthedocs.io](https://mongo-datatables.readthedocs.io/)
 
-## Performance Optimization
+## Search Functionality
 
-### Importance of Indexes for Large Collections
+### How Search Works in mongo-datatables
+
+mongo-datatables provides powerful search capabilities that adapt based on your MongoDB configuration and search syntax. Understanding how search works can help you optimize performance, especially for large collections.
+
+#### Search Types and Performance
+
+| Search Type | Example | Performance | Description | MongoDB Query Example |
+|-------------|---------|-------------|-------------|----------------------|
+| **Text Index Search** | `George Orwell` | Very Fast<br>Small: <50ms<br>Large: 100-300ms | Uses MongoDB's native text search when indexes exist | `{ "$text": { "$search": "George Orwell" } }` |
+| **Exact Phrase Search** | `"Margaret Atwood"` | Fast<br>Small: <50ms<br>Large: 100-300ms | Uses MongoDB's phrase matching with text indexes | `{ "$text": { "$search": "\"Margaret Atwood\"" } }` |
+| **Field-Specific Search** | `Author:Bradbury` | Moderate<br>Small: 20-50ms<br>Large: 1-2s | Uses field-specific queries with regex or direct comparison | `{ "Author": { "$regex": "Bradbury", "$options": "i" } }` |
+| **Comparison Operators** | `Pages:>100`<br>`Published:<2015-01-01` | Fast<br>Small: <50ms<br>Large: 200-500ms | Uses MongoDB comparison operators for numeric and date fields | `{ "Pages": { "$gt": 100 } }` |
+| **Combined Search** | `Author:"Aldous Huxley" Published:>2000` | Moderate<br>Small: 50-100ms<br>Large: 500ms-1s | Combines multiple search types | Complex query with multiple conditions |
+| **Regex Search** | `George Orwell` (without text index) | Slow<br>Small: 50-100ms<br>Large: 5-10s+ | Falls back to regex when text indexes aren't available | `{ "$or": [{ "field1": { "$regex": "George", "$options": "i" } }, ...] }` |
+| **Mixed Search** | `Title:"How To Ski" Ishiguro` | Moderate<br>Small: 50-100ms<br>Large: 300-700ms | Combines phrase matching with text search | Complex query with phrase and text search |
+
+### Performance Optimization
+
+#### Importance of Indexes for Large Collections
 
 When working with large MongoDB collections, creating proper indexes is **critical** for performance. Without appropriate indexes, queries can become extremely slow or timeout entirely.
 
