@@ -57,66 +57,17 @@ mongo-datatables provides powerful search capabilities that adapt based on your 
 
 #### Search Types and Performance
 
-<table style="font-size: 0.35em; border-collapse: collapse;">
-  <tr>
-    <th style="padding: 2px 4px;">Type</th>
-    <th style="padding: 2px 4px;">Example</th>
-    <th style="padding: 2px 4px;">Performance</th>
-    <th style="padding: 2px 4px;">Description</th>
-    <th style="padding: 2px 4px;">MongoDB Query</th>
-  </tr>
-  <tr>
-    <td style="padding: 2px 4px;"><b>Text Index</b></td>
-    <td style="padding: 2px 4px;"><code>George Orwell</code></td>
-    <td style="padding: 2px 4px;">Very Fast<br>S: &lt;50ms<br>L: 100-300ms</td>
-    <td style="padding: 2px 4px;">MongoDB text search with indexes</td>
-    <td style="padding: 2px 4px;"><code>{$text:{$search:"George Orwell"}}</code></td>
-  </tr>
-  <tr>
-    <td style="padding: 2px 4px;"><b>Phrase</b></td>
-    <td style="padding: 2px 4px;"><code>"Margaret Atwood"</code></td>
-    <td style="padding: 2px 4px;">Fast<br>S: &lt;50ms<br>L: 100-300ms</td>
-    <td style="padding: 2px 4px;">Exact phrase matching</td>
-    <td style="padding: 2px 4px;"><code>{$text:{$search:"\"Margaret Atwood\""}}</code></td>
-  </tr>
-  <tr>
-    <td style="padding: 2px 4px;"><b>Field</b></td>
-    <td style="padding: 2px 4px;"><code>Author:Bradbury</code></td>
-    <td style="padding: 2px 4px;">Moderate<br>S: 20-50ms<br>L: 1-2s</td>
-    <td style="padding: 2px 4px;">Field-specific queries</td>
-    <td style="padding: 2px 4px;"><code>{Author:{$regex:"Bradbury",$options:"i"}}</code></td>
-  </tr>
-  <tr>
-    <td style="padding: 2px 4px;"><b>Comparison</b></td>
-    <td style="padding: 2px 4px;"><code>Pages:>100</code></td>
-    <td style="padding: 2px 4px;">Fast<br>S: &lt;50ms<br>L: 200-500ms</td>
-    <td style="padding: 2px 4px;">Numeric/date comparisons</td>
-    <td style="padding: 2px 4px;"><code>{Pages:{$gt:100}}</code></td>
-  </tr>
-  <tr>
-    <td style="padding: 2px 4px;"><b>Combined</b></td>
-    <td style="padding: 2px 4px;"><code>Author:"Huxley" Year:>2000</code></td>
-    <td style="padding: 2px 4px;">Moderate<br>S: 50-100ms<br>L: 500ms-1s</td>
-    <td style="padding: 2px 4px;">Multiple search types</td>
-    <td style="padding: 2px 4px;">Complex multi-condition query</td>
-  </tr>
-  <tr>
-    <td style="padding: 2px 4px;"><b>Regex</b></td>
-    <td style="padding: 2px 4px;"><code>George Orwell</code> (no index)</td>
-    <td style="padding: 2px 4px;">Slow<br>S: 50-100ms<br>L: 5-10s+</td>
-    <td style="padding: 2px 4px;">Fallback when no text index</td>
-    <td style="padding: 2px 4px;"><code>{$or:[{field:{$regex:"George"...}}]}</code></td>
-  </tr>
-  <tr>
-    <td style="padding: 2px 4px;"><b>Mixed</b></td>
-    <td style="padding: 2px 4px;"><code>Title:"Ski" Ishiguro</code></td>
-    <td style="padding: 2px 4px;">Moderate<br>S: 50-100ms<br>L: 300-700ms</td>
-    <td style="padding: 2px 4px;">Phrase + text search</td>
-    <td style="padding: 2px 4px;">Complex phrase + text query</td>
-  </tr>
-</table>
+| Type | Example | Perf (S/L) | Description | MongoDB Query |
+|------|---------|-----------|-------------|---------------|
+| **Text** | `George Orwell` | Fast (<50ms/100-300ms) | Text search with indexes | `{$text:{$search:"term"}}` |
+| **Phrase** | `"Margaret Atwood"` | Fast (<50ms/100-300ms) | Exact phrase matching | `{$text:{$search:"\"phrase\""}}` |
+| **Field** | `Author:Bradbury` | Mod (20-50ms/1-2s) | Field-specific search | `{field:{$regex:"term",$options:"i"}}` |
+| **Comparison** | `Pages:>100` | Fast (<50ms/200-500ms) | Numeric/date compare | `{field:{$gt:value}}` |
+| **Combined** | `Author:"Huxley" Year:>2000` | Mod (50-100ms/0.5-1s) | Multiple search types | Complex multi-condition |
+| **Regex** | `George Orwell` (no index) | Slow (50-100ms/5-10s+) | Fallback search | `{$or:[{field:{$regex:...}}]}` |
+| **Mixed** | `Title:"Ski" Ishiguro` | Mod (50-100ms/300-700ms) | Phrase + text | Complex query |
 
-<p style="font-size: 0.35em;"><i>Performance: S = Small collection (&lt;100K docs), L = Large collection (&gt;2M docs)</i></p>
+*Performance: S = Small collection (<100K docs), L = Large collection (>2M docs)*
 
 ### Performance Optimization
 
