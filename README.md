@@ -57,15 +57,66 @@ mongo-datatables provides powerful search capabilities that adapt based on your 
 
 #### Search Types and Performance
 
-| Search Type | Example | Performance | Description | MongoDB Query Example |
-|-------------|---------|-------------|-------------|----------------------|
-| **Text Index Search** | `George Orwell` | Very Fast<br>Small: <50ms<br>Large: 100-300ms | Uses MongoDB's native text search when indexes exist | `{ "$text": { "$search": "George Orwell" } }` |
-| **Exact Phrase Search** | `"Margaret Atwood"` | Fast<br>Small: <50ms<br>Large: 100-300ms | Uses MongoDB's phrase matching with text indexes | `{ "$text": { "$search": "\"Margaret Atwood\"" } }` |
-| **Field-Specific Search** | `Author:Bradbury` | Moderate<br>Small: 20-50ms<br>Large: 1-2s | Uses field-specific queries with regex or direct comparison | `{ "Author": { "$regex": "Bradbury", "$options": "i" } }` |
-| **Comparison Operators** | `Pages:>100`<br>`Published:<2015-01-01` | Fast<br>Small: <50ms<br>Large: 200-500ms | Uses MongoDB comparison operators for numeric and date fields | `{ "Pages": { "$gt": 100 } }` |
-| **Combined Search** | `Author:"Aldous Huxley" Published:>2000` | Moderate<br>Small: 50-100ms<br>Large: 500ms-1s | Combines multiple search types | Complex query with multiple conditions |
-| **Regex Search** | `George Orwell` (without text index) | Slow<br>Small: 50-100ms<br>Large: 5-10s+ | Falls back to regex when text indexes aren't available | `{ "$or": [{ "field1": { "$regex": "George", "$options": "i" } }, ...] }` |
-| **Mixed Search** | `Title:"How To Ski" Ishiguro` | Moderate<br>Small: 50-100ms<br>Large: 300-700ms | Combines phrase matching with text search | Complex query with phrase and text search |
+<table style="font-size: 0.85em;">
+  <tr>
+    <th>Type</th>
+    <th>Example</th>
+    <th>Performance</th>
+    <th>Description</th>
+    <th>MongoDB Query</th>
+  </tr>
+  <tr>
+    <td><b>Text Index</b></td>
+    <td><code>George Orwell</code></td>
+    <td>Very Fast<br>S: &lt;50ms<br>L: 100-300ms</td>
+    <td>MongoDB text search with indexes</td>
+    <td><code>{$text:{$search:"George Orwell"}}</code></td>
+  </tr>
+  <tr>
+    <td><b>Phrase</b></td>
+    <td><code>"Margaret Atwood"</code></td>
+    <td>Fast<br>S: &lt;50ms<br>L: 100-300ms</td>
+    <td>Exact phrase matching</td>
+    <td><code>{$text:{$search:"\"Margaret Atwood\""}}</code></td>
+  </tr>
+  <tr>
+    <td><b>Field</b></td>
+    <td><code>Author:Bradbury</code></td>
+    <td>Moderate<br>S: 20-50ms<br>L: 1-2s</td>
+    <td>Field-specific queries</td>
+    <td><code>{Author:{$regex:"Bradbury",$options:"i"}}</code></td>
+  </tr>
+  <tr>
+    <td><b>Comparison</b></td>
+    <td><code>Pages:>100</code></td>
+    <td>Fast<br>S: &lt;50ms<br>L: 200-500ms</td>
+    <td>Numeric/date comparisons</td>
+    <td><code>{Pages:{$gt:100}}</code></td>
+  </tr>
+  <tr>
+    <td><b>Combined</b></td>
+    <td><code>Author:"Huxley" Year:>2000</code></td>
+    <td>Moderate<br>S: 50-100ms<br>L: 500ms-1s</td>
+    <td>Multiple search types</td>
+    <td>Complex multi-condition query</td>
+  </tr>
+  <tr>
+    <td><b>Regex</b></td>
+    <td><code>George Orwell</code> (no index)</td>
+    <td>Slow<br>S: 50-100ms<br>L: 5-10s+</td>
+    <td>Fallback when no text index</td>
+    <td><code>{$or:[{field:{$regex:"George"...}}]}</code></td>
+  </tr>
+  <tr>
+    <td><b>Mixed</b></td>
+    <td><code>Title:"Ski" Ishiguro</code></td>
+    <td>Moderate<br>S: 50-100ms<br>L: 300-700ms</td>
+    <td>Phrase + text search</td>
+    <td>Complex phrase + text query</td>
+  </tr>
+</table>
+
+<p style="font-size: 0.85em;"><i>Performance: S = Small collection (&lt;100K docs), L = Large collection (&gt;2M docs)</i></p>
 
 ### Performance Optimization
 
