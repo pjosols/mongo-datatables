@@ -11,8 +11,17 @@ class DataField:
     """Represents a data field with MongoDB and DataTables column mapping.
     
     This class defines a field name in MongoDB with its full path (including parent objects),
-    a column alias mapping for DataTables, and type information for proper data handling
-    and optimized searching.
+    a column alias mapping, and type information for proper data handling and optimized 
+    searching. It servers two purposes:
+    
+    1. Maps an alias name to a fully nested field name in MongoDB. For example for a nested
+    field PublisherInfo.Date, with an alias of 'Published', a search like "Published:2001-12-12"
+    results in query for {"PublisherInfo.Date": ... }
+    
+    2. Specified a field type for optimized searching, enabling comparison operators on 
+    numeric and date fields. All other types are treated as text. For keys where indexes
+    are available, an optimized text search is performed. Without indexes, a case-insensitive
+    regex search is performed.
     
     Data type handling:
         - 'number': Supports exact matching and comparison operators (>, <, >=, <=, =)
