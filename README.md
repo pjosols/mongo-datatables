@@ -57,17 +57,17 @@ mongo-datatables provides powerful search capabilities that adapt based on your 
 
 #### Search Types and Performance
 
-| Type | Example | Perf (S/L) | Description |
+| Type | Example | Large Collection Perf | Description |
 |------|---------|-----------|-------------|
-| **Text** | `George Orwell` | **Fast** *<50ms/100-300ms* | Text search with indexes |
-| **Phrase** | `"Margaret Atwood"` | **Fast** *<50ms/100-300ms* | Exact phrase matching |
-| **Field** | `Author:Bradbury` | **Moderate** *20-50ms/1-2s* | Field-specific search |
-| **Comparison** | `Pages:>100` | **Fast** *<50ms/200-500ms* | Numeric/date compare |
-| **Combined** | `Author:"Huxley" Year:>2000` | **Moderate** *50-100ms/0.5-1s* | Multiple search types |
-| **Regex** | `George Orwell` (no index) | **Slow** *50-100ms/5-10s+* | Fallback search |
-| **Mixed** | `Title:"Ski" Ishiguro` | **Moderate** *50-100ms/300-700ms* | Phrase + text |
+| **Text** | `George Orwell` | **Fast** *100-300ms* | Text search with indexes |
+| **Phrase** | `"Margaret Atwood"` | **Fast** *100-300ms* | Exact phrase matching |
+| **Field** | `Author:Bradbury` | **Moderate** *1-2s* | Field-specific search |
+| **Comparison** | `Pages:>100` | **Fast** *200-500ms* | Numeric/date compare |
+| **Combined** | `Author:"Huxley" Year:>2000` | **Moderate** *0.5-1s* | Multiple search types |
+| **Regex** | `George Orwell` (no index) | **Slow** *5-10s+* | Fallback search |
+| **Mixed** | `Title:"Ski" Ishiguro` | **Moderate** *300-700ms* | Phrase + text |
 
-*Performance: S = Small collection (<100K docs), L = Large collection (>2M docs)*
+*Performance metrics based on large collections (>2M docs)*
 
 ### Performance Optimization
 
