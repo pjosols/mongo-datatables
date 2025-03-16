@@ -59,13 +59,13 @@ mongo-datatables provides powerful search capabilities that adapt based on your 
 
 | Type | Example | Perf (S/L) | Description | MongoDB Query |
 |------|---------|-----------|-------------|---------------|
-| **Text** | `George Orwell` | Fast (<50ms/100-300ms) | Text search with indexes | `{$text:{$search:"term"}}` |
-| **Phrase** | `"Margaret Atwood"` | Fast (<50ms/100-300ms) | Exact phrase matching | `{$text:{$search:"\"phrase\""}}` |
-| **Field** | `Author:Bradbury` | Mod (20-50ms/1-2s) | Field-specific search | `{field:{$regex:"term",$options:"i"}}` |
-| **Comparison** | `Pages:>100` | Fast (<50ms/200-500ms) | Numeric/date compare | `{field:{$gt:value}}` |
-| **Combined** | `Author:"Huxley" Year:>2000` | Mod (50-100ms/0.5-1s) | Multiple search types | Complex multi-condition |
-| **Regex** | `George Orwell` (no index) | Slow (50-100ms/5-10s+) | Fallback search | `{$or:[{field:{$regex:...}}]}` |
-| **Mixed** | `Title:"Ski" Ishiguro` | Mod (50-100ms/300-700ms) | Phrase + text | Complex query |
+| **Text** | `George Orwell` | **Fast** *<50ms/100-300ms* | Text search with indexes | `{$text:{$search:"term"}}` |
+| **Phrase** | `"Margaret Atwood"` | **Fast** *<50ms/100-300ms* | Exact phrase matching | `{$text:{$search:"\"phrase\""}}` |
+| **Field** | `Author:Bradbury` | **Moderate** *20-50ms/1-2s* | Field-specific search | `{field:{$regex:"term",$options:"i"}}` |
+| **Comparison** | `Pages:>100` | **Fast** *<50ms/200-500ms* | Numeric/date compare | `{field:{$gt:value}}` |
+| **Combined** | `Author:"Huxley" Year:>2000` | **Moderate** *50-100ms/0.5-1s* | Multiple search types | Complex multi-condition |
+| **Regex** | `George Orwell` (no index) | **Slow** *50-100ms/5-10s+* | Fallback search | `{$or:[{field:{$regex:...}}]}` |
+| **Mixed** | `Title:"Ski" Ishiguro` | **Moderate** *50-100ms/300-700ms* | Phrase + text | Complex query |
 
 *Performance: S = Small collection (<100K docs), L = Large collection (>2M docs)*
 
