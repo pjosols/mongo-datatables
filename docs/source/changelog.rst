@@ -18,7 +18,6 @@ Changelog
 ------------------
 
 * Fixed path collision error when using dotted notation for nested fields in projection
-* Added recursive processing of nested documents to ensure proper JSON serialization
 
 1.0.0 (2025-03-11) [YANKED]
 ---------------------------
