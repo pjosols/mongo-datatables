@@ -19,14 +19,6 @@ Changelog
 
 * Fixed path collision error when using dotted notation for nested fields in projection
 * Added recursive processing of nested documents to ensure proper JSON serialization
-* Fixed datetime serialization issue to properly handle date objects at any nesting level
-* Improved handling of complex MongoDB document structures
-* Enhanced Editor handling for nested document fields
-* Implemented proper data transformation in Editor for nested fields
-* Resolved field mapping issues between Editor and MongoDB documents
-* Added support for array field editing in Editor component
-* Fixed UI rendering issues with special characters in JavaScript
-* Added bidirectional field mapping for Editor to handle both flat and nested data structures
 
 1.0.0 (2025-03-11) [YANKED]
 ---------------------------
