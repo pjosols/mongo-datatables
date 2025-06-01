@@ -8,12 +8,6 @@
 
 Server-side processing for jQuery DataTables with MongoDB.
 
-## Support
-If you find this project helpful, consider buying me a coffee!
-
-<a href="https://www.buymeacoffee.com/pjosols"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="150" alt="Buy Me A Coffee"></a>
-
-
 ## Overview
 
 This package provides an elegant bridge between jQuery DataTables and MongoDB databases, handling the translation of DataTables server-side requests into optimized MongoDB queries. It supports both read operations and full CRUD functionality when paired with DataTables Editor.

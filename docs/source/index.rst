@@ -5,16 +5,6 @@ mongo-datatables
 A Python package that seamlessly connects jQuery DataTables to MongoDB collections, providing
 efficient server-side processing for large datasets with minimal configuration.
 
-Support
-=======
-
-If you find this project helpful, consider buying me a coffee!
-
-.. image:: https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png
-   :target: https://www.buymeacoffee.com/pjosols
-   :alt: Buy Me A Coffee
-   :width: 160px
-
 |
 
 .. raw:: html
