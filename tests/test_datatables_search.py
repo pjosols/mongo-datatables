@@ -121,6 +121,7 @@ class TestSearch(BaseDataTablesTest):
         """Test numeric field with different operators in column_specific_search_condition"""
         # For the DataTables implementation with text search, we need to disable text index
         # to test the regex-based search conditions
+        from mongo_datatables.datatables import DataField
         with patch.object(DataTables, 'has_text_index', return_value=False):
             # Set up the request args with a column-specific search term
             request_args = {
@@ -132,14 +133,15 @@ class TestSearch(BaseDataTablesTest):
                     {"data": "number_field", "name": "number_field", "searchable": True}
                 ]
             }
-            
-            datatables = DataTables(self.mongo, "test_collection", request_args, use_text_index=False)
-            datatables.field_types = {"number_field": "number"}
+
+            # Create data_fields with number type
+            data_fields = [DataField("number_field", "number")]
+            datatables = DataTables(self.mongo, "test_collection", request_args, data_fields=data_fields, use_text_index=False)
 
             # Get the column-specific search condition
             result = datatables.column_specific_search_condition
             self.assertIn("$and", result)
-            
+
             # Verify that the condition contains a greater than operator
             number_field_condition = next((cond.get("number_field") for cond in result["$and"] if "number_field" in cond), None)
             self.assertIsNotNone(number_field_condition)
@@ -161,6 +163,7 @@ class TestSearch(BaseDataTablesTest):
         """Test all numeric comparison operators work correctly in column_specific_search_condition"""
         # For the DataTables implementation with text search, we need to disable text index
         # to test the regex-based search conditions
+        from mongo_datatables.datatables import DataField
         with patch.object(DataTables, 'has_text_index', return_value=False):
             # Set up the request args with a column-specific search term
             request_args = {
@@ -172,14 +175,15 @@ class TestSearch(BaseDataTablesTest):
                     {"data": "number_field", "name": "number_field", "searchable": True}
                 ]
             }
-            
-            datatables = DataTables(self.mongo, "test_collection", request_args, use_text_index=False)
-            datatables.field_types = {"number_field": "number"}
+
+            # Create data_fields with number type
+            data_fields = [DataField("number_field", "number")]
+            datatables = DataTables(self.mongo, "test_collection", request_args, data_fields=data_fields, use_text_index=False)
 
             # Get the column-specific search condition
             result = datatables.column_specific_search_condition
             self.assertIn("$and", result)
-            
+
             # Verify that the condition contains a greater than or equal operator
             number_field_condition = next((cond.get("number_field") for cond in result["$and"] if "number_field" in cond), None)
             self.assertIsNotNone(number_field_condition)

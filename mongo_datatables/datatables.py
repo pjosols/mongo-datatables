@@ -1,10 +1,20 @@
 """Server-side processing for jQuery DataTables with MongoDB."""
 
 import json
+import logging
+import re
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple, Set
 from bson.objectid import ObjectId
 from pymongo.database import Database
 from pymongo.collection import Collection
+from pymongo.errors import PyMongoError
+
+from mongo_datatables.exceptions import DatabaseOperationError, QueryBuildError
+from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler
+from mongo_datatables.query_builder import MongoQueryBuilder
+
+logger = logging.getLogger(__name__)
 
 
 class DataField:
@@ -109,20 +119,19 @@ class DataTables:
         self.collection = self._get_collection(pymongo_object, collection_name)
         self.request_args = request_args
         self.debug_mode = debug_mode
-        
+
         # Store data fields
         self.data_fields = data_fields or []
-        
-        # Create internal mappings from data_fields
-        self.field_types = {field.name: field.data_type for field in self.data_fields} if self.data_fields else {}
-        self.ui_to_db_field_map = {field.alias: field.name for field in self.data_fields} if self.data_fields else {}
-            
+
+        # Create field mapper for UI <-> DB field mapping
+        self.field_mapper = FieldMapper(self.data_fields)
+
         self.use_text_index = use_text_index
 
         # Remove data_fields from custom filter if it was passed as a keyword argument
         if 'data_fields' in custom_filter:
             del custom_filter['data_fields']
-            
+
         # Custom filter for additional query criteria
         self.custom_filter = custom_filter
 
@@ -140,9 +149,17 @@ class DataTables:
                 "used_standard_index": False,
                 "search_type": "none",
             }
-        
+
         # Check for text indexes
         self._check_text_index()
+
+        # Initialize query builder
+        self.query_builder = MongoQueryBuilder(
+            field_mapper=self.field_mapper,
+            use_text_index=self.use_text_index,
+            has_text_index=self.has_text_index,
+            debug_mode=self.debug_mode
+        )
 
     def _get_collection(self, pymongo_object: Any, collection_name: str) -> Collection:
         """Get a MongoDB collection from a PyMongo object.
@@ -221,56 +238,15 @@ class DataTables:
     @property
     def search_terms(self) -> List[str]:
         """Extract search terms from the DataTables request.
-        
+
         Handles quoted terms as single search strings. For example,
         a search for 'Author:Robert "Jonathan Kennedy"' would be parsed as
         two terms: 'Author:Robert' and 'Jonathan Kennedy'.
-        
+
         Returns:
             List of search terms with quoted phrases preserved as single terms
         """
-        search_value = self.search_value
-        if not search_value:
-            return []
-        
-        # Use regular expression to handle quoted terms
-        import re
-        
-        # Process the search value to handle quoted terms
-        processed_terms = []
-        
-        # First, find all quoted phrases (both double and single quotes)
-        # and replace them with placeholders
-        quote_patterns = [(r'"([^"]*)"', '"{}"'), (r"'([^']*)'",'"{}"')]
-        placeholders = {}
-        placeholder_count = 0
-        
-        modified_search = search_value
-        for pattern, format_str in quote_patterns:
-            matches = re.findall(pattern, modified_search)
-            for match in matches:
-                # Create a unique placeholder
-                placeholder = f"__QUOTED_TERM_{placeholder_count}__"
-                placeholder_count += 1
-                
-                # Store the original quoted term
-                placeholders[placeholder] = match
-                
-                # Replace the quoted term with the placeholder in the search string
-                quoted_term = format_str.format(match)
-                modified_search = modified_search.replace(quoted_term, placeholder)
-        
-        # Split the modified search string by whitespace
-        split_terms = modified_search.split()
-        
-        # Replace placeholders with their original terms
-        for term in split_terms:
-            if term in placeholders:
-                processed_terms.append(placeholders[term])
-            else:
-                processed_terms.append(term)
-                
-        return processed_terms
+        return SearchTermParser.parse(self.search_value)
 
     @property
     def search_terms_without_a_colon(self) -> List[str]:
@@ -299,37 +275,7 @@ class DataTables:
         Returns:
             MongoDB query condition for column-specific searches
         """
-        conditions = []
-
-        for column in self.columns:
-            column_search = column.get("search", {})
-            search_value = column_search.get("value", "")
-
-            if search_value and column.get("searchable", False):
-                column_name = column["data"]
-                field_type = self.field_types.get(column_name)
-
-                # Handle different field types
-                if field_type == "number":
-                    try:
-                        numeric_value = float(search_value)
-                        conditions.append({column_name: numeric_value})
-                    except (ValueError, TypeError):
-                        pass
-                elif field_type == "date":
-                    # Date search could be implemented here
-                    conditions.append(
-                        {column_name: {"$regex": search_value, "$options": "i"}}
-                    )
-                else:
-                    # Default to case-insensitive regex for text
-                    conditions.append(
-                        {column_name: {"$regex": search_value, "$options": "i"}}
-                    )
-
-        if conditions:
-            return {"$and": conditions}
-        return {}
+        return self.query_builder.build_column_search(self.columns)
 
     @property
     def global_search_condition(self) -> Dict[str, Any]:
@@ -343,108 +289,17 @@ class DataTables:
             MongoDB query condition for global search
         """
         search_terms = self.search_terms_without_a_colon
-        if not search_terms:
-            return {}
+        result = self.query_builder.build_global_search(
+            search_terms,
+            self.searchable_columns,
+            self.search_value
+        )
 
-        # Get searchable columns
-        searchable_columns = self.searchable_columns
-        if not searchable_columns:
-            return {}
-            
-        # Get the original search value to check if it was quoted
-        original_search = self.search_value
-        was_quoted = False
-        if original_search:
-            # Check if the original search was surrounded by quotes
-            import re
-            if re.match(r'^".*"$', original_search) or re.match(r"^'.*'$", original_search):
-                was_quoted = True
-
-        # If the search was originally quoted, we want exact phrase matching
-        if was_quoted and len(search_terms) == 1:
-            if self.debug_mode:
-                self._query_stats["search_type"] = "exact_phrase"
-                self._query_stats["search_terms"] = search_terms
-            
-            # For a quoted search, try to use text search if available
-            if self.use_text_index and self.has_text_index:
-                # MongoDB text search handles quoted phrases natively
-                # The original quotes will be preserved in the search value
-                self._query_stats["used_text_index"] = True
-                self._query_stats["search_type"] = "text_exact_phrase"
-                
-                # Use the original quoted search value for text search
-                # This preserves the quotes which MongoDB uses for exact phrase matching
-                return {"$text": {"$search": original_search}}
-            
-            # Fall back to regex if text search is not available
-            if self.debug_mode:
-                self._query_stats["used_text_index"] = False
-                self._query_stats["search_type"] = "regex_exact_phrase"
-            
-            # For a quoted search, create conditions for exact phrase matching
-            or_conditions = []
-            for column in searchable_columns:
-                field_type = self.field_types.get(column)
-                
-                # Skip date and number fields for exact phrase matching
-                if field_type in ("date", "number"):
-                    continue
-                    
-                # Use word boundaries for exact phrase matching
-                import re
-                # Remove the quotes from the search term
-                clean_term = search_terms[0]
-                regex_term = re.escape(clean_term)  # Escape special regex characters
-                or_conditions.append({column: {"$regex": f"\\b{regex_term}\\b", "$options": "i"}})
-                
-            if or_conditions:
-                return {"$or": or_conditions}
-            return {}
-            
-        # For non-quoted searches with text index available, use text search with OR semantics
-        if self.use_text_index and self.has_text_index:
-            # Combine all terms with spaces for OR semantics in text search
-            text_search_query = " ".join(search_terms)
-            if self.debug_mode:
-                self._query_stats["used_text_index"] = True
-                self._query_stats["search_type"] = "text_or"
-                self._query_stats["search_terms"] = search_terms
-
-            # Return a text search query that will use the index with OR semantics
-            return {"$text": {"$search": text_search_query}}
-
-        # For cases when text index is not available, use regex search with OR semantics
+        # Update debug stats if in debug mode
         if self.debug_mode:
-            self._query_stats["used_text_index"] = False
-            self._query_stats["search_type"] = "regex_or"
-            self._query_stats["search_terms"] = search_terms
+            self._query_stats.update(self.query_builder.get_query_stats())
 
-        # Create a single $or condition for all terms
-        or_conditions = []
-        for term in search_terms:
-            for column in searchable_columns:
-                field_type = self.field_types.get(column)
-
-                # Skip date fields for text search
-                if field_type == "date":
-                    continue
-
-                # For number fields, try to convert the term to a number
-                if field_type == "number":
-                    try:
-                        numeric_value = float(term)
-                        or_conditions.append({column: numeric_value})
-                    except (ValueError, TypeError):
-                        # Not a valid number, skip this field entirely
-                        pass
-                else:
-                    # For text fields, use case-insensitive regex
-                    or_conditions.append({column: {"$regex": term, "$options": "i"}})
-
-        if or_conditions:
-            return {"$or": or_conditions}
-        return {}
+        return result
 
     @property
     def column_specific_search_condition(self) -> Dict[str, Any]:
@@ -457,127 +312,10 @@ class DataTables:
             MongoDB query condition for column-specific searches
         """
         colon_terms = self.search_terms_with_a_colon
-        if not colon_terms:
-            return {}
-
-        and_conditions = []
-        for term in colon_terms:
-            field, value = term.split(":", 1)
-            field = field.strip()
-            value = value.strip()
-
-            if not field or not value:
-                continue
-                
-            # Map UI field name to database field name if it exists in the mapping
-            db_field = self.ui_to_db_field_map.get(field, field)
-
-            # Check if the field is searchable - either the UI field name or DB field name should be searchable
-            # This handles cases where the search term uses the UI field name (like 'Published')
-            # but the actual searchable column might be using the DB field name (like 'PublisherInfo.Date')
-            if field not in self.searchable_columns and db_field not in self.searchable_columns:
-                continue
-
-            # Handle different field types - use the database field name for lookup
-            field_type = self.field_types.get(db_field)
-
-            # Check for comparison operators
-            operator = None
-            if value.startswith(">") and not value.startswith(">="):
-                operator = ">"
-                value = value[1:].strip()
-            elif value.startswith("<") and not value.startswith("<="):
-                operator = "<"
-                value = value[1:].strip()
-            elif value.startswith(">="):
-                operator = ">="
-                value = value[2:].strip()
-            elif value.startswith("<="):
-                operator = "<="
-                value = value[2:].strip()
-            elif value.startswith("="):
-                operator = "="
-                value = value[1:].strip()
-
-            if field_type == "number":
-                # For numeric fields, try to apply comparison operators
-                try:
-                    numeric_value = float(value)
-
-                    if operator == ">":
-                        and_conditions.append({db_field: {"$gt": numeric_value}})
-                    elif operator == "<":
-                        and_conditions.append({db_field: {"$lt": numeric_value}})
-                    elif operator == ">=":
-                        and_conditions.append({db_field: {"$gte": numeric_value}})
-                    elif operator == "<=":
-                        and_conditions.append({db_field: {"$lte": numeric_value}})
-                    elif operator == "=":
-                        and_conditions.append({db_field: numeric_value})
-                    else:
-                        # No operator, exact match
-                        and_conditions.append({db_field: numeric_value})
-                except (ValueError, TypeError):
-                    # Not a valid number, use regex search
-                    and_conditions.append({db_field: {"$regex": value, "$options": "i"}})
-            elif field_type == "date":
-                # Handle date comparisons for MongoDB ISODate objects
-                from datetime import datetime
-                
-                # Use the operator already detected above
-                date_value = value
-                
-                # Try to parse the date value
-                try:
-                    # Handle ISO format dates (YYYY-MM-DD)
-                    if '-' in date_value and len(date_value.split('-')) == 3:
-                        # Parse the date and create an ISODate-compatible format
-                        # MongoDB ISODate objects are stored with time component
-                        year, month, day = date_value.split('-')
-                        
-                        # For exact date matches, we need to match the entire day
-                        start_date = datetime(int(year), int(month), int(day))
-                        
-                        # Apply the appropriate comparison operator
-                        if operator == '>':
-                            # For greater than, we want dates strictly after the specified date
-                            next_day = datetime(int(year), int(month), int(day) + 1)
-                            condition = {db_field: {"$gte": next_day}}
-                        elif operator == '<':
-                            # For less than, we want dates strictly before the specified date
-                            condition = {db_field: {"$lt": start_date}}
-                        elif operator == '>=':
-                            # For greater than or equal, we want dates on or after the specified date
-                            condition = {db_field: {"$gte": start_date}}
-                        elif operator == '<=':
-                            # For less than or equal, we want dates on or before the end of the specified date
-                            next_day = datetime(int(year), int(month), int(day) + 1)
-                            condition = {db_field: {"$lt": next_day}}
-                        elif operator == '=':
-                            # For exact date match, match the whole day
-                            next_day = datetime(int(year), int(month), int(day) + 1)
-                            condition = {db_field: {"$gte": start_date, "$lt": next_day}}
-                        else:
-                            # For no operator, also match the whole day
-                            next_day = datetime(int(year), int(month), int(day) + 1)
-                            condition = {db_field: {"$gte": start_date, "$lt": next_day}}
-                        
-                        and_conditions.append(condition)
-                    else:
-                        # Not in ISO format, fall back to regex search
-                        condition = {db_field: {"$regex": value, "$options": "i"}}
-                        and_conditions.append(condition)
-                except Exception as e:
-                    # If date parsing fails, fall back to regex search
-                    condition = {db_field: {"$regex": value, "$options": "i"}}
-                    and_conditions.append(condition)
-            else:
-                # Default to case-insensitive regex for text
-                and_conditions.append({db_field: {"$regex": value, "$options": "i"}})
-
-        if and_conditions:
-            return {"$and": and_conditions}
-        return {}
+        return self.query_builder.build_column_specific_search(
+            colon_terms,
+            self.searchable_columns
+        )
 
     @property
     def filter(self) -> Dict[str, Any]:
@@ -652,7 +390,7 @@ class DataTables:
                 # If the field name is valid, use it; otherwise fall back to default
                 if ui_field_name:
                     # Map UI field name to DB field name
-                    db_field_name = self.ui_to_db_field_map.get(ui_field_name, ui_field_name)
+                    db_field_name = self.field_mapper.get_db_field(ui_field_name)
                     sort_spec[db_field_name] = dir_value
                     
                     # Add debug information if enabled
@@ -814,11 +552,13 @@ class DataTables:
             self._results = processed_results
             return processed_results
 
-        except Exception as e:
+        except PyMongoError as e:
             # Log the error and return empty results
-            # Use proper logging instead of print
-            import logging
-            logging.error(f"Error executing MongoDB query: {str(e)}")
+            logger.error(f"Error executing MongoDB query: {str(e)}", exc_info=True)
+            return []
+        except Exception as e:
+            # Catch any other unexpected errors
+            logger.error(f"Unexpected error in results(): {str(e)}", exc_info=True)
             return []
 
     def count_total(self) -> int:
@@ -830,9 +570,8 @@ class DataTables:
         if self._recordsTotal is None:
             try:
                 self._recordsTotal = self.collection.count_documents({})
-            except Exception as e:
-                import logging
-                logging.error(f"Error counting total records: {str(e)}")
+            except PyMongoError as e:
+                logger.error(f"Error counting total records: {str(e)}", exc_info=True)
                 self._recordsTotal = 0
         return self._recordsTotal
 
@@ -848,9 +587,8 @@ class DataTables:
                     self._recordsFiltered = self.collection.count_documents(self.filter)
                 else:
                     self._recordsFiltered = self.count_total()
-            except Exception as e:
-                import logging
-                logging.error(f"Error counting filtered records: {str(e)}")
+            except PyMongoError as e:
+                logger.error(f"Error counting filtered records: {str(e)}", exc_info=True)
                 self._recordsFiltered = 0
         return self._recordsFiltered
 

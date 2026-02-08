@@ -6,8 +6,9 @@ from bson.objectid import ObjectId
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.results import InsertOneResult, UpdateResult, DeleteResult
+from pymongo.errors import PyMongoError
 
-from mongo_datatables import Editor
+from mongo_datatables import Editor, InvalidDataError, DatabaseOperationError
 
 
 class TestEditor(unittest.TestCase):
@@ -192,7 +193,7 @@ class TestEditor(unittest.TestCase):
         """Test remove method with no ID"""
         editor = Editor(self.mongo, 'users', self.remove_args)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidDataError):
             editor.remove()
 
     def test_remove_method_with_id(self):
@@ -238,20 +239,20 @@ class TestEditor(unittest.TestCase):
         """Test remove method handling exceptions"""
         editor = Editor(self.mongo, 'users', self.remove_args, self.sample_id)
 
-        # Make delete_one raise an exception
-        self.collection.delete_one.side_effect = Exception("Database error")
+        # Make delete_one raise a PyMongoError
+        self.collection.delete_one.side_effect = PyMongoError("Database error")
 
-        result = editor.remove()
+        # Check DatabaseOperationError is raised
+        with self.assertRaises(DatabaseOperationError) as context:
+            editor.remove()
 
-        # Check error is returned
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], "Database error")
+        self.assertIn("Failed to delete documents", str(context.exception))
 
     def test_create_method_no_data(self):
         """Test create method with no data"""
         editor = Editor(self.mongo, 'users', {"action": "create", "data": {}})
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidDataError):
             editor.create()
 
     def test_create_method_with_data(self):
@@ -283,20 +284,20 @@ class TestEditor(unittest.TestCase):
         """Test create method handling exceptions"""
         editor = Editor(self.mongo, 'users', self.create_args)
 
-        # Make insert_one raise an exception
-        self.collection.insert_one.side_effect = Exception("Database error")
+        # Make insert_one raise a PyMongoError
+        self.collection.insert_one.side_effect = PyMongoError("Database error")
 
-        result = editor.create()
+        # Check DatabaseOperationError is raised
+        with self.assertRaises(DatabaseOperationError) as context:
+            editor.create()
 
-        # Check error is returned
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], "Database error")
+        self.assertIn("Failed to create document", str(context.exception))
 
     def test_edit_method_no_id(self):
         """Test edit method with no ID"""
         editor = Editor(self.mongo, 'users', self.edit_args)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidDataError):
             editor.edit()
 
     def test_edit_method_with_id(self):
@@ -355,14 +356,14 @@ class TestEditor(unittest.TestCase):
         """Test edit method handling exceptions"""
         editor = Editor(self.mongo, 'users', self.edit_args, self.sample_id)
 
-        # Make update_one raise an exception
-        self.collection.update_one.side_effect = Exception("Database error")
+        # Make update_one raise a PyMongoError
+        self.collection.update_one.side_effect = PyMongoError("Database error")
 
-        result = editor.edit()
+        # Check DatabaseOperationError is raised
+        with self.assertRaises(DatabaseOperationError) as context:
+            editor.edit()
 
-        # Check error is returned
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], "Database error")
+        self.assertIn("Failed to update documents", str(context.exception))
 
     def test_process_method_create(self):
         """Test process method for create action"""

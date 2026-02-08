@@ -32,3 +32,10 @@ htmlcov/
 
 # Local configuration
 .python-version
+
+# AI Assistant directories
+.claude/
+.kiro/
+.cursor/
+.windsurf/
+.aider/
