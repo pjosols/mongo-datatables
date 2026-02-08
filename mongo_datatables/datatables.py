@@ -100,7 +100,6 @@ class DataTables:
         request_args: Dict[str, Any],
         data_fields: Optional[List['DataField']] = None,
         use_text_index: bool = True,
-        preserve_id: bool = False,
         **custom_filter: Any,
     ) -> None:
         """Initialize the DataTables processor.
@@ -319,30 +318,20 @@ class DataTables:
         Returns:
             MongoDB sort specification
         """
-        default_sort_field = "Title"
-        default_sort_dir = 1
         sort_spec = {}
 
-        if not self.request_args.get("order"):
-            sort_spec[default_sort_field] = default_sort_dir
-        else:
+        if self.request_args.get("order"):
             order_info = self.request_args.get("order")[0]
             col_idx = int(order_info["column"])
-            direction = order_info["dir"]
-            dir_value = 1 if direction == "asc" else -1
 
-            columns = self.columns
-            if 0 <= col_idx < len(columns):
-                column = columns[col_idx]
-                ui_field_name = column["data"]
+            if 0 <= col_idx < len(self.columns):
+                column = self.columns[col_idx]
+                ui_field_name = column.get("data")
 
                 if ui_field_name:
                     db_field_name = self.field_mapper.get_db_field(ui_field_name)
-                    sort_spec[db_field_name] = dir_value
-                else:
-                    sort_spec[default_sort_field] = default_sort_dir
-            else:
-                sort_spec[default_sort_field] = default_sort_dir
+                    direction = order_info["dir"]
+                    sort_spec[db_field_name] = 1 if direction == "asc" else -1
 
         if "_id" not in sort_spec:
             sort_spec["_id"] = 1
