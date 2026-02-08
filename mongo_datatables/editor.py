@@ -26,15 +26,22 @@ Example usage with Flask:
         return jsonify(result)
     ```
 """
-from typing import Dict, List, Any, Optional
-from bson.objectid import ObjectId
 import json
+import logging
+from typing import Dict, List, Any, Optional, Tuple
+from bson.objectid import ObjectId
+from bson.errors import InvalidId as ObjectIdError
 from pymongo.database import Database
 from pymongo.collection import Collection
+from pymongo.errors import PyMongoError
 from datetime import datetime
 
 # Import DataField from datatables module
 from mongo_datatables.datatables import DataField
+from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
+from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
+
+logger = logging.getLogger(__name__)
 
 
 class Editor:
@@ -65,13 +72,12 @@ class Editor:
         self.collection_name = collection_name
         self.request_args = request_args or {}
         self.doc_id = doc_id or ""
-        
+
         # Store data fields
         self.data_fields = data_fields or []
-        
-        # Create internal mappings from data_fields
-        self.field_types = {field.name: field.data_type for field in self.data_fields} if self.data_fields else {}
-        self.ui_to_db_field_map = {field.alias: field.name for field in self.data_fields} if self.data_fields else {}
+
+        # Create field mapper for UI <-> DB field mapping
+        self.field_mapper = FieldMapper(self.data_fields)
 
     @property
     def db(self) -> Database:
@@ -93,14 +99,14 @@ class Editor:
         
     def map_ui_field_to_db_field(self, field_name: str) -> str:
         """Map a UI field name to its corresponding database field name.
-        
+
         Args:
             field_name: The UI field name to map
-            
+
         Returns:
             The corresponding database field name, or the original field name if no mapping exists
         """
-        return self.ui_to_db_field_map.get(field_name, field_name)
+        return self.field_mapper.get_db_field(field_name)
 
     @property
     def action(self) -> str:
@@ -165,22 +171,37 @@ class Editor:
             Empty dict on success
 
         Raises:
-            ValueError: If no document IDs are provided
+            InvalidDataError: If no document IDs are provided or ID format is invalid
+            DatabaseOperationError: If database operation fails
         """
         if not self.list_of_ids:
-            raise ValueError("Document ID is required for remove operation")
+            raise InvalidDataError("Document ID is required for remove operation")
 
         try:
             for doc_id in self.list_of_ids:
-                self.collection.delete_one({"_id": ObjectId(doc_id)})
+                try:
+                    self.collection.delete_one({"_id": ObjectId(doc_id)})
+                except (ObjectIdError, ValueError) as e:
+                    raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
             return {}
-        except Exception as e:
-            return {"error": str(e)}
+        except InvalidDataError:
+            # Re-raise InvalidDataError as-is
+            raise
+        except PyMongoError as e:
+            raise DatabaseOperationError(f"Failed to delete documents: {str(e)}") from e
 
     def create(self) -> Dict[str, Any]:
-        """Create a new document in the collection."""
+        """Create a new document in the collection.
+
+        Returns:
+            Dictionary with created document data
+
+        Raises:
+            InvalidDataError: If data is missing or malformed
+            DatabaseOperationError: If database operation fails
+        """
         if not self.data or '0' not in self.data:
-            raise ValueError("Data is required for create operation")
+            raise InvalidDataError("Data is required for create operation")
 
         try:
             # Process the document using our updated method
@@ -195,7 +216,7 @@ class Editor:
                 current = data_obj
 
                 # Build nested structure
-                for i, part in enumerate(parts[:-1]):
+                for part in parts[:-1]:
                     if part not in current:
                         current[part] = {}
                     current = current[part]
@@ -213,11 +234,17 @@ class Editor:
             response_data = self._format_response_document(created_doc)
 
             return {"data": [response_data]}
+        except (InvalidDataError, FieldMappingError):
+            # Re-raise data/mapping errors as-is
+            raise
+        except PyMongoError as e:
+            logger.error(f"Error in create operation: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to create document: {str(e)}") from e
         except Exception as e:
-            print(f"Error in create operation: {e}")
-            return {"error": str(e)}
+            logger.error(f"Unexpected error in create operation: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Unexpected error creating document: {str(e)}") from e
 
-    def _preprocess_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+    def _preprocess_document(self, doc: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Process document data before database operations.
 
         - Converts string JSON to Python objects
@@ -229,7 +256,7 @@ class Editor:
             doc: Document data from Editor
 
         Returns:
-            Processed document ready for database operation
+            Tuple of (processed_document, dot_notation_updates)
         """
         # Remove empty values to avoid overwriting with nulls
         processed_doc = {k: v for k, v in doc.items() if v is not None}
@@ -261,15 +288,15 @@ class Editor:
 
             if isinstance(val, str) and is_date_field and val.strip():
                 try:
-                    # Convert to datetime object for MongoDB
-                    date_obj = datetime.fromisoformat(val.replace('Z', '+00:00'))
+                    # Convert to datetime object for MongoDB using DateHandler
+                    date_obj = DateHandler.parse_iso_datetime(val)
 
                     if '.' in key:
                         # Store with dot notation for MongoDB update
                         dot_notation_updates[key] = date_obj
                     else:
                         processed_doc[key] = date_obj
-                except (ValueError, TypeError):
+                except FieldMappingError:
                     # If date parsing fails, keep as string but still handle dot notation
                     if '.' in key:
                         dot_notation_updates[key] = val
@@ -286,9 +313,17 @@ class Editor:
         return processed_doc, dot_notation_updates
 
     def edit(self) -> Dict[str, Any]:
-        """Edit one or more documents in the collection."""
+        """Edit one or more documents in the collection.
+
+        Returns:
+            Dictionary with updated document data
+
+        Raises:
+            InvalidDataError: If document IDs are missing or invalid
+            DatabaseOperationError: If database operation fails
+        """
         if not self.list_of_ids:
-            raise ValueError("Document ID is required for edit operation")
+            raise InvalidDataError("Document ID is required for edit operation")
 
         try:
             data = []
@@ -306,10 +341,13 @@ class Editor:
 
                 # If we have updates, apply them all at once
                 if updates:
-                    self.collection.update_one(
-                        {"_id": ObjectId(doc_id)},
-                        {"$set": updates}
-                    )
+                    try:
+                        self.collection.update_one(
+                            {"_id": ObjectId(doc_id)},
+                            {"$set": updates}
+                        )
+                    except (ObjectIdError, ValueError) as e:
+                        raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
 
                 # Get the updated document
                 updated_doc = self.collection.find_one({"_id": ObjectId(doc_id)})
@@ -319,9 +357,15 @@ class Editor:
                 data.append(response_data)
 
             return {"data": data}
+        except (InvalidDataError, FieldMappingError):
+            # Re-raise data/mapping errors as-is
+            raise
+        except PyMongoError as e:
+            logger.error(f"Edit error: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to update documents: {str(e)}") from e
         except Exception as e:
-            print(f"Edit error: {e}")
-            return {"error": str(e)}
+            logger.error(f"Unexpected error in edit operation: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Unexpected error updating documents: {str(e)}") from e
 
     def _process_updates(self, data, updates, prefix=""):
         """Recursively process updates at any nesting level.
@@ -346,39 +390,35 @@ class Editor:
                 self._process_updates(value, updates, full_key)
             else:
                 # Process leaf value
-                field_type = self.field_types.get(full_key, 'string')
+                field_type = self.field_mapper.get_field_type(full_key)
+                if not field_type:
+                    field_type = 'string'  # Default to string if type not found
 
                 if field_type == 'date' and isinstance(value, str):
                     try:
-                        # Convert to datetime
+                        # Convert to datetime using DateHandler
                         if 'T' in value:
-                            date_obj = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                            date_obj = DateHandler.parse_iso_datetime(value)
                         else:
-                            date_obj = datetime.fromisoformat(f"{value}T00:00:00")
+                            # Add time component if not present
+                            date_obj = DateHandler.parse_iso_datetime(f"{value}T00:00:00")
 
                         updates[full_key] = date_obj
-                    except Exception as e:
-                        print(f"Date conversion error for {full_key}: {e}")
+                    except FieldMappingError as e:
+                        logger.warning(f"Date conversion error for {full_key}: {e}")
                         updates[full_key] = value
                 elif field_type == 'number' and isinstance(value, str):
                     try:
-                        # Convert string to number
-                        if '.' in value:
-                            updates[full_key] = float(value)
-                        else:
-                            updates[full_key] = int(value)
-                    except ValueError:
+                        # Convert string to number using TypeConverter
+                        updates[full_key] = TypeConverter.to_number(value)
+                    except FieldMappingError:
                         updates[full_key] = value
                 elif field_type == 'boolean' and isinstance(value, str):
-                    # Convert string to boolean
-                    updates[full_key] = value.lower() in ('true', 'yes', '1', 't', 'y')
+                    # Convert string to boolean using TypeConverter
+                    updates[full_key] = TypeConverter.to_boolean(value)
                 elif field_type == 'array' and isinstance(value, str):
-                    try:
-                        # Try to parse JSON array
-                        updates[full_key] = json.loads(value)
-                    except json.JSONDecodeError:
-                        # If not valid JSON, use as single value
-                        updates[full_key] = [value]
+                    # Convert string to array using TypeConverter
+                    updates[full_key] = TypeConverter.to_array(value)
                 else:
                     # Standard field
                     updates[full_key] = value

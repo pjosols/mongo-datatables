@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from tests.base_test import BaseDataTablesTest
 from mongo_datatables.datatables import DataTables, DataField
 import pymongo
+from pymongo.errors import PyMongoError
 
 
 class TestDataTablesErrorHandling(BaseDataTablesTest):
@@ -46,14 +47,14 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         """Test error handling in the count_total method"""
         # Create DataTables instance
         datatables = DataTables(
-            self.mongo, 
-            'test_collection', 
-            self.request_args, 
+            self.mongo,
+            'test_collection',
+            self.request_args,
             data_fields=self.data_fields
         )
-        
-        # Mock the collection.count_documents method to raise an exception
-        with patch.object(datatables.collection, 'count_documents', side_effect=Exception('Test error')):
+
+        # Mock the collection.count_documents method to raise a PyMongoError
+        with patch.object(datatables.collection, 'count_documents', side_effect=PyMongoError('Test error')):
             # Force cache to be cleared
             datatables._recordsTotal = None
             # Call count_total method and verify it handles the exception
@@ -66,14 +67,14 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         """Test error handling in the count_filtered method"""
         # Create DataTables instance
         datatables = DataTables(
-            self.mongo, 
-            'test_collection', 
-            self.request_args, 
+            self.mongo,
+            'test_collection',
+            self.request_args,
             data_fields=self.data_fields
         )
-        
-        # Mock the collection.count_documents method to raise an exception
-        with patch.object(datatables.collection, 'count_documents', side_effect=Exception('Test error')):
+
+        # Mock the collection.count_documents method to raise a PyMongoError
+        with patch.object(datatables.collection, 'count_documents', side_effect=PyMongoError('Test error')):
             # Force cache to be cleared
             datatables._recordsFiltered = None
             # Call count_filtered method and verify it handles the exception
