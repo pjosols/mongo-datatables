@@ -72,11 +72,7 @@ class Editor:
         self.collection_name = collection_name
         self.request_args = request_args or {}
         self.doc_id = doc_id or ""
-
-        # Store data fields
         self.data_fields = data_fields or []
-
-        # Create field mapper for UI <-> DB field mapping
         self.field_mapper = FieldMapper(self.data_fields)
 
     @property
@@ -149,13 +145,11 @@ class Editor:
         Returns:
             Formatted document for Editor response
         """
-        response_doc = dict(doc)  # Create a copy to avoid modifying the original
+        response_doc = dict(doc)
 
-        # Handle ObjectId
         if '_id' in response_doc:
             response_doc['DT_RowId'] = str(response_doc.pop('_id'))
 
-        # Format complex types for JSON response
         for key, val in response_doc.items():
             if isinstance(val, ObjectId):
                 response_doc[key] = str(val)
@@ -185,7 +179,6 @@ class Editor:
                     raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
             return {}
         except InvalidDataError:
-            # Re-raise InvalidDataError as-is
             raise
         except PyMongoError as e:
             raise DatabaseOperationError(f"Failed to delete documents: {str(e)}") from e
@@ -204,38 +197,26 @@ class Editor:
             raise InvalidDataError("Data is required for create operation")
 
         try:
-            # Process the document using our updated method
             main_data, dot_notation_data = self._preprocess_document(self.data['0'])
-
-            # Build the combined document for creation
             data_obj = main_data.copy()
 
-            # Handle nested fields by parsing dot notation
             for dot_key, value in dot_notation_data.items():
                 parts = dot_key.split('.')
                 current = data_obj
 
-                # Build nested structure
                 for part in parts[:-1]:
                     if part not in current:
                         current[part] = {}
                     current = current[part]
 
-                # Set the final value
                 current[parts[-1]] = value
 
-            # Insert the document
             result = self.collection.insert_one(data_obj)
-
-            # Get the inserted document for the response
             created_doc = self.collection.find_one({"_id": result.inserted_id})
-
-            # Format the response
             response_data = self._format_response_document(created_doc)
 
             return {"data": [response_data]}
         except (InvalidDataError, FieldMappingError):
-            # Re-raise data/mapping errors as-is
             raise
         except PyMongoError as e:
             logger.error(f"Error in create operation: {e}", exc_info=True)
@@ -258,29 +239,21 @@ class Editor:
         Returns:
             Tuple of (processed_document, dot_notation_updates)
         """
-        # Remove empty values to avoid overwriting with nulls
         processed_doc = {k: v for k, v in doc.items() if v is not None}
-
-        # Store dot notation fields for MongoDB update operations
         dot_notation_updates = {}
 
-        # Process each field
         for key, val in processed_doc.items():
-            # Try to parse JSON strings into objects/arrays
             if isinstance(val, str):
                 try:
                     parsed_val = json.loads(val)
                     if '.' in key:
-                        # Store with dot notation for MongoDB update
                         dot_notation_updates[key] = parsed_val
                     else:
                         processed_doc[key] = parsed_val
-                    continue  # Skip further processing for this field
+                    continue
                 except json.JSONDecodeError:
-                    # Not valid JSON, continue with other processing
                     pass
 
-            # Handle date strings - check both the key itself and the final segment after a dot
             is_date_field = (
                     key.lower().endswith(('date', 'time', 'at')) or
                     (key.split('.')[-1].lower().endswith(('date', 'time', 'at')))
@@ -288,28 +261,22 @@ class Editor:
 
             if isinstance(val, str) and is_date_field and val.strip():
                 try:
-                    # Convert to datetime object for MongoDB using DateHandler
                     date_obj = DateHandler.parse_iso_datetime(val)
 
                     if '.' in key:
-                        # Store with dot notation for MongoDB update
                         dot_notation_updates[key] = date_obj
                     else:
                         processed_doc[key] = date_obj
                 except FieldMappingError:
-                    # If date parsing fails, keep as string but still handle dot notation
                     if '.' in key:
                         dot_notation_updates[key] = val
             elif '.' in key:
-                # Non-date field with dot notation
                 dot_notation_updates[key] = val
 
-        # Remove all dot notation fields from the main doc since we'll handle them separately
         for key in list(processed_doc.keys()):
             if '.' in key:
                 del processed_doc[key]
 
-        # Return both the processed document and dot notation fields
         return processed_doc, dot_notation_updates
 
     def edit(self) -> Dict[str, Any]:
@@ -332,14 +299,10 @@ class Editor:
                 if doc_id not in self.data:
                     continue
 
-                # Get the update data for this document
                 update_data = self.data[doc_id]
-
-                # Process document with recursive function
                 updates = {}
                 self._process_updates(update_data, updates, "")
 
-                # If we have updates, apply them all at once
                 if updates:
                     try:
                         self.collection.update_one(
@@ -349,16 +312,12 @@ class Editor:
                     except (ObjectIdError, ValueError) as e:
                         raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
 
-                # Get the updated document
                 updated_doc = self.collection.find_one({"_id": ObjectId(doc_id)})
-
-                # Format response
                 response_data = self._format_response_document(updated_doc)
                 data.append(response_data)
 
             return {"data": data}
         except (InvalidDataError, FieldMappingError):
-            # Re-raise data/mapping errors as-is
             raise
         except PyMongoError as e:
             logger.error(f"Edit error: {e}", exc_info=True)
@@ -382,25 +341,20 @@ class Editor:
             if value is None:
                 continue
 
-            # Build the full key path with dot notation
             full_key = f"{prefix}.{key}" if prefix else key
 
             if isinstance(value, dict):
-                # Recurse into nested dictionaries
                 self._process_updates(value, updates, full_key)
             else:
-                # Process leaf value
                 field_type = self.field_mapper.get_field_type(full_key)
                 if not field_type:
-                    field_type = 'string'  # Default to string if type not found
+                    field_type = 'string'
 
                 if field_type == 'date' and isinstance(value, str):
                     try:
-                        # Convert to datetime using DateHandler
                         if 'T' in value:
                             date_obj = DateHandler.parse_iso_datetime(value)
                         else:
-                            # Add time component if not present
                             date_obj = DateHandler.parse_iso_datetime(f"{value}T00:00:00")
 
                         updates[full_key] = date_obj
@@ -409,18 +363,14 @@ class Editor:
                         updates[full_key] = value
                 elif field_type == 'number' and isinstance(value, str):
                     try:
-                        # Convert string to number using TypeConverter
                         updates[full_key] = TypeConverter.to_number(value)
                     except FieldMappingError:
                         updates[full_key] = value
                 elif field_type == 'boolean' and isinstance(value, str):
-                    # Convert string to boolean using TypeConverter
                     updates[full_key] = TypeConverter.to_boolean(value)
                 elif field_type == 'array' and isinstance(value, str):
-                    # Convert string to array using TypeConverter
                     updates[full_key] = TypeConverter.to_array(value)
                 else:
-                    # Standard field
                     updates[full_key] = value
 
     def process(self) -> Dict[str, Any]:
