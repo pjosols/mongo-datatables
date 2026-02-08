@@ -100,7 +100,6 @@ class DataTables:
         request_args: Dict[str, Any],
         data_fields: Optional[List['DataField']] = None,
         use_text_index: bool = True,
-        debug_mode: bool = False,
         preserve_id: bool = False,
         **custom_filter: Any,
     ) -> None:
@@ -112,13 +111,11 @@ class DataTables:
             request_args: DataTables request parameters
             data_fields: List of DataField objects defining database fields with UI mappings
             use_text_index: Whether to use text indexes when available (default: True)
-            debug_mode: Whether to collect and return debug information (default: False)
             **custom_filter: Additional filtering criteria
         """
         # Initialize database connection
         self.collection = self._get_collection(pymongo_object, collection_name)
         self.request_args = request_args
-        self.debug_mode = debug_mode
 
         # Store data fields
         self.data_fields = data_fields or []
@@ -141,15 +138,6 @@ class DataTables:
         self._recordsFiltered = None
         self._has_text_index = None
 
-        # Query statistics (only collected if debug_mode is True)
-        self._query_stats = {}
-        if self.debug_mode:
-            self._query_stats = {
-                "used_text_index": False,
-                "used_standard_index": False,
-                "search_type": "none",
-            }
-
         # Check for text indexes
         self._check_text_index()
 
@@ -157,8 +145,7 @@ class DataTables:
         self.query_builder = MongoQueryBuilder(
             field_mapper=self.field_mapper,
             use_text_index=self.use_text_index,
-            has_text_index=self.has_text_index,
-            debug_mode=self.debug_mode
+            has_text_index=self.has_text_index
         )
 
     def _get_collection(self, pymongo_object: Any, collection_name: str) -> Collection:
@@ -289,17 +276,11 @@ class DataTables:
             MongoDB query condition for global search
         """
         search_terms = self.search_terms_without_a_colon
-        result = self.query_builder.build_global_search(
+        return self.query_builder.build_global_search(
             search_terms,
             self.searchable_columns,
             self.search_value
         )
-
-        # Update debug stats if in debug mode
-        if self.debug_mode:
-            self._query_stats.update(self.query_builder.get_query_stats())
-
-        return result
 
     @property
     def column_specific_search_condition(self) -> Dict[str, Any]:
@@ -369,9 +350,6 @@ class DataTables:
         # If there's no order in the request, use the default
         if not self.request_args.get("order"):
             sort_spec[default_sort_field] = default_sort_dir
-            if self.debug_mode:
-                self._query_stats["sort_column_ui"] = default_sort_field
-                self._query_stats["sort_column_db"] = default_sort_field
         else:
             # Get the order column index and direction
             order_info = self.request_args.get("order")[0]
@@ -392,35 +370,17 @@ class DataTables:
                     # Map UI field name to DB field name
                     db_field_name = self.field_mapper.get_db_field(ui_field_name)
                     sort_spec[db_field_name] = dir_value
-                    
-                    # Add debug information if enabled
-                    if self.debug_mode:
-                        self._query_stats["sort_column_ui"] = ui_field_name
-                        self._query_stats["sort_column_db"] = db_field_name
                 else:
                     # Invalid field name, use default
                     sort_spec[default_sort_field] = default_sort_dir
-                    if self.debug_mode:
-                        self._query_stats["sort_column_ui"] = default_sort_field
-                        self._query_stats["sort_column_db"] = default_sort_field
-                        self._query_stats["sort_error"] = f"Invalid column index {col_idx} - no data field"
             else:
                 # Invalid column index, use default
                 sort_spec[default_sort_field] = default_sort_dir
-                if self.debug_mode:
-                    self._query_stats["sort_column_ui"] = default_sort_field
-                    self._query_stats["sort_column_db"] = default_sort_field
-                    self._query_stats["sort_error"] = f"Invalid column index {col_idx}"
         
         # Always add _id as a secondary sort for stability
         if "_id" not in sort_spec:
             sort_spec["_id"] = 1
-        
-        # Track sorted fields for diagnostics if debug mode is enabled
-        if self.debug_mode:
-            self._query_stats["sorted_fields"] = list(sort_spec.keys())
-            self._query_stats["sort_spec"] = sort_spec
-        
+
         return sort_spec
     
     # For backward compatibility, keep the property interface
@@ -593,20 +553,14 @@ class DataTables:
         return self._recordsFiltered
 
     def get_rows(self) -> Dict[str, Any]:
-        """Get the complete formatted response for DataTables with query stats.
+        """Get the complete formatted response for DataTables.
 
         Returns:
-            Dictionary containing all required DataTables response fields plus query stats
+            Dictionary containing all required DataTables response fields
         """
-        response = {
+        return {
             "draw": int(self.request_args.get("draw", 1)),
             "recordsTotal": self.count_total(),
             "recordsFiltered": self.count_filtered(),
             "data": self.results(),
         }
-
-        # Add query stats for debugging only if debug mode is enabled
-        if self.debug_mode:
-            response["query_stats"] = self._query_stats
-
-        return response

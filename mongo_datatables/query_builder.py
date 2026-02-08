@@ -29,8 +29,7 @@ class MongoQueryBuilder:
         self,
         field_mapper: FieldMapper,
         use_text_index: bool = True,
-        has_text_index: bool = False,
-        debug_mode: bool = False
+        has_text_index: bool = False
     ):
         """Initialize the query builder.
 
@@ -38,13 +37,10 @@ class MongoQueryBuilder:
             field_mapper: FieldMapper instance for field name and type lookups
             use_text_index: Whether to use text indexes when available
             has_text_index: Whether the collection has a text index
-            debug_mode: Whether to collect debug statistics
         """
         self.field_mapper = field_mapper
         self.use_text_index = use_text_index
         self.has_text_index = has_text_index
-        self.debug_mode = debug_mode
-        self._query_stats = {}
 
     def build_column_search(
         self,
@@ -125,21 +121,10 @@ class MongoQueryBuilder:
 
         # Handle quoted search (exact phrase matching)
         if was_quoted and len(search_terms) == 1:
-            if self.debug_mode:
-                self._query_stats["search_type"] = "exact_phrase"
-                self._query_stats["search_terms"] = search_terms
-
             # Try to use text search if available
             if self.use_text_index and self.has_text_index:
-                self._query_stats["used_text_index"] = True
-                self._query_stats["search_type"] = "text_exact_phrase"
                 # Preserve quotes for exact phrase matching in MongoDB
                 return {"$text": {"$search": original_search}}
-
-            # Fall back to regex
-            if self.debug_mode:
-                self._query_stats["used_text_index"] = False
-                self._query_stats["search_type"] = "regex_exact_phrase"
 
             # Create conditions for exact phrase matching with word boundaries
             or_conditions = []
@@ -163,18 +148,7 @@ class MongoQueryBuilder:
         if self.use_text_index and self.has_text_index:
             # Combine all terms with spaces for OR semantics in text search
             text_search_query = " ".join(search_terms)
-            if self.debug_mode:
-                self._query_stats["used_text_index"] = True
-                self._query_stats["search_type"] = "text_or"
-                self._query_stats["search_terms"] = search_terms
-
             return {"$text": {"$search": text_search_query}}
-
-        # Fall back to regex search with OR semantics
-        if self.debug_mode:
-            self._query_stats["used_text_index"] = False
-            self._query_stats["search_type"] = "regex_or"
-            self._query_stats["search_terms"] = search_terms
 
         # Create a single $or condition for all terms
         or_conditions = []
@@ -338,11 +312,3 @@ class MongoQueryBuilder:
         except Exception:
             # If date parsing fails, fall back to regex search
             return {field: {"$regex": value, "$options": "i"}}
-
-    def get_query_stats(self) -> Dict[str, Any]:
-        """Get query statistics collected during query building.
-
-        Returns:
-            Dictionary of query statistics (only populated if debug_mode is True)
-        """
-        return self._query_stats
