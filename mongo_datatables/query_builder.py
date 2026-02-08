@@ -64,21 +64,17 @@ class MongoQueryBuilder:
                 column_name = column["data"]
                 field_type = self.field_mapper.get_field_type(column_name)
 
-                # Handle different field types
                 if field_type == "number":
                     try:
                         numeric_value = TypeConverter.to_number(search_value)
                         conditions.append({column_name: numeric_value})
                     except Exception:
-                        # Not a valid number, skip
                         pass
                 elif field_type == "date":
-                    # Date search uses regex by default for column search
                     conditions.append(
                         {column_name: {"$regex": search_value, "$options": "i"}}
                     )
                 else:
-                    # Default to case-insensitive regex for text
                     conditions.append(
                         {column_name: {"$regex": search_value, "$options": "i"}}
                     )
@@ -113,29 +109,22 @@ class MongoQueryBuilder:
         if not searchable_columns:
             return {}
 
-        # Check if the original search was surrounded by quotes
         was_quoted = False
         if original_search:
             if re.match(r'^".*"$', original_search) or re.match(r"^'.*'$", original_search):
                 was_quoted = True
 
-        # Handle quoted search (exact phrase matching)
         if was_quoted and len(search_terms) == 1:
-            # Try to use text search if available
             if self.use_text_index and self.has_text_index:
-                # Preserve quotes for exact phrase matching in MongoDB
                 return {"$text": {"$search": original_search}}
 
-            # Create conditions for exact phrase matching with word boundaries
             or_conditions = []
             for column in searchable_columns:
                 field_type = self.field_mapper.get_field_type(column)
 
-                # Skip date and number fields for exact phrase matching
                 if field_type in ("date", "number"):
                     continue
 
-                # Escape special regex characters
                 clean_term = search_terms[0]
                 regex_term = re.escape(clean_term)
                 or_conditions.append({column: {"$regex": f"\\b{regex_term}\\b", "$options": "i"}})
@@ -144,32 +133,25 @@ class MongoQueryBuilder:
                 return {"$or": or_conditions}
             return {}
 
-        # Handle non-quoted searches (OR semantics)
         if self.use_text_index and self.has_text_index:
-            # Combine all terms with spaces for OR semantics in text search
             text_search_query = " ".join(search_terms)
             return {"$text": {"$search": text_search_query}}
 
-        # Create a single $or condition for all terms
         or_conditions = []
         for term in search_terms:
             for column in searchable_columns:
                 field_type = self.field_mapper.get_field_type(column)
 
-                # Skip date fields for text search
                 if field_type == "date":
                     continue
 
-                # For number fields, try to convert the term to a number
                 if field_type == "number":
                     try:
                         numeric_value = TypeConverter.to_number(term)
                         or_conditions.append({column: numeric_value})
                     except Exception:
-                        # Not a valid number, skip this field
                         pass
                 else:
-                    # For text fields, use case-insensitive regex
                     or_conditions.append({column: {"$regex": term, "$options": "i"}})
 
         if or_conditions:
@@ -203,17 +185,13 @@ class MongoQueryBuilder:
             if not field or not value:
                 continue
 
-            # Map UI field name to database field name
             db_field = self.field_mapper.get_db_field(field)
 
-            # Check if the field is searchable
             if field not in searchable_columns and db_field not in searchable_columns:
                 continue
 
-            # Get field type
             field_type = self.field_mapper.get_field_type(db_field)
 
-            # Check for comparison operators
             operator = None
             if value.startswith(">") and not value.startswith(">="):
                 operator = ">"
@@ -231,7 +209,6 @@ class MongoQueryBuilder:
                 operator = "="
                 value = value[1:].strip()
 
-            # Handle field types
             if field_type == "number":
                 condition = self._build_number_condition(db_field, value, operator)
                 if condition:
@@ -241,7 +218,6 @@ class MongoQueryBuilder:
                 if condition:
                     and_conditions.append(condition)
             else:
-                # Default to case-insensitive regex for text
                 and_conditions.append({db_field: {"$regex": value, "$options": "i"}})
 
         if and_conditions:
@@ -278,10 +254,8 @@ class MongoQueryBuilder:
             elif operator == "=":
                 return {field: numeric_value}
             else:
-                # No operator, exact match
                 return {field: numeric_value}
         except Exception:
-            # Not a valid number, use regex search as fallback
             return {field: {"$regex": value, "$options": "i"}}
 
     def _build_date_condition(
@@ -301,14 +275,10 @@ class MongoQueryBuilder:
             MongoDB condition dict, or None if parsing fails
         """
         try:
-            # Check if it's in ISO format (YYYY-MM-DD)
             if '-' in value and len(value.split('-')) == 3:
-                # Use DateHandler to get the comparison condition
                 date_condition = DateHandler.get_date_range_for_comparison(value, operator)
                 return {field: date_condition}
             else:
-                # Not in ISO format, fall back to regex search
                 return {field: {"$regex": value, "$options": "i"}}
         except Exception:
-            # If date parsing fails, fall back to regex search
             return {field: {"$regex": value, "$options": "i"}}
