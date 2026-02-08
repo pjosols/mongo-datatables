@@ -113,35 +113,24 @@ class DataTables:
             use_text_index: Whether to use text indexes when available (default: True)
             **custom_filter: Additional filtering criteria
         """
-        # Initialize database connection
         self.collection = self._get_collection(pymongo_object, collection_name)
         self.request_args = request_args
-
-        # Store data fields
         self.data_fields = data_fields or []
-
-        # Create field mapper for UI <-> DB field mapping
         self.field_mapper = FieldMapper(self.data_fields)
-
         self.use_text_index = use_text_index
 
-        # Remove data_fields from custom filter if it was passed as a keyword argument
         if 'data_fields' in custom_filter:
             del custom_filter['data_fields']
 
-        # Custom filter for additional query criteria
         self.custom_filter = custom_filter
 
-        # Cache for results
         self._results = None
         self._recordsTotal = None
         self._recordsFiltered = None
         self._has_text_index = None
 
-        # Check for text indexes
         self._check_text_index()
 
-        # Initialize query builder
         self.query_builder = MongoQueryBuilder(
             field_mapper=self.field_mapper,
             use_text_index=self.use_text_index,
@@ -158,18 +147,13 @@ class DataTables:
         Returns:
             MongoDB collection object
         """
-        # Handle different PyMongo object types
         if hasattr(pymongo_object, "db"):
-            # Flask-PyMongo or similar with .db attribute
             db = pymongo_object.db
         elif hasattr(pymongo_object, "get_database"):
-            # PyMongo client
             db = pymongo_object.get_database()
         elif isinstance(pymongo_object, Database):
-            # PyMongo database
             db = pymongo_object
         else:
-            # Assume it's a dict-like object with the collection as a value
             return pymongo_object[collection_name]
 
         return db[collection_name]
@@ -307,26 +291,21 @@ class DataTables:
         """
         conditions = []
 
-        # Add custom filter if provided
         if self.custom_filter:
             conditions.append(self.custom_filter)
 
-        # Add global search condition if present
         global_search = self.global_search_condition
         if global_search:
             conditions.append(global_search)
 
-        # Add column-specific search conditions if present
         column_search = self.column_search_conditions
         if column_search:
             conditions.append(column_search)
 
-        # Add column-specific search conditions using colon syntax
         column_specific = self.column_specific_search_condition
         if column_specific:
             conditions.append(column_specific)
 
-        # Combine all conditions with $and
         if len(conditions) > 1:
             return {"$and": conditions}
         elif len(conditions) == 1:
@@ -340,44 +319,31 @@ class DataTables:
         Returns:
             MongoDB sort specification
         """
-        # Default sort field and direction
         default_sort_field = "Title"
-        default_sort_dir = 1  # 1 for ascending, -1 for descending
-        
-        # Initialize the sort specification
+        default_sort_dir = 1
         sort_spec = {}
-        
-        # If there's no order in the request, use the default
+
         if not self.request_args.get("order"):
             sort_spec[default_sort_field] = default_sort_dir
         else:
-            # Get the order column index and direction
             order_info = self.request_args.get("order")[0]
             col_idx = int(order_info["column"])
             direction = order_info["dir"]
-            
-            # Map direction to MongoDB sort value
             dir_value = 1 if direction == "asc" else -1
-            
-            # Get the column data from the columns array
+
             columns = self.columns
             if 0 <= col_idx < len(columns):
                 column = columns[col_idx]
                 ui_field_name = column["data"]
-                
-                # If the field name is valid, use it; otherwise fall back to default
+
                 if ui_field_name:
-                    # Map UI field name to DB field name
                     db_field_name = self.field_mapper.get_db_field(ui_field_name)
                     sort_spec[db_field_name] = dir_value
                 else:
-                    # Invalid field name, use default
                     sort_spec[default_sort_field] = default_sort_dir
             else:
-                # Invalid column index, use default
                 sort_spec[default_sort_field] = default_sort_dir
-        
-        # Always add _id as a secondary sort for stability
+
         if "_id" not in sort_spec:
             sort_spec["_id"] = 1
 
@@ -413,10 +379,8 @@ class DataTables:
         Returns:
             MongoDB projection specification
         """
-        # Always include _id for row identification
         projection = {"_id": 1}
 
-        # Include all column data fields
         for column in self.columns:
             if "data" in column and column["data"]:
                 projection[column["data"]] = 1
@@ -438,10 +402,8 @@ class DataTables:
             full_key = f"{parent_key}.{key}" if parent_key else key
 
             if isinstance(val, dict):
-                # Recursively process nested dictionaries
                 self._format_result_values(val, full_key)
             elif isinstance(val, list):
-                # Process lists - may contain dictionaries or other complex types
                 for i, item in enumerate(val):
                     if isinstance(item, dict):
                         self._format_result_values(item, f"{full_key}[{i}]")
@@ -451,10 +413,9 @@ class DataTables:
                         val[i] = item.isoformat()
             elif isinstance(val, ObjectId):
                 result_dict[key] = str(val)
-            elif hasattr(val, 'isoformat'):  # Handle date objects
+            elif hasattr(val, 'isoformat'):
                 result_dict[key] = val.isoformat()
             elif isinstance(val, float):
-                # Format floats to 2 decimal places by default
                 result_dict[key] = val
 
     def results(self) -> List[Dict[str, Any]]:
@@ -467,57 +428,43 @@ class DataTables:
             return self._results
 
         try:
-            # Build an efficient aggregation pipeline
             pipeline = []
 
-            # Add match stage first for better performance
             if self.filter:
                 pipeline.append({"$match": self.filter})
 
-            # Add sort stage
             if self.sort_specification:
                 pipeline.append({"$sort": self.sort_specification})
 
-            # Add pagination
             if self.start > 0:
                 pipeline.append({"$skip": self.start})
 
             if self.limit:
                 pipeline.append({"$limit": self.limit})
 
-            # Add projection at the end
             pipeline.append({"$project": self.projection})
 
-            # Execute the query
             cursor = self.collection.aggregate(pipeline)
             results = list(cursor)
 
-            # Process the results
             processed_results = []
             for result in results:
-                # Convert to dict if it's not already
                 result_dict = dict(result)
 
-                # Handle ObjectId for row identifier - create DT_RowId and remove _id
                 if "_id" in result_dict:
                     result_dict["DT_RowId"] = str(result_dict["_id"])
-                    # Remove the _id field as it's not needed in the client-side representation
                     del result_dict["_id"]
 
-                # Format complex values and handle nested objects
                 self._format_result_values(result_dict)
-
                 processed_results.append(result_dict)
 
             self._results = processed_results
             return processed_results
 
         except PyMongoError as e:
-            # Log the error and return empty results
             logger.error(f"Error executing MongoDB query: {str(e)}", exc_info=True)
             return []
         except Exception as e:
-            # Catch any other unexpected errors
             logger.error(f"Unexpected error in results(): {str(e)}", exc_info=True)
             return []
 
