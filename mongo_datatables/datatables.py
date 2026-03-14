@@ -281,6 +281,93 @@ class DataTables:
             self.searchable_columns
         )
 
+    def get_searchbuilder_options(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Generate SearchBuilder options data for all searchable columns.
+
+        Returns:
+            Dictionary mapping column names to their option lists with operators
+        """
+        options = {}
+        
+        for column in self.columns:
+            if not column.get("searchable", False):
+                continue
+                
+            column_name = column.get("data")
+            if not column_name:
+                continue
+                
+            db_field = self.field_mapper.get_db_field(column_name)
+            field_type = self.field_mapper.get_field_type(column_name)
+            
+            # Define operators based on field type
+            operators = []
+            if field_type == "number":
+                operators = ["=", "!=", ">", ">=", "<", "<=", "null", "!null"]
+            elif field_type == "date":
+                operators = ["=", "!=", ">", ">=", "<", "<=", "null", "!null"]
+            else:
+                operators = ["=", "!=", "contains", "!contains", "starts", "ends", "null", "!null"]
+            
+            # Skip complex types that don't work well with SearchBuilder
+            if field_type in ["object", "array"]:
+                continue
+                
+            try:
+                pipeline = []
+                
+                # Apply base filter if exists
+                if self.custom_filter:
+                    pipeline.append({"$match": self.custom_filter})
+                
+                # Group by field value and count occurrences
+                pipeline.extend([
+                    {"$group": {
+                        "_id": f"${db_field}",
+                        "count": {"$sum": 1}
+                    }},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 1000}  # Limit options for performance
+                ])
+                
+                cursor = self.collection.aggregate(pipeline)
+                column_options = []
+                
+                for result in cursor:
+                    value = result["_id"]
+                    count = result["count"]
+                    
+                    # Format value for display
+                    if isinstance(value, ObjectId):
+                        display_value = str(value)
+                    elif hasattr(value, 'isoformat'):
+                        display_value = value.isoformat()
+                    else:
+                        display_value = str(value) if value is not None else ""
+                    
+                    column_options.append({
+                        "label": display_value,
+                        "value": display_value,
+                        "count": count
+                    })
+                
+                options[column_name] = {
+                    "options": column_options,
+                    "operators": operators,
+                    "type": field_type
+                }
+                
+            except Exception as e:
+                logger.error(f"Error generating SearchBuilder options for {column_name}: {str(e)}")
+                options[column_name] = {
+                    "options": [],
+                    "operators": operators,
+                    "type": field_type
+                }
+        
+        return options
+
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
         """Generate SearchPanes options data for all searchable columns.
 
@@ -351,6 +438,153 @@ class DataTables:
         
         return options
 
+    def _parse_searchbuilder_filters(self) -> Dict[str, Any]:
+        """Parse SearchBuilder filter parameters from request.
+
+        Returns:
+            MongoDB query conditions for SearchBuilder filters
+        """
+        searchbuilder = self.request_args.get("searchBuilder")
+        if not searchbuilder:
+            return {}
+            
+        # Handle boolean true case (just requesting options, no filters)
+        if searchbuilder is True:
+            return {}
+            
+        conditions = searchbuilder.get("conditions", [])
+        logic = searchbuilder.get("logic", "AND")
+        
+        if not conditions:
+            return {}
+            
+        return self._build_searchbuilder_query(conditions, logic)
+    
+    def _build_searchbuilder_query(self, conditions: List[Dict[str, Any]], logic: str) -> Dict[str, Any]:
+        """Build MongoDB query from SearchBuilder conditions.
+        
+        Args:
+            conditions: List of SearchBuilder condition objects
+            logic: Logic operator ("AND" or "OR")
+            
+        Returns:
+            MongoDB query condition
+        """
+        if not conditions:
+            return {}
+            
+        mongo_conditions = []
+        
+        for condition in conditions:
+            # Handle nested condition groups
+            if "conditions" in condition:
+                nested_query = self._build_searchbuilder_query(
+                    condition["conditions"], 
+                    condition.get("logic", "AND")
+                )
+                if nested_query:
+                    mongo_conditions.append(nested_query)
+                continue
+                
+            # Handle individual conditions
+            field = condition.get("data")
+            operator = condition.get("condition")
+            value = condition.get("value")
+            
+            if not field or not operator:
+                continue
+                
+            db_field = self.field_mapper.get_db_field(field)
+            field_type = self.field_mapper.get_field_type(field)
+            
+            mongo_condition = self._build_searchbuilder_condition(db_field, operator, value, field_type)
+            if mongo_condition:
+                mongo_conditions.append(mongo_condition)
+        
+        if not mongo_conditions:
+            return {}
+        elif len(mongo_conditions) == 1:
+            return mongo_conditions[0]
+        elif logic.upper() == "OR":
+            return {"$or": mongo_conditions}
+        else:
+            return {"$and": mongo_conditions}
+    
+    def _build_searchbuilder_condition(self, field: str, operator: str, value: Any, field_type: str) -> Optional[Dict[str, Any]]:
+        """Build a single SearchBuilder condition.
+        
+        Args:
+            field: Database field name
+            operator: SearchBuilder operator (=, !=, contains, etc.)
+            value: Condition value
+            field_type: Field data type
+            
+        Returns:
+            MongoDB condition or None if invalid
+        """
+        if not field or not operator:
+            return None
+            
+        if value is None and operator not in ["null", "!null"]:
+            return None
+            
+        try:
+            # Convert value based on field type
+            if field_type == "number" and value is not None:
+                value = TypeConverter.to_number(str(value))
+            elif field_type == "date" and value is not None:
+                # Handle date values - assume ISO format or convert
+                if isinstance(value, str) and '-' in value:
+                    # Keep as string for date range operations
+                    pass
+                    
+            # Build condition based on operator
+            if operator == "=":
+                return {field: value}
+            elif operator == "!=":
+                return {field: {"$ne": value}}
+            elif operator == ">":
+                if field_type == "date" and isinstance(value, str):
+                    date_condition = DateHandler.get_date_range_for_comparison(value, ">")
+                    return {field: date_condition}
+                return {field: {"$gt": value}}
+            elif operator == ">=":
+                if field_type == "date" and isinstance(value, str):
+                    date_condition = DateHandler.get_date_range_for_comparison(value, ">=")
+                    return {field: date_condition}
+                return {field: {"$gte": value}}
+            elif operator == "<":
+                if field_type == "date" and isinstance(value, str):
+                    date_condition = DateHandler.get_date_range_for_comparison(value, "<")
+                    return {field: date_condition}
+                return {field: {"$lt": value}}
+            elif operator == "<=":
+                if field_type == "date" and isinstance(value, str):
+                    date_condition = DateHandler.get_date_range_for_comparison(value, "<=")
+                    return {field: date_condition}
+                return {field: {"$lte": value}}
+            elif operator == "contains":
+                return {field: {"$regex": re.escape(str(value)), "$options": "i"}}
+            elif operator == "!contains":
+                return {field: {"$not": {"$regex": re.escape(str(value)), "$options": "i"}}}
+            elif operator == "starts":
+                return {field: {"$regex": f"^{re.escape(str(value))}", "$options": "i"}}
+            elif operator == "ends":
+                return {field: {"$regex": f"{re.escape(str(value))}$", "$options": "i"}}
+            elif operator == "null":
+                return {"$or": [{field: {"$exists": False}}, {field: None}]}
+            elif operator == "!null":
+                return {"$and": [{field: {"$exists": True}}, {field: {"$ne": None}}]}
+            elif operator == "between":
+                # Handle between operator for ranges
+                if isinstance(value, list) and len(value) == 2:
+                    return {field: {"$gte": value[0], "$lte": value[1]}}
+                    
+        except Exception as e:
+            logger.error(f"Error building SearchBuilder condition for {field}: {str(e)}")
+            
+        return None
+
     def _parse_searchpanes_filters(self) -> Dict[str, Any]:
         """Parse SearchPanes filter parameters from request.
 
@@ -407,6 +641,11 @@ class DataTables:
 
         if self.custom_filter:
             conditions.append(self.custom_filter)
+
+        # Add SearchBuilder filters
+        searchbuilder_filter = self._parse_searchbuilder_filters()
+        if searchbuilder_filter:
+            conditions.append(searchbuilder_filter)
 
         # Add SearchPanes filters
         searchpanes_filter = self._parse_searchpanes_filters()
@@ -943,6 +1182,10 @@ class DataTables:
             "recordsFiltered": self.count_filtered(),
             "data": self.results(),
         }
+        
+        # Add SearchBuilder options if requested
+        if self.request_args.get("searchBuilder"):
+            response["searchBuilder"] = {"options": self.get_searchbuilder_options()}
         
         # Add SearchPanes options if requested
         if self.request_args.get("searchPanes"):
