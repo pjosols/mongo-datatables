@@ -636,6 +636,38 @@ class DataTables:
                 
         return config if config else None
 
+    def _parse_responsive_config(self) -> Optional[Dict[str, Any]]:
+        """Parse Responsive extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing responsive configuration or None if not requested
+        """
+        responsive_params = self.request_args.get("responsive")
+        if not responsive_params:
+            return None
+            
+        config = {}
+        
+        # Parse breakpoints configuration
+        if "breakpoints" in responsive_params:
+            breakpoints = responsive_params["breakpoints"]
+            if isinstance(breakpoints, dict):
+                config["breakpoints"] = breakpoints
+                
+        # Parse display configuration
+        if "display" in responsive_params:
+            display = responsive_params["display"]
+            if isinstance(display, dict):
+                config["display"] = display
+                
+        # Parse column priorities
+        if "priorities" in responsive_params:
+            priorities = responsive_params["priorities"]
+            if isinstance(priorities, dict):
+                config["priorities"] = priorities
+                
+        return config if config else None
+
     def get_rows(self) -> Dict[str, Any]:
         """Get the complete formatted response for DataTables.
 
@@ -657,5 +689,10 @@ class DataTables:
         fixed_columns_config = self._parse_fixed_columns_config()
         if fixed_columns_config:
             response["fixedColumns"] = fixed_columns_config
+            
+        # Add Responsive configuration if requested
+        responsive_config = self._parse_responsive_config()
+        if responsive_config:
+            response["responsive"] = responsive_config
         
         return response
