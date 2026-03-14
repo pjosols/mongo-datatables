@@ -608,6 +608,34 @@ class DataTables:
                 self._recordsFiltered = 0
         return self._recordsFiltered
 
+    def _parse_fixed_columns_config(self) -> Optional[Dict[str, Any]]:
+        """Parse FixedColumns configuration from request parameters.
+        
+        Returns:
+            FixedColumns configuration dict or None if not requested
+        """
+        fixed_columns = self.request_args.get("fixedColumns")
+        if not fixed_columns:
+            return None
+            
+        config = {}
+        
+        # Parse left fixed columns
+        if "left" in fixed_columns:
+            try:
+                config["left"] = int(fixed_columns["left"])
+            except (ValueError, TypeError):
+                config["left"] = 0
+                
+        # Parse right fixed columns  
+        if "right" in fixed_columns:
+            try:
+                config["right"] = int(fixed_columns["right"])
+            except (ValueError, TypeError):
+                config["right"] = 0
+                
+        return config if config else None
+
     def get_rows(self) -> Dict[str, Any]:
         """Get the complete formatted response for DataTables.
 
@@ -624,5 +652,10 @@ class DataTables:
         # Add SearchPanes options if requested
         if self.request_args.get("searchPanes"):
             response["searchPanes"] = {"options": self.get_searchpanes_options()}
+            
+        # Add FixedColumns configuration if requested
+        fixed_columns_config = self._parse_fixed_columns_config()
+        if fixed_columns_config:
+            response["fixedColumns"] = fixed_columns_config
         
         return response
