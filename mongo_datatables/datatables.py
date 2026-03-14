@@ -668,6 +668,84 @@ class DataTables:
                 
         return config if config else None
 
+    def _parse_buttons_config(self) -> Optional[Dict[str, Any]]:
+        """Parse Buttons extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing buttons configuration or None if not requested
+        """
+        buttons_params = self.request_args.get("buttons")
+        if not buttons_params:
+            return None
+            
+        config = {}
+        
+        # Parse export configuration
+        if "export" in buttons_params:
+            export_config = buttons_params["export"]
+            if isinstance(export_config, dict):
+                config["export"] = export_config
+                
+        # Parse column visibility configuration
+        if "colvis" in buttons_params:
+            colvis_config = buttons_params["colvis"]
+            if isinstance(colvis_config, dict):
+                config["colvis"] = colvis_config
+                
+        # Parse print configuration
+        if "print" in buttons_params:
+            print_config = buttons_params["print"]
+            if isinstance(print_config, dict):
+                config["print"] = print_config
+                
+        # Parse copy configuration
+        if "copy" in buttons_params:
+            copy_config = buttons_params["copy"]
+            if isinstance(copy_config, dict):
+                config["copy"] = copy_config
+                
+        return config if config else None
+
+    def get_export_data(self) -> List[Dict[str, Any]]:
+        """Get all data for export without pagination limits.
+        
+        Returns:
+            List of all documents matching current filters, formatted for export
+        """
+        try:
+            pipeline = []
+
+            if self.filter:
+                pipeline.append({"$match": self.filter})
+
+            if self.sort_specification:
+                pipeline.append({"$sort": self.sort_specification})
+
+            pipeline.append({"$project": self.projection})
+
+            cursor = self.collection.aggregate(pipeline)
+            results = list(cursor)
+
+            processed_results = []
+            for result in results:
+                result_dict = dict(result)
+
+                if "_id" in result_dict:
+                    result_dict["DT_RowId"] = str(result_dict["_id"])
+                    del result_dict["_id"]
+
+                self._format_result_values(result_dict)
+                processed_results.append(result_dict)
+
+            return processed_results
+
+        except PyMongoError as e:
+            logger.error(f"Error executing export query: {str(e)}", exc_info=True)
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error in get_export_data(): {str(e)}", exc_info=True)
+            return []
+
     def get_rows(self) -> Dict[str, Any]:
         """Get the complete formatted response for DataTables.
 
@@ -694,5 +772,10 @@ class DataTables:
         responsive_config = self._parse_responsive_config()
         if responsive_config:
             response["responsive"] = responsive_config
+            
+        # Add Buttons configuration if requested
+        buttons_config = self._parse_buttons_config()
+        if buttons_config:
+            response["buttons"] = buttons_config
         
         return response
