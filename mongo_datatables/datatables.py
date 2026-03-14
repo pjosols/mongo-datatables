@@ -13,6 +13,7 @@ from pymongo.errors import PyMongoError
 from mongo_datatables.exceptions import DatabaseOperationError, QueryBuildError
 from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler
 from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.config_validator import ConfigValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,9 @@ class DataTables:
             use_text_index=self.use_text_index,
             has_text_index=self.has_text_index
         )
+        
+        # Initialize configuration validator
+        self.config_validator = ConfigValidator(self.collection, self.data_fields)
 
     def _get_collection(self, pymongo_object: Any, collection_name: str) -> Collection:
         """Get a MongoDB collection from a PyMongo object.
@@ -939,6 +943,13 @@ class DataTables:
                 config["right"] = int(fixed_columns["right"])
             except (ValueError, TypeError):
                 config["right"] = 0
+        
+        # Validate configuration
+        validation = self.config_validator.validate_fixedcolumns_config(config)
+        if not validation.is_valid:
+            logger.warning(f"FixedColumns validation errors: {validation.errors}")
+        if validation.warnings:
+            logger.info(f"FixedColumns warnings: {validation.warnings}")
                 
         return config if config else None
 
@@ -1009,6 +1020,11 @@ class DataTables:
                 priorities = responsive_params["priorities"]
                 if isinstance(priorities, dict):
                     config["priorities"] = priorities
+        
+        # Validate configuration
+        validation = self.config_validator.validate_responsive_config(config)
+        if validation.warnings:
+            logger.info(f"Responsive warnings: {validation.warnings}")
                 
         return config if config else None
 
@@ -1142,6 +1158,13 @@ class DataTables:
             # Parse realtime configuration
             if "realtime" in colreorder_params:
                 config["realtime"] = bool(colreorder_params["realtime"])
+        
+        # Validate configuration
+        validation = self.config_validator.validate_colreorder_config(config)
+        if not validation.is_valid:
+            logger.warning(f"ColReorder validation errors: {validation.errors}")
+        if validation.warnings:
+            logger.info(f"ColReorder warnings: {validation.warnings}")
                 
         return config if config else None
 
@@ -1305,8 +1328,16 @@ class DataTables:
             "data": self.results(),
         }
         
+        # Perform performance validation
+        perf_validation = self.config_validator.validate_performance(self.request_args)
+        if perf_validation.warnings:
+            logger.info(f"Performance warnings: {perf_validation.warnings}")
+        
         # Add SearchBuilder options if requested
         if self.request_args.get("searchBuilder"):
+            sb_validation = self.config_validator.validate_searchbuilder_config(self.request_args.get("searchBuilder", {}))
+            if sb_validation.warnings:
+                logger.info(f"SearchBuilder warnings: {sb_validation.warnings}")
             response["searchBuilder"] = {"options": self.get_searchbuilder_options()}
         
         # Add SearchPanes options if requested
