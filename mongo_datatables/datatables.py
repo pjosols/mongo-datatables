@@ -390,17 +390,26 @@ class DataTables:
         return options
 
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Generate SearchPanes options data for all searchable columns.
+        """Generate SearchPanes options data using MongoDB aggregation pipeline.
 
         Returns:
             Dictionary mapping column names to their option lists
         """
         options = {}
+        searchpanes_config = self._parse_searchpanes_config()
         
-        for column in self.columns:
-            if not column.get("searchable", False):
-                continue
-                
+        # Get columns to process
+        target_columns = []
+        if searchpanes_config and "columns" in searchpanes_config:
+            # Use specified columns
+            for col_idx in searchpanes_config["columns"]:
+                if isinstance(col_idx, int) and 0 <= col_idx < len(self.columns):
+                    target_columns.append(self.columns[col_idx])
+        else:
+            # Use all searchable columns
+            target_columns = [col for col in self.columns if col.get("searchable", False)]
+        
+        for column in target_columns:
             column_name = column.get("data")
             if not column_name:
                 continue
@@ -408,18 +417,22 @@ class DataTables:
             db_field = self.field_mapper.get_db_field(column_name)
             field_type = self.field_mapper.get_field_type(column_name)
             
-            # Skip complex types that don't work well with SearchPanes
+            # Skip complex types
             if field_type in ["object", "array"]:
                 continue
                 
+            # Check for index on this field for performance warning
+            self._check_searchpanes_performance(db_field)
+                
             try:
+                # Build aggregation pipeline
                 pipeline = []
                 
-                # Apply base filter if exists
+                # Apply base filter
                 if self.custom_filter:
                     pipeline.append({"$match": self.custom_filter})
                 
-                # Group by field value and count occurrences
+                # Group and count distinct values
                 pipeline.extend([
                     {"$group": {
                         "_id": f"${db_field}",
@@ -427,7 +440,7 @@ class DataTables:
                     }},
                     {"$match": {"_id": {"$ne": None}}},
                     {"$sort": {"count": -1}},
-                    {"$limit": 1000}  # Limit options for performance
+                    {"$limit": 1000}
                 ])
                 
                 cursor = self.collection.aggregate(pipeline)
@@ -458,6 +471,28 @@ class DataTables:
                 options[column_name] = []
         
         return options
+
+    def _check_searchpanes_performance(self, field_name: str) -> None:
+        """Check if field has index and warn about performance implications.
+        
+        Args:
+            field_name: Database field name to check
+        """
+        try:
+            indexes = list(self.collection.list_indexes())
+            field_indexed = False
+            
+            for index in indexes:
+                index_keys = index.get("key", {})
+                if field_name in index_keys or any(field_name.startswith(key) for key in index_keys):
+                    field_indexed = True
+                    break
+            
+            if not field_indexed:
+                logger.warning(f"SearchPanes field '{field_name}' is not indexed - consider adding an index for better performance")
+                
+        except Exception as e:
+            logger.debug(f"Could not check index for field {field_name}: {str(e)}")
 
     def _parse_searchbuilder_filters(self) -> Dict[str, Any]:
         """Parse SearchBuilder filter parameters from request.
@@ -1101,6 +1136,52 @@ class DataTables:
                 
         return config if config else None
 
+    def _parse_searchpanes_config(self) -> Optional[Dict[str, Any]]:
+        """Parse SearchPanes configuration from request parameters.
+        
+        Returns:
+            SearchPanes configuration dict or None if not requested
+        """
+        searchpanes = self.request_args.get("searchPanes")
+        if not searchpanes:
+            return None
+            
+        # Handle boolean true case (default configuration)
+        if searchpanes is True:
+            return {}
+            
+        config = {}
+        
+        # Parse columns configuration
+        if isinstance(searchpanes, dict):
+            if "columns" in searchpanes:
+                columns = searchpanes["columns"]
+                if isinstance(columns, list):
+                    config["columns"] = columns
+                    
+            # Parse threshold
+            if "threshold" in searchpanes:
+                try:
+                    threshold = float(searchpanes["threshold"])
+                    if 0 <= threshold <= 1:
+                        config["threshold"] = threshold
+                except (ValueError, TypeError):
+                    pass
+                    
+            # Parse other options
+            for key in ["cascadePanes", "clear", "container", "dtOpts", "emptyMessage", "hideCount", "i18n", "layout", "orderable", "preSelect", "viewCount"]:
+                if key in searchpanes:
+                    config[key] = searchpanes[key]
+        
+        # Validate configuration
+        validation = self.config_validator.validate_searchpanes_config(config)
+        if not validation.is_valid:
+            logger.warning(f"SearchPanes validation errors: {validation.errors}")
+        if validation.warnings:
+            logger.info(f"SearchPanes warnings: {validation.warnings}")
+                
+        return config if config else None
+
     def _parse_rowgroup_config(self) -> Optional[Dict[str, Any]]:
         """Parse RowGroup extension configuration from request parameters.
         
@@ -1341,7 +1422,8 @@ class DataTables:
             response["searchBuilder"] = {"options": self.get_searchbuilder_options()}
         
         # Add SearchPanes options if requested
-        if self.request_args.get("searchPanes"):
+        searchpanes_config = self._parse_searchpanes_config()
+        if searchpanes_config is not None:
             response["searchPanes"] = {"options": self.get_searchpanes_options()}
             
         # Add FixedColumns configuration if requested

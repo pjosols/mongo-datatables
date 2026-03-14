@@ -45,6 +45,10 @@ class ConfigValidator:
         if not config:
             return result
             
+        # Handle boolean configurations (legacy support)
+        if isinstance(config, bool):
+            return result  # Boolean configs are always valid
+            
         # Validate order array
         if "order" in config:
             order = config["order"]
@@ -85,6 +89,10 @@ class ConfigValidator:
         if not config:
             return result
             
+        # Handle boolean configurations (legacy support)
+        if isinstance(config, bool):
+            return result  # Boolean configs are always valid
+            
         left = config.get("left", 0)
         right = config.get("right", 0)
         total_cols = len(self.data_fields)
@@ -102,6 +110,16 @@ class ConfigValidator:
         result = ValidationResult()
         
         if not config:
+            return result
+            
+        # Handle boolean configurations (legacy support)
+        if isinstance(config, bool):
+            # Still check for column count warnings even with boolean config
+            if config and len(self.data_fields) > 10:
+                result.add_warning(
+                    f"Responsive with {len(self.data_fields)} columns may cause layout issues",
+                    "Consider reducing columns or using column priorities"
+                )
             return result
             
         # Check for potential conflicts with FixedColumns
@@ -161,3 +179,119 @@ class ConfigValidator:
         except Exception as e:
             logger.debug(f"Could not check text index: {e}")
         return False
+    
+    def validate_buttons_config(self, config: Dict[str, Any]) -> ValidationResult:
+        """Validate Buttons extension configuration."""
+        result = ValidationResult()
+        
+        if not config:
+            return result
+            
+        # Handle boolean configurations (legacy support)
+        if isinstance(config, bool):
+            return result
+            
+        # Validate buttons array if present
+        if "buttons" in config:
+            buttons = config["buttons"]
+            if not isinstance(buttons, list):
+                result.add_error("Buttons configuration must be a list", f"Got {type(buttons)}")
+            else:
+                # Check for valid button types
+                valid_extends = {"copy", "csv", "excel", "pdf", "print", "colvis"}
+                for i, button in enumerate(buttons):
+                    if isinstance(button, dict) and "extend" in button:
+                        extend_type = button["extend"]
+                        if extend_type not in valid_extends:
+                            result.add_warning(
+                                f"Unknown button type '{extend_type}' at index {i}",
+                                f"Valid types: {', '.join(valid_extends)}"
+                            )
+        
+        return result
+    
+    def validate_select_config(self, config: Dict[str, Any]) -> ValidationResult:
+        """Validate Select extension configuration."""
+        result = ValidationResult()
+        
+        if not config:
+            return result
+            
+        # Handle boolean configurations (legacy support)
+        if isinstance(config, bool):
+            return result
+            
+        # Validate style if present
+        if "style" in config:
+            style = config["style"]
+            valid_styles = {"single", "multi", "os", "api"}
+            if style not in valid_styles:
+                result.add_error(
+                    f"Invalid select style '{style}'",
+                    f"Valid styles: {', '.join(valid_styles)}"
+                )
+        
+        return result
+    
+    def validate_rowgroup_config(self, config: Dict[str, Any]) -> ValidationResult:
+        """Validate RowGroup extension configuration."""
+        result = ValidationResult()
+        
+        if not config:
+            return result
+            
+        # Handle boolean configurations (legacy support)
+        if isinstance(config, bool):
+            return result
+            
+        # Validate dataSrc if present
+        if "dataSrc" in config:
+            data_src = config["dataSrc"]
+            if isinstance(data_src, str):
+                # Check if the field exists in our data fields
+                field_names = {field.name for field in self.data_fields}
+                if data_src not in field_names:
+                    result.add_warning(
+                        f"RowGroup dataSrc field '{data_src}' not found in data fields",
+                        "Ensure the field name matches your DataField definitions"
+                    )
+            elif isinstance(data_src, int):
+                # Check if column index is valid
+                if data_src < 0 or data_src >= len(self.data_fields):
+                    result.add_error(
+                        f"RowGroup dataSrc column index {data_src} is out of range",
+                        f"Valid range: 0 to {len(self.data_fields) - 1}"
+                    )
+        
+        return result
+    
+    def validate_searchpanes_config(self, config: Dict[str, Any]) -> ValidationResult:
+        """Validate SearchPanes extension configuration."""
+        result = ValidationResult()
+        
+        if not config:
+            return result
+            
+        # Handle boolean configurations (legacy support)
+        if isinstance(config, bool):
+            return result
+            
+        # Check for performance implications with many columns
+        if "columns" in config:
+            columns = config["columns"]
+            if isinstance(columns, list) and len(columns) > 5:
+                result.add_warning(
+                    f"SearchPanes with {len(columns)} columns may impact performance",
+                    "Consider limiting to 5 or fewer columns for better performance"
+                )
+        
+        # Validate threshold if present
+        if "threshold" in config:
+            threshold = config["threshold"]
+            if not isinstance(threshold, (int, float)) or not (0 <= threshold <= 1):
+                result.add_error(
+                    f"SearchPanes threshold must be a number between 0 and 1, got {threshold}",
+                    "Threshold determines when to show/hide panes based on data uniqueness"
+                )
+        
+        return result
