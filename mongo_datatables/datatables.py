@@ -148,6 +148,7 @@ class DataTables:
         """
         if hasattr(pymongo_object, "db"):
             db = pymongo_object.db
+                
         elif hasattr(pymongo_object, "get_database"):
             db = pymongo_object.get_database()
         elif isinstance(pymongo_object, Database):
@@ -932,7 +933,11 @@ class DataTables:
             Dictionary containing fixedHeader configuration or None if not requested
         """
         fixed_header_params = self.request_args.get("fixedHeader")
-        if not fixed_header_params:
+        if fixed_header_params is None:
+            return None
+        
+        # Handle boolean false case
+        if isinstance(fixed_header_params, bool) and not fixed_header_params:
             return None
             
         config = {}
@@ -941,16 +946,15 @@ class DataTables:
         if isinstance(fixed_header_params, bool):
             if fixed_header_params:
                 config = {"header": True, "footer": False}
-            else:
-                return None
         # Handle object configuration (fixedHeader: {header: true, footer: false})
         elif isinstance(fixed_header_params, dict):
             if "header" in fixed_header_params:
                 config["header"] = bool(fixed_header_params["header"])
             if "footer" in fixed_header_params:
                 config["footer"] = bool(fixed_header_params["footer"])
+            # For empty object, return empty config (will be included in response)
                 
-        return config if config else None
+        return config if (config or isinstance(fixed_header_params, dict)) else None
 
     def _parse_responsive_config(self) -> Optional[Dict[str, Any]]:
         """Parse Responsive extension configuration from request parameters.
@@ -1004,29 +1008,38 @@ class DataTables:
             
         config = {}
         
-        # Parse export configuration
-        if "export" in buttons_params:
-            export_config = buttons_params["export"]
-            if isinstance(export_config, dict):
-                config["export"] = export_config
-                
-        # Parse column visibility configuration
-        if "colvis" in buttons_params:
-            colvis_config = buttons_params["colvis"]
-            if isinstance(colvis_config, dict):
-                config["colvis"] = colvis_config
-                
-        # Parse print configuration
-        if "print" in buttons_params:
-            print_config = buttons_params["print"]
-            if isinstance(print_config, dict):
-                config["print"] = print_config
-                
-        # Parse copy configuration
-        if "copy" in buttons_params:
-            copy_config = buttons_params["copy"]
-            if isinstance(copy_config, dict):
-                config["copy"] = copy_config
+        # Handle boolean configuration (buttons: true)
+        if isinstance(buttons_params, bool):
+            if buttons_params:
+                # Default buttons configuration
+                config = {"enabled": True}
+            else:
+                return None
+        # Handle object configuration
+        elif isinstance(buttons_params, dict):
+            # Parse export configuration
+            if "export" in buttons_params:
+                export_config = buttons_params["export"]
+                if isinstance(export_config, dict):
+                    config["export"] = export_config
+                    
+            # Parse column visibility configuration
+            if "colvis" in buttons_params:
+                colvis_config = buttons_params["colvis"]
+                if isinstance(colvis_config, dict):
+                    config["colvis"] = colvis_config
+                    
+            # Parse print configuration
+            if "print" in buttons_params:
+                print_config = buttons_params["print"]
+                if isinstance(print_config, dict):
+                    config["print"] = print_config
+                    
+            # Parse copy configuration
+            if "copy" in buttons_params:
+                copy_config = buttons_params["copy"]
+                if isinstance(copy_config, dict):
+                    config["copy"] = copy_config
                 
         return config if config else None
 
