@@ -706,6 +706,32 @@ class DataTables:
                 
         return config if config else None
 
+    def _parse_select_config(self) -> Optional[Dict[str, Any]]:
+        """Parse Select extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing select configuration or None if not requested
+        """
+        select_params = self.request_args.get("select")
+        if not select_params:
+            return None
+            
+        # Handle boolean true case (default configuration)
+        if select_params is True:
+            return {"style": "os"}
+            
+        config = {}
+        
+        # Parse selection style
+        if isinstance(select_params, dict):
+            style = select_params.get("style", "os")
+            if style in ["os", "single", "multi", "multi+shift"]:
+                config["style"] = style
+            else:
+                config["style"] = "os"
+                
+        return config if config else None
+
     def get_export_data(self) -> List[Dict[str, Any]]:
         """Get all data for export without pagination limits.
         
@@ -777,5 +803,10 @@ class DataTables:
         buttons_config = self._parse_buttons_config()
         if buttons_config:
             response["buttons"] = buttons_config
+            
+        # Add Select configuration if requested
+        select_config = self._parse_select_config()
+        if select_config:
+            response["select"] = select_config
         
         return response
