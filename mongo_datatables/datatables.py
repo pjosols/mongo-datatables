@@ -148,6 +148,22 @@ class DataTables:
         """
         if hasattr(pymongo_object, "db"):
             db = pymongo_object.db
+            
+            # Fix for Flask-PyMongo namespace issue: 
+            # Flask-PyMongo wrappers can create confusing nested structures.
+            # If db.db exists and is a Collection (not Database), we're dealing with
+            # a Flask-PyMongo wrapper where db.db is actually a collection named "db"
+            # In this case, we should use the original db object directly
+            if hasattr(db, "db"):
+                # Check if db.db is actually a Collection, not a Database
+                db_attr = getattr(db, "db")
+                # If it has a 'database' attribute, it's likely a Collection
+                if hasattr(db_attr, "database") and hasattr(db_attr, "name"):
+                    # This is a Collection, not a Database - use the original db
+                    pass  # Keep using the original db
+                else:
+                    # This might be a nested Database - use the inner one
+                    db = db_attr
                 
         elif hasattr(pymongo_object, "get_database"):
             db = pymongo_object.get_database()
@@ -1097,6 +1113,64 @@ class DataTables:
             
         return config if config else None
 
+    def _parse_colreorder_config(self) -> Optional[Dict[str, Any]]:
+        """Parse ColReorder extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing colReorder configuration or None if not requested
+        """
+        colreorder_params = self.request_args.get("colReorder")
+        if not colreorder_params:
+            return None
+            
+        config = {}
+        
+        # Handle boolean configuration (colReorder: true)
+        if isinstance(colreorder_params, bool):
+            if colreorder_params:
+                config = {"enabled": True}
+            else:
+                return None
+        # Handle object configuration
+        elif isinstance(colreorder_params, dict):
+            # Parse column order if provided
+            if "order" in colreorder_params:
+                order = colreorder_params["order"]
+                if isinstance(order, list):
+                    config["order"] = order
+                    
+            # Parse realtime configuration
+            if "realtime" in colreorder_params:
+                config["realtime"] = bool(colreorder_params["realtime"])
+                
+        return config if config else None
+
+    def get_colreorder_options(self) -> Optional[Dict[str, Any]]:
+        """Generate ColReorder options data if needed for server-side processing.
+        
+        Returns:
+            Dictionary containing column order information or None if not needed
+        """
+        colreorder_config = self._parse_colreorder_config()
+        if not colreorder_config:
+            return None
+            
+        # For ColReorder, we typically just need to confirm the current column order
+        # The client handles the reordering logic
+        column_order = []
+        for i, column in enumerate(self.columns):
+            column_order.append({
+                "index": i,
+                "data": column.get("data", ""),
+                "name": column.get("name", ""),
+                "title": column.get("title", column.get("data", ""))
+            })
+            
+        return {
+            "columns": column_order,
+            "enabled": True
+        }
+
     def _get_rowgroup_data(self) -> Optional[Dict[str, Any]]:
         """Generate RowGroup aggregation data using MongoDB pipeline.
         
@@ -1268,5 +1342,15 @@ class DataTables:
         rowgroup_data = self._get_rowgroup_data()
         if rowgroup_data:
             response["rowGroup"] = rowgroup_data
+            
+        # Add ColReorder configuration if requested
+        colreorder_config = self._parse_colreorder_config()
+        if colreorder_config:
+            response["colReorder"] = colreorder_config
+            
+            # Add column order data if needed
+            colreorder_options = self.get_colreorder_options()
+            if colreorder_options:
+                response["colReorder"].update(colreorder_options)
         
         return response
