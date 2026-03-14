@@ -1,11 +1,12 @@
 """
 MongoDB integration with jQuery DataTables
 """
-__version__ = '1.14.2'
+__version__ = '1.13.2'
 
 from mongo_datatables.datatables import DataTables, DataField
 from mongo_datatables.editor import Editor
 from mongo_datatables.config_validator import ConfigValidator, ValidationResult
+from mongo_datatables.config_parser import ConfigParser
 from mongo_datatables.exceptions import (
     MongoDataTablesError,
     InvalidDataError,
@@ -20,6 +21,7 @@ __all__ = [
     'Editor',
     'ConfigValidator',
     'ValidationResult',
+    'ConfigParser',
     'MongoDataTablesError',
     'InvalidDataError',
     'DatabaseOperationError',

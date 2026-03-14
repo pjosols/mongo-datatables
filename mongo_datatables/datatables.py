@@ -3,8 +3,9 @@
 import json
 import logging
 import re
+import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple, Set
+from typing import Dict, List, Any, Optional, Tuple, Set, Iterator
 from bson.objectid import ObjectId
 from pymongo.database import Database
 from pymongo.collection import Collection
@@ -14,6 +15,7 @@ from mongo_datatables.exceptions import DatabaseOperationError, QueryBuildError
 from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler
 from mongo_datatables.query_builder import MongoQueryBuilder
 from mongo_datatables.config_validator import ConfigValidator, ValidationResult
+from mongo_datatables.config_parser import ConfigParser
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +103,7 @@ class DataTables:
         request_args: Dict[str, Any],
         data_fields: Optional[List['DataField']] = None,
         use_text_index: bool = True,
+        stream_results: bool = False,
         **custom_filter: Any,
     ) -> None:
         """Initialize the DataTables processor.
@@ -111,6 +114,7 @@ class DataTables:
             request_args: DataTables request parameters
             data_fields: List of DataField objects defining database fields with UI mappings
             use_text_index: Whether to use text indexes when available (default: True)
+            stream_results: Whether to use cursor streaming for large datasets (default: False)
             **custom_filter: Additional filtering criteria
         """
         self.collection = self._get_collection(pymongo_object, collection_name)
@@ -118,6 +122,7 @@ class DataTables:
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
         self.use_text_index = use_text_index
+        self.stream_results = stream_results
 
         if 'data_fields' in custom_filter:
             del custom_filter['data_fields']
@@ -128,6 +133,7 @@ class DataTables:
         self._recordsTotal = None
         self._recordsFiltered = None
         self._has_text_index = None
+        self._query_stats = {}
 
         self._check_text_index()
 
@@ -137,8 +143,9 @@ class DataTables:
             has_text_index=self.has_text_index
         )
         
-        # Initialize configuration validator
+        # Initialize configuration validator and parser
         self.config_validator = ConfigValidator(self.collection, self.data_fields)
+        self.config_parser = ConfigParser(self.request_args, self.config_validator)
 
     def _get_collection(self, pymongo_object: Any, collection_name: str) -> Collection:
         """Get a MongoDB collection from a PyMongo object.
@@ -831,6 +838,8 @@ class DataTables:
         if self._results is not None:
             return self._results
 
+        start_time = time.time()
+        
         try:
             pipeline = []
 
@@ -848,29 +857,87 @@ class DataTables:
 
             pipeline.append({"$project": self.projection})
 
+            # Log query performance
+            query_start = time.time()
             cursor = self.collection.aggregate(pipeline)
-            results = list(cursor)
+            
+            if self.stream_results:
+                # Use streaming for large datasets
+                processed_results = list(self._stream_results(cursor))
+            else:
+                # Traditional approach - load all into memory
+                results = list(cursor)
+                processed_results = []
+                for result in results:
+                    result_dict = dict(result)
 
-            processed_results = []
-            for result in results:
-                result_dict = dict(result)
+                    if "_id" in result_dict:
+                        result_dict["DT_RowId"] = str(result_dict["_id"])
+                        del result_dict["_id"]
 
-                if "_id" in result_dict:
-                    result_dict["DT_RowId"] = str(result_dict["_id"])
-                    del result_dict["_id"]
+                    self._format_result_values(result_dict)
+                    processed_results.append(result_dict)
 
-                self._format_result_values(result_dict)
-                processed_results.append(result_dict)
+            query_time = time.time() - query_start
+            total_time = time.time() - start_time
+            
+            # Store query statistics
+            self._query_stats = {
+                "query_time": round(query_time * 1000, 2),  # Convert to milliseconds
+                "total_time": round(total_time * 1000, 2),
+                "result_count": len(processed_results),
+                "pipeline_stages": len(pipeline),
+                "streaming_enabled": self.stream_results
+            }
+            
+            # Log performance information
+            if query_time > 1.0:  # Log slow queries (>1 second)
+                logger.warning(f"Slow query detected: {query_time:.2f}s for {len(processed_results)} results. "
+                             f"Pipeline: {pipeline}")
+            elif query_time > 0.5:  # Log moderately slow queries
+                logger.info(f"Query took {query_time:.2f}s for {len(processed_results)} results")
+            else:
+                logger.debug(f"Query completed in {query_time:.2f}s for {len(processed_results)} results")
 
             self._results = processed_results
             return processed_results
 
         except PyMongoError as e:
-            logger.error(f"Error executing MongoDB query: {str(e)}", exc_info=True)
+            error_time = time.time() - start_time
+            logger.error(f"Error executing MongoDB query after {error_time:.2f}s: {str(e)}", exc_info=True)
             return []
         except Exception as e:
-            logger.error(f"Unexpected error in results(): {str(e)}", exc_info=True)
+            error_time = time.time() - start_time
+            logger.error(f"Unexpected error in results() after {error_time:.2f}s: {str(e)}", exc_info=True)
             return []
+
+    def _stream_results(self, cursor) -> Iterator[Dict[str, Any]]:
+        """Stream results from cursor for memory-efficient processing of large datasets.
+        
+        Args:
+            cursor: MongoDB aggregation cursor
+            
+        Yields:
+            Processed document dictionaries
+        """
+        for result in cursor:
+            result_dict = dict(result)
+
+            if "_id" in result_dict:
+                result_dict["DT_RowId"] = str(result_dict["_id"])
+                del result_dict["_id"]
+
+            self._format_result_values(result_dict)
+            yield result_dict
+
+    @property
+    def query_stats(self) -> Dict[str, Any]:
+        """Get query performance statistics.
+        
+        Returns:
+            Dictionary containing query performance metrics
+        """
+        return self._query_stats.copy()
 
     def count_total(self) -> int:
         """Count total records in the collection with optimized performance.
@@ -954,300 +1021,36 @@ class DataTables:
         return self._recordsFiltered
 
     def _parse_fixed_columns_config(self) -> Optional[Dict[str, Any]]:
-        """Parse FixedColumns configuration from request parameters.
-        
-        Returns:
-            FixedColumns configuration dict or None if not requested
-        """
-        fixed_columns = self.request_args.get("fixedColumns")
-        if not fixed_columns:
-            return None
-            
-        config = {}
-        
-        # Parse left fixed columns
-        if "left" in fixed_columns:
-            try:
-                config["left"] = int(fixed_columns["left"])
-            except (ValueError, TypeError):
-                config["left"] = 0
-                
-        # Parse right fixed columns  
-        if "right" in fixed_columns:
-            try:
-                config["right"] = int(fixed_columns["right"])
-            except (ValueError, TypeError):
-                config["right"] = 0
-        
-        # Validate configuration
-        validation = self.config_validator.validate_fixedcolumns_config(config)
-        if not validation.is_valid:
-            logger.warning(f"FixedColumns validation errors: {validation.errors}")
-        if validation.warnings:
-            logger.info(f"FixedColumns warnings: {validation.warnings}")
-                
-        return config if config else None
+        """Parse FixedColumns configuration from request parameters."""
+        return self.config_parser.parse_fixed_columns_config()
 
     def _parse_fixed_header_config(self) -> Optional[Dict[str, Any]]:
-        """Parse FixedHeader extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing fixedHeader configuration or None if not requested
-        """
-        fixed_header_params = self.request_args.get("fixedHeader")
-        if fixed_header_params is None:
-            return None
-        
-        # Handle boolean false case
-        if isinstance(fixed_header_params, bool) and not fixed_header_params:
-            return None
-            
-        config = {}
-        
-        # Handle boolean configuration (fixedHeader: true)
-        if isinstance(fixed_header_params, bool):
-            if fixed_header_params:
-                config = {"header": True, "footer": False}
-        # Handle object configuration (fixedHeader: {header: true, footer: false})
-        elif isinstance(fixed_header_params, dict):
-            if "header" in fixed_header_params:
-                config["header"] = bool(fixed_header_params["header"])
-            if "footer" in fixed_header_params:
-                config["footer"] = bool(fixed_header_params["footer"])
-            # For empty object, return empty config (will be included in response)
-                
-        return config if (config or isinstance(fixed_header_params, dict)) else None
+        """Parse FixedHeader extension configuration from request parameters."""
+        return self.config_parser.parse_fixed_header_config()
 
     def _parse_responsive_config(self) -> Optional[Dict[str, Any]]:
-        """Parse Responsive extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing responsive configuration or None if not requested
-        """
-        responsive_params = self.request_args.get("responsive")
-        if not responsive_params:
-            return None
-            
-        config = {}
-        
-        # Handle boolean configuration (responsive: true)
-        if isinstance(responsive_params, bool):
-            if responsive_params:
-                config = {"enabled": True}
-            else:
-                return None
-        # Handle object configuration
-        elif isinstance(responsive_params, dict):
-            # Parse breakpoints configuration
-            if "breakpoints" in responsive_params:
-                breakpoints = responsive_params["breakpoints"]
-                if isinstance(breakpoints, dict):
-                    config["breakpoints"] = breakpoints
-                    
-            # Parse display configuration
-            if "display" in responsive_params:
-                display = responsive_params["display"]
-                if isinstance(display, dict):
-                    config["display"] = display
-                    
-            # Parse column priorities
-            if "priorities" in responsive_params:
-                priorities = responsive_params["priorities"]
-                if isinstance(priorities, dict):
-                    config["priorities"] = priorities
-        
-        # Validate configuration
-        validation = self.config_validator.validate_responsive_config(config)
-        if validation.warnings:
-            logger.info(f"Responsive warnings: {validation.warnings}")
-                
-        return config if config else None
+        """Parse Responsive extension configuration from request parameters."""
+        return self.config_parser.parse_responsive_config()
 
     def _parse_buttons_config(self) -> Optional[Dict[str, Any]]:
-        """Parse Buttons extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing buttons configuration or None if not requested
-        """
-        buttons_params = self.request_args.get("buttons")
-        if not buttons_params:
-            return None
-            
-        config = {}
-        
-        # Handle boolean configuration (buttons: true)
-        if isinstance(buttons_params, bool):
-            if buttons_params:
-                # Default buttons configuration
-                config = {"enabled": True}
-            else:
-                return None
-        # Handle object configuration
-        elif isinstance(buttons_params, dict):
-            # Parse export configuration
-            if "export" in buttons_params:
-                export_config = buttons_params["export"]
-                if isinstance(export_config, dict):
-                    config["export"] = export_config
-                    
-            # Parse column visibility configuration
-            if "colvis" in buttons_params:
-                colvis_config = buttons_params["colvis"]
-                if isinstance(colvis_config, dict):
-                    config["colvis"] = colvis_config
-                    
-            # Parse print configuration
-            if "print" in buttons_params:
-                print_config = buttons_params["print"]
-                if isinstance(print_config, dict):
-                    config["print"] = print_config
-                    
-            # Parse copy configuration
-            if "copy" in buttons_params:
-                copy_config = buttons_params["copy"]
-                if isinstance(copy_config, dict):
-                    config["copy"] = copy_config
-                
-        return config if config else None
+        """Parse Buttons extension configuration from request parameters."""
+        return self.config_parser.parse_buttons_config()
 
     def _parse_select_config(self) -> Optional[Dict[str, Any]]:
-        """Parse Select extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing select configuration or None if not requested
-        """
-        select_params = self.request_args.get("select")
-        if not select_params:
-            return None
-            
-        # Handle boolean true case (default configuration)
-        if select_params is True:
-            return {"style": "os"}
-            
-        config = {}
-        
-        # Parse selection style
-        if isinstance(select_params, dict):
-            style = select_params.get("style", "os")
-            if style in ["os", "single", "multi", "multi+shift"]:
-                config["style"] = style
-            else:
-                config["style"] = "os"
-                
-        return config if config else None
+        """Parse Select extension configuration from request parameters."""
+        return self.config_parser.parse_select_config()
 
     def _parse_searchpanes_config(self) -> Optional[Dict[str, Any]]:
-        """Parse SearchPanes configuration from request parameters.
-        
-        Returns:
-            SearchPanes configuration dict or None if not requested
-        """
-        searchpanes = self.request_args.get("searchPanes")
-        if not searchpanes:
-            return None
-            
-        # Handle boolean true case (default configuration)
-        if searchpanes is True:
-            return {}
-            
-        config = {}
-        
-        # Parse columns configuration
-        if isinstance(searchpanes, dict):
-            if "columns" in searchpanes:
-                columns = searchpanes["columns"]
-                if isinstance(columns, list):
-                    config["columns"] = columns
-                    
-            # Parse threshold
-            if "threshold" in searchpanes:
-                try:
-                    threshold = float(searchpanes["threshold"])
-                    if 0 <= threshold <= 1:
-                        config["threshold"] = threshold
-                except (ValueError, TypeError):
-                    pass
-                    
-            # Parse other options
-            for key in ["cascadePanes", "clear", "container", "dtOpts", "emptyMessage", "hideCount", "i18n", "layout", "orderable", "preSelect", "viewCount"]:
-                if key in searchpanes:
-                    config[key] = searchpanes[key]
-        
-        # Validate configuration
-        validation = self.config_validator.validate_searchpanes_config(config)
-        if not validation.is_valid:
-            logger.warning(f"SearchPanes validation errors: {validation.errors}")
-        if validation.warnings:
-            logger.info(f"SearchPanes warnings: {validation.warnings}")
-                
-        return config if config else None
+        """Parse SearchPanes configuration from request parameters."""
+        return self.config_parser.parse_searchpanes_config()
 
     def _parse_rowgroup_config(self) -> Optional[Dict[str, Any]]:
-        """Parse RowGroup extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing rowGroup configuration or None if not requested
-        """
-        rowgroup_params = self.request_args.get("rowGroup")
-        if not rowgroup_params:
-            return None
-            
-        config = {}
-        
-        # Parse data source for grouping
-        if "dataSrc" in rowgroup_params:
-            data_src = rowgroup_params["dataSrc"]
-            if isinstance(data_src, (str, int)):
-                config["dataSrc"] = data_src
-                
-        # Parse start render function indicator
-        if "startRender" in rowgroup_params:
-            config["startRender"] = bool(rowgroup_params["startRender"])
-            
-        # Parse end render function indicator  
-        if "endRender" in rowgroup_params:
-            config["endRender"] = bool(rowgroup_params["endRender"])
-            
-        return config if config else None
+        """Parse RowGroup extension configuration from request parameters."""
+        return self.config_parser.parse_rowgroup_config()
 
     def _parse_colreorder_config(self) -> Optional[Dict[str, Any]]:
-        """Parse ColReorder extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing colReorder configuration or None if not requested
-        """
-        colreorder_params = self.request_args.get("colReorder")
-        if not colreorder_params:
-            return None
-            
-        config = {}
-        
-        # Handle boolean configuration (colReorder: true)
-        if isinstance(colreorder_params, bool):
-            if colreorder_params:
-                config = {"enabled": True}
-            else:
-                return None
-        # Handle object configuration
-        elif isinstance(colreorder_params, dict):
-            # Parse column order if provided
-            if "order" in colreorder_params:
-                order = colreorder_params["order"]
-                if isinstance(order, list):
-                    config["order"] = order
-                    
-            # Parse realtime configuration
-            if "realtime" in colreorder_params:
-                config["realtime"] = bool(colreorder_params["realtime"])
-        
-        # Validate configuration
-        validation = self.config_validator.validate_colreorder_config(config)
-        if not validation.is_valid:
-            logger.warning(f"ColReorder validation errors: {validation.errors}")
-        if validation.warnings:
-            logger.info(f"ColReorder warnings: {validation.warnings}")
-                
-        return config if config else None
+        """Parse ColReorder extension configuration from request parameters."""
+        return self.config_parser.parse_colreorder_config()
 
     def get_colreorder_options(self) -> Optional[Dict[str, Any]]:
         """Generate ColReorder options data if needed for server-side processing.
