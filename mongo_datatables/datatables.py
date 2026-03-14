@@ -281,6 +281,121 @@ class DataTables:
             self.searchable_columns
         )
 
+    def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Generate SearchPanes options data for all searchable columns.
+
+        Returns:
+            Dictionary mapping column names to their option lists
+        """
+        options = {}
+        
+        for column in self.columns:
+            if not column.get("searchable", False):
+                continue
+                
+            column_name = column.get("data")
+            if not column_name:
+                continue
+                
+            db_field = self.field_mapper.get_db_field(column_name)
+            field_type = self.field_mapper.get_field_type(column_name)
+            
+            # Skip complex types that don't work well with SearchPanes
+            if field_type in ["object", "array"]:
+                continue
+                
+            try:
+                pipeline = []
+                
+                # Apply base filter if exists
+                if self.custom_filter:
+                    pipeline.append({"$match": self.custom_filter})
+                
+                # Group by field value and count occurrences
+                pipeline.extend([
+                    {"$group": {
+                        "_id": f"${db_field}",
+                        "count": {"$sum": 1}
+                    }},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 1000}  # Limit options for performance
+                ])
+                
+                cursor = self.collection.aggregate(pipeline)
+                column_options = []
+                
+                for result in cursor:
+                    value = result["_id"]
+                    count = result["count"]
+                    
+                    # Format value for display
+                    if isinstance(value, ObjectId):
+                        display_value = str(value)
+                    elif hasattr(value, 'isoformat'):
+                        display_value = value.isoformat()
+                    else:
+                        display_value = str(value) if value is not None else ""
+                    
+                    column_options.append({
+                        "label": display_value,
+                        "value": display_value,
+                        "count": count
+                    })
+                
+                options[column_name] = column_options
+                
+            except Exception as e:
+                logger.error(f"Error generating SearchPanes options for {column_name}: {str(e)}")
+                options[column_name] = []
+        
+        return options
+
+    def _parse_searchpanes_filters(self) -> Dict[str, Any]:
+        """Parse SearchPanes filter parameters from request.
+
+        Returns:
+            MongoDB query conditions for SearchPanes filters
+        """
+        conditions = []
+        
+        # Check for searchPanes parameter in request
+        searchpanes = self.request_args.get("searchPanes", {})
+        
+        # If searchPanes is just a boolean flag, no filters to apply
+        if not isinstance(searchpanes, dict):
+            return {}
+        
+        for column_name, selected_values in searchpanes.items():
+            if not selected_values:
+                continue
+                
+            db_field = self.field_mapper.get_db_field(column_name)
+            field_type = self.field_mapper.get_field_type(column_name)
+            
+            # Convert values based on field type
+            converted_values = []
+            for value in selected_values:
+                if field_type == "number":
+                    try:
+                        converted_values.append(TypeConverter.to_number(value))
+                    except:
+                        converted_values.append(value)
+                elif field_type == "objectid":
+                    try:
+                        converted_values.append(ObjectId(value))
+                    except:
+                        converted_values.append(value)
+                else:
+                    converted_values.append(value)
+            
+            if converted_values:
+                conditions.append({db_field: {"$in": converted_values}})
+        
+        if conditions:
+            return {"$and": conditions}
+        return {}
+
     @property
     def filter(self) -> Dict[str, Any]:
         """Combine all filter conditions into a single MongoDB query.
@@ -292,6 +407,11 @@ class DataTables:
 
         if self.custom_filter:
             conditions.append(self.custom_filter)
+
+        # Add SearchPanes filters
+        searchpanes_filter = self._parse_searchpanes_filters()
+        if searchpanes_filter:
+            conditions.append(searchpanes_filter)
 
         global_search = self.global_search_condition
         if global_search:
@@ -494,9 +614,15 @@ class DataTables:
         Returns:
             Dictionary containing all required DataTables response fields
         """
-        return {
+        response = {
             "draw": int(self.request_args.get("draw", 1)),
             "recordsTotal": self.count_total(),
             "recordsFiltered": self.count_filtered(),
             "data": self.results(),
         }
+        
+        # Add SearchPanes options if requested
+        if self.request_args.get("searchPanes"):
+            response["searchPanes"] = {"options": self.get_searchpanes_options()}
+        
+        return response
