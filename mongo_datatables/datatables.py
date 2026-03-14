@@ -782,6 +782,115 @@ class DataTables:
                 
         return config if config else None
 
+    def _parse_rowgroup_config(self) -> Optional[Dict[str, Any]]:
+        """Parse RowGroup extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing rowGroup configuration or None if not requested
+        """
+        rowgroup_params = self.request_args.get("rowGroup")
+        if not rowgroup_params:
+            return None
+            
+        config = {}
+        
+        # Parse data source for grouping
+        if "dataSrc" in rowgroup_params:
+            data_src = rowgroup_params["dataSrc"]
+            if isinstance(data_src, (str, int)):
+                config["dataSrc"] = data_src
+                
+        # Parse start render function indicator
+        if "startRender" in rowgroup_params:
+            config["startRender"] = bool(rowgroup_params["startRender"])
+            
+        # Parse end render function indicator  
+        if "endRender" in rowgroup_params:
+            config["endRender"] = bool(rowgroup_params["endRender"])
+            
+        return config if config else None
+
+    def _get_rowgroup_data(self) -> Optional[Dict[str, Any]]:
+        """Generate RowGroup aggregation data using MongoDB pipeline.
+        
+        Returns:
+            Dictionary containing group summaries or None if RowGroup not configured
+        """
+        rowgroup_config = self._parse_rowgroup_config()
+        if not rowgroup_config or "dataSrc" not in rowgroup_config:
+            return None
+            
+        data_src = rowgroup_config["dataSrc"]
+        
+        # Map column index to field name if dataSrc is numeric
+        if isinstance(data_src, int):
+            if data_src < len(self.columns):
+                field_name = self.columns[data_src].get("data")
+            else:
+                return None
+        else:
+            field_name = data_src
+            
+        # Get the actual MongoDB field name
+        mongo_field = self.field_mapper.get_db_field(field_name) if field_name else None
+        if not mongo_field:
+            return None
+            
+        try:
+            # Build aggregation pipeline for group summaries
+            pipeline = []
+            
+            # Apply filters
+            if self.filter:
+                pipeline.append({"$match": self.filter})
+                
+            # Group by the specified field and calculate summaries
+            group_stage = {
+                "$group": {
+                    "_id": f"${mongo_field}",
+                    "count": {"$sum": 1}
+                }
+            }
+            
+            # Add sum and avg for numeric fields
+            for field in self.data_fields:
+                if field.data_type == "number":
+                    group_stage["$group"][f"{field.alias}_sum"] = {"$sum": f"${field.name}"}
+                    group_stage["$group"][f"{field.alias}_avg"] = {"$avg": f"${field.name}"}
+                    
+            pipeline.append(group_stage)
+            pipeline.append({"$sort": {"_id": 1}})
+            
+            cursor = self.collection.aggregate(pipeline)
+            groups = list(cursor)
+            
+            # Format group data
+            group_data = {}
+            for group in groups:
+                group_key = str(group["_id"]) if group["_id"] is not None else "null"
+                group_data[group_key] = {
+                    "count": group["count"]
+                }
+                
+                # Add numeric summaries
+                for field in self.data_fields:
+                    if field.data_type == "number":
+                        sum_key = f"{field.alias}_sum"
+                        avg_key = f"{field.alias}_avg"
+                        if sum_key in group:
+                            group_data[group_key][sum_key] = group[sum_key]
+                        if avg_key in group:
+                            group_data[group_key][avg_key] = group[avg_key]
+                            
+            return {
+                "dataSrc": data_src,
+                "groups": group_data
+            }
+            
+        except PyMongoError as e:
+            logger.error(f"Error generating RowGroup data: {str(e)}", exc_info=True)
+            return None
+
     def get_export_data(self) -> List[Dict[str, Any]]:
         """Get all data for export without pagination limits.
         
@@ -858,5 +967,10 @@ class DataTables:
         select_config = self._parse_select_config()
         if select_config:
             response["select"] = select_config
+            
+        # Add RowGroup data if requested
+        rowgroup_data = self._get_rowgroup_data()
+        if rowgroup_data:
+            response["rowGroup"] = rowgroup_data
         
         return response
