@@ -578,34 +578,84 @@ class DataTables:
             return []
 
     def count_total(self) -> int:
-        """Count total records in the collection.
+        """Count total records in the collection with optimized performance.
+
+        Uses estimated_document_count() for large collections (>100k docs) and
+        count_documents({}) for smaller collections to maintain accuracy.
 
         Returns:
             Total number of records, or 0 if an error occurs
         """
         if self._recordsTotal is None:
             try:
-                self._recordsTotal = self.collection.count_documents({})
+                # Try estimated count first for performance
+                estimated_count = self.collection.estimated_document_count()
+                
+                # Convert to int in case it's a mock object
+                try:
+                    estimated_count = int(estimated_count)
+                except (TypeError, ValueError):
+                    # If conversion fails, fall back to exact count
+                    self._recordsTotal = self.collection.count_documents({})
+                    logger.debug(f"Using exact count (fallback): {self._recordsTotal}")
+                    return self._recordsTotal
+                
+                # Use exact count for small collections or when custom filter exists
+                if estimated_count < 100000 or self.custom_filter:
+                    self._recordsTotal = self.collection.count_documents({})
+                    logger.debug(f"Using exact count: {self._recordsTotal}")
+                else:
+                    self._recordsTotal = estimated_count
+                    logger.debug(f"Using estimated count: {self._recordsTotal}")
+                    
             except PyMongoError as e:
                 logger.error(f"Error counting total records: {str(e)}", exc_info=True)
-                self._recordsTotal = 0
+                # Fallback to basic count
+                try:
+                    self._recordsTotal = self.collection.count_documents({})
+                except PyMongoError:
+                    self._recordsTotal = 0
         return self._recordsTotal
 
     def count_filtered(self) -> int:
-        """Count records after applying filters.
+        """Count records after applying filters with optimized performance.
+
+        Uses aggregation pipeline for complex filters to improve performance
+        on large datasets.
 
         Returns:
             Number of filtered records, or 0 if an error occurs
         """
         if self._recordsFiltered is None:
             try:
-                if self.filter:
-                    self._recordsFiltered = self.collection.count_documents(self.filter)
-                else:
+                if not self.filter:
                     self._recordsFiltered = self.count_total()
+                else:
+                    # Try aggregation pipeline for better performance on large datasets
+                    try:
+                        pipeline = [
+                            {"$match": self.filter},
+                            {"$count": "total"}
+                        ]
+                        
+                        result = list(self.collection.aggregate(pipeline))
+                        self._recordsFiltered = result[0]["total"] if result else 0
+                        logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")
+                    except (PyMongoError, Exception) as e:
+                        # Fallback to traditional count_documents
+                        logger.debug(f"Aggregation failed, using count_documents: {str(e)}")
+                        self._recordsFiltered = self.collection.count_documents(self.filter)
+                    
             except PyMongoError as e:
                 logger.error(f"Error counting filtered records: {str(e)}", exc_info=True)
-                self._recordsFiltered = 0
+                # Final fallback
+                try:
+                    if self.filter:
+                        self._recordsFiltered = self.collection.count_documents(self.filter)
+                    else:
+                        self._recordsFiltered = self.count_total()
+                except PyMongoError:
+                    self._recordsFiltered = 0
         return self._recordsFiltered
 
     def _parse_fixed_columns_config(self) -> Optional[Dict[str, Any]]:
