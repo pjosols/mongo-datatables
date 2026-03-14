@@ -925,6 +925,33 @@ class DataTables:
                 
         return config if config else None
 
+    def _parse_fixed_header_config(self) -> Optional[Dict[str, Any]]:
+        """Parse FixedHeader extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing fixedHeader configuration or None if not requested
+        """
+        fixed_header_params = self.request_args.get("fixedHeader")
+        if not fixed_header_params:
+            return None
+            
+        config = {}
+        
+        # Handle boolean configuration (fixedHeader: true)
+        if isinstance(fixed_header_params, bool):
+            if fixed_header_params:
+                config = {"header": True, "footer": False}
+            else:
+                return None
+        # Handle object configuration (fixedHeader: {header: true, footer: false})
+        elif isinstance(fixed_header_params, dict):
+            if "header" in fixed_header_params:
+                config["header"] = bool(fixed_header_params["header"])
+            if "footer" in fixed_header_params:
+                config["footer"] = bool(fixed_header_params["footer"])
+                
+        return config if config else None
+
     def _parse_responsive_config(self) -> Optional[Dict[str, Any]]:
         """Parse Responsive extension configuration from request parameters.
         
@@ -937,23 +964,31 @@ class DataTables:
             
         config = {}
         
-        # Parse breakpoints configuration
-        if "breakpoints" in responsive_params:
-            breakpoints = responsive_params["breakpoints"]
-            if isinstance(breakpoints, dict):
-                config["breakpoints"] = breakpoints
-                
-        # Parse display configuration
-        if "display" in responsive_params:
-            display = responsive_params["display"]
-            if isinstance(display, dict):
-                config["display"] = display
-                
-        # Parse column priorities
-        if "priorities" in responsive_params:
-            priorities = responsive_params["priorities"]
-            if isinstance(priorities, dict):
-                config["priorities"] = priorities
+        # Handle boolean configuration (responsive: true)
+        if isinstance(responsive_params, bool):
+            if responsive_params:
+                config = {"enabled": True}
+            else:
+                return None
+        # Handle object configuration
+        elif isinstance(responsive_params, dict):
+            # Parse breakpoints configuration
+            if "breakpoints" in responsive_params:
+                breakpoints = responsive_params["breakpoints"]
+                if isinstance(breakpoints, dict):
+                    config["breakpoints"] = breakpoints
+                    
+            # Parse display configuration
+            if "display" in responsive_params:
+                display = responsive_params["display"]
+                if isinstance(display, dict):
+                    config["display"] = display
+                    
+            # Parse column priorities
+            if "priorities" in responsive_params:
+                priorities = responsive_params["priorities"]
+                if isinstance(priorities, dict):
+                    config["priorities"] = priorities
                 
         return config if config else None
 
@@ -1195,6 +1230,11 @@ class DataTables:
         fixed_columns_config = self._parse_fixed_columns_config()
         if fixed_columns_config:
             response["fixedColumns"] = fixed_columns_config
+            
+        # Add FixedHeader configuration if requested
+        fixed_header_config = self._parse_fixed_header_config()
+        if fixed_header_config:
+            response["fixedHeader"] = fixed_header_config
             
         # Add Responsive configuration if requested
         responsive_config = self._parse_responsive_config()
