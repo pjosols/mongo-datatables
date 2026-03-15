@@ -3028,3 +3028,157 @@ class TestGetCollection(unittest.TestCase):
 
         dt = DataTables(flask_pymongo, "books", self.ARGS, [DataField("name", "string")])
         flask_pymongo.db.__getitem__.assert_called_once_with("books")
+
+
+# --- Phase 2: _build_filter, _sb_group, _get_rowgroup_data ---
+
+_P2_BASE_ARGS = {
+    "draw": 1, "start": 0, "length": 10,
+    "search": {"value": "", "regex": False},
+    "order": [{"column": 0, "dir": "asc"}],
+    "columns": [{"data": "Title", "searchable": True, "orderable": True,
+                  "search": {"value": "", "regex": False}}],
+}
+
+
+def _make_p2_dt(request_args, data_fields=None, **custom_filter):
+    col = MagicMock(spec=Collection)
+    col.list_indexes = MagicMock(return_value=[])
+    col.aggregate = MagicMock(return_value=iter([]))
+    col.count_documents = MagicMock(return_value=0)
+    col.estimated_document_count = MagicMock(return_value=0)
+    db = {"test": col}
+    return DataTables(db, "test", request_args, data_fields or [], **custom_filter), col
+
+
+class TestBuildFilter:
+    def test_empty_returns_empty_dict(self):
+        dt, _ = _make_p2_dt(_P2_BASE_ARGS)
+        assert dt._build_filter() == {}
+
+    def test_custom_filter_included(self):
+        dt, _ = _make_p2_dt(_P2_BASE_ARGS, status="active")
+        result = dt._build_filter()
+        assert result.get("status") == "active"
+
+    def test_global_search_included(self):
+        args = {**_P2_BASE_ARGS, "search": {"value": "Orwell", "regex": False}}
+        dt, _ = _make_p2_dt(args)
+        dt._has_text_index = False
+        result = dt._build_filter()
+        assert result != {}
+
+    def test_column_search_included(self):
+        args = {**_P2_BASE_ARGS, "columns": [
+            {"data": "Title", "searchable": True, "orderable": True,
+             "search": {"value": "1984", "regex": False}}
+        ]}
+        dt, _ = _make_p2_dt(args)
+        result = dt._build_filter()
+        assert result != {}
+
+    def test_searchbuilder_included(self):
+        args = {**_P2_BASE_ARGS, "searchBuilder": {
+            "logic": "AND",
+            "criteria": [{"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}]
+        }}
+        dt, _ = _make_p2_dt(args)
+        result = dt._build_filter()
+        assert result != {}
+
+    def test_searchpanes_included(self):
+        args = {**_P2_BASE_ARGS, "searchPanes": {"Title": ["1984"]}}
+        dt, _ = _make_p2_dt(args)
+        result = dt._build_filter()
+        assert result != {}
+
+    def test_multiple_sources_wrapped_in_and(self):
+        args = {**_P2_BASE_ARGS, "search": {"value": "Orwell", "regex": False}}
+        dt, _ = _make_p2_dt(args, status="active")
+        dt._has_text_index = False
+        result = dt._build_filter()
+        assert "$and" in result
+        assert len(result["$and"]) >= 2
+
+    def test_single_source_not_wrapped(self):
+        dt, _ = _make_p2_dt(_P2_BASE_ARGS, status="active")
+        result = dt._build_filter()
+        assert "$and" not in result
+        assert result == {"status": "active"}
+
+    def test_search_fixed_included(self):
+        args = {**_P2_BASE_ARGS, "search": {"value": "", "regex": False, "fixed": [{"name": "active", "term": "Orwell"}]}}
+        dt, _ = _make_p2_dt(args)
+        result = dt._build_filter()
+        assert result != {}
+
+
+class TestSbGroup:
+    def _dt(self):
+        dt, _ = _make_p2_dt(_P2_BASE_ARGS)
+        return dt
+
+    def test_empty_group_returns_empty(self):
+        assert self._dt()._sb_group({"logic": "AND", "criteria": []}) == {}
+
+    def test_single_criterion_not_wrapped(self):
+        criterion = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
+        result = self._dt()._sb_group({"logic": "AND", "criteria": [criterion]})
+        assert "$and" not in result
+        assert result != {}
+
+    def test_and_logic_wraps_in_and(self):
+        c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
+        result = self._dt()._sb_group({"logic": "AND", "criteria": [c, c]})
+        assert "$and" in result
+
+    def test_or_logic_wraps_in_or(self):
+        c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
+        result = self._dt()._sb_group({"logic": "OR", "criteria": [c, c]})
+        assert "$or" in result
+
+    def test_nested_group(self):
+        c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
+        inner = {"logic": "OR", "criteria": [c, c]}
+        outer = {"logic": "AND", "criteria": [c, inner]}
+        result = self._dt()._sb_group(outer)
+        assert "$and" in result
+
+    def test_invalid_criterion_skipped(self):
+        bad = {"condition": "=", "type": "string", "value": ["1984"]}  # no origData
+        result = self._dt()._sb_group({"logic": "AND", "criteria": [bad]})
+        assert result == {}
+
+
+class TestGetRowgroupData:
+    def test_no_rowgroup_config_returns_none(self):
+        dt, _ = _make_p2_dt(_P2_BASE_ARGS)
+        assert dt._get_rowgroup_data() is None
+
+    def test_string_datasrc_builds_pipeline(self):
+        args = {**_P2_BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
+        dt, col = _make_p2_dt(args)
+        col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
+        result = dt._get_rowgroup_data()
+        assert result is not None
+        assert "dataSrc" in result
+        assert "groups" in result
+
+    def test_numeric_datasrc_maps_to_column(self):
+        args = {**_P2_BASE_ARGS, "rowGroup": {"dataSrc": 0}}
+        dt, col = _make_p2_dt(args)
+        col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
+        result = dt._get_rowgroup_data()
+        assert result is not None
+        assert result["dataSrc"] == 0
+
+    def test_out_of_range_datasrc_returns_none(self):
+        args = {**_P2_BASE_ARGS, "rowGroup": {"dataSrc": 99}}
+        dt, _ = _make_p2_dt(args)
+        assert dt._get_rowgroup_data() is None
+
+    def test_pymongo_error_returns_none(self):
+        args = {**_P2_BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
+        dt, col = _make_p2_dt(args)
+        col.aggregate = MagicMock(side_effect=PyMongoError("db error"))
+        assert dt._get_rowgroup_data() is None
