@@ -1,3 +1,7 @@
+## [1.29.6] - 2026-03-15
+### Added
+- `bson.Binary` serialization in `_format_result_values`: UUID subtypes (3/4) are converted to canonical UUID string form via `uuid.UUID`; other subtypes are hex-encoded. Fixes `TypeError` at JSON serialization time for documents containing binary fields. Handled in both top-level field and list-items branches.
+
 ## [1.29.4] - 2026-03-15
 ### Fixed
 - `_sb_date` now handles full ISO datetime strings (e.g. `2024-01-15T00:00:00.000Z`) from DataTables SearchBuilder by extracting the date portion with `.split('T')[0]` before parsing. Previously, ISO datetime strings caused `parse_iso_date` to raise `FieldMappingError`, silently returning `{}` — the SearchBuilder date filter appeared to work in the UI but had no effect on results. Same fix as v1.28.2 (ColumnControl) and v1.29.2 (SearchPanes).

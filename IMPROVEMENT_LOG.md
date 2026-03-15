@@ -4,6 +4,26 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## v1.29.6 — bson.Binary / UUID Serialization (2026-03-15)
+
+### Problem
+`bson.Binary` values (used for UUIDs and raw binary data) passed through `_format_result_values` unhandled, causing `TypeError` at JSON serialization time. MongoDB commonly stores UUIDs as `bson.Binary` with subtype 3 (old UUID) or 4 (standard UUID). This is the same class of bug as the Decimal128 fix in v1.29.5.
+
+### Changes
+- `datatables.py`: added `import uuid`; added `Binary` to `from bson import ...` import
+- `_format_result_values`: added `Binary → str(uuid.UUID(...))` for subtypes 3/4, `Binary → hex()` for other subtypes — in both the top-level field branch and the list-items branch
+- `tests/test_binary_serialization.py`: 7 new tests (UUID subtype 4, UUID subtype 3, non-UUID binary, unaffected fields, UUID in list, non-UUID binary in list, JSON serializable)
+
+### Backward Compatibility
+Fully backward compatible — only adds handling for a previously-unhandled BSON type.
+
+### Test Results
+- New tests: 7/7 passed
+- Full suite: 631 passed (was 624)
+- Branch: feature/binary-uuid-serialization, commit: 492d7e3
+
+---
+
 ## v1.29.5 — Decimal128 Serialization (2026-03-15)
 
 ### Problem
@@ -1237,3 +1257,23 @@ Editor.db property hardcoded `self.mongo.db` (Flask-PyMongo only). Passing a pla
 ### Compatibility
 - Fully backward compatible — Flask-PyMongo usage unchanged
 - No API changes
+
+## v1.30.0 — Code Quality: Structural Fixes & Date Semantics (2026-03-15)
+
+### Changes
+1. **Fix: `build_column_search` block nesting** (`query_builder.py`)
+   - The `if search_value and searchable` and `if has_cc` blocks were siblings of the outer `if (search_value and searchable) or has_cc` block, creating a fragile dependency where `db_field`/`field_type` could theoretically be unbound
+   - Both inner blocks are now properly nested inside the outer `if`, making the control flow explicit and safe
+
+2. **Fix: `_hashable` closure moved outside loop** (`datatables.py`)
+   - `_hashable` was redefined on every iteration of the `for col_name, _ in eligible` loop in `get_searchpanes_options`
+   - Moved to just before the loop — defined once, reused across all iterations
+
+3. **Fix: `_sb_date` between/!between day-inclusive semantics** (`datatables.py`)
+   - `between` used `$lte: _d(v1)` which excluded the rest of v1's day (matched only midnight)
+   - Now uses `$lt: _d(v1) + timedelta(days=1)` — consistent with how `<=` is handled
+   - `!between` complement updated to `$gte: _d(v1) + timedelta(days=1)` for correctness
+
+### Tests
+- Added `tests/test_regression_v1_30_0.py` with 9 targeted regression tests
+- **640 passed** (was 631), 59 subtests passed
