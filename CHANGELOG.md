@@ -1,3 +1,9 @@
+## [1.27.4] - 2026-03-15
+### Added / Fixed
+- `get_rows()` now returns a DataTables-compatible error response on unhandled exceptions: `{"draw": ..., "error": str(e), "recordsTotal": 0, "recordsFiltered": 0, "data": []}` instead of propagating the exception to the caller
+- `_check_text_index()` now guards `list_indexes()` against `PyMongoError`, falling back to `_has_text_index = False` on connection failure
+- Added 4 new tests covering both error paths and the success (no-error-key) path (564 total)
+
 ## v1.27.2 — 2026-03-15
 
 ### Performance: Pre-compute field mapper lookups in `build_global_search`
