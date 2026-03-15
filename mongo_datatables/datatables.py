@@ -3,9 +3,10 @@
 import logging
 import math
 import re
+import uuid
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
-from bson import Decimal128, ObjectId
+from bson import Binary, Decimal128, ObjectId
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
@@ -789,6 +790,8 @@ class DataTables:
                         val[i] = item.isoformat()
                     elif isinstance(item, Decimal128):
                         val[i] = float(item.to_decimal())
+                    elif isinstance(item, Binary):
+                        val[i] = str(uuid.UUID(bytes=bytes(item))) if item.subtype in (3, 4) else item.hex()
             elif isinstance(val, ObjectId):
                 result_dict[key] = str(val)
             elif hasattr(val, 'isoformat'):
@@ -797,6 +800,8 @@ class DataTables:
                 result_dict[key] = None
             elif isinstance(val, Decimal128):
                 result_dict[key] = float(val.to_decimal())
+            elif isinstance(val, Binary):
+                result_dict[key] = str(uuid.UUID(bytes=bytes(val))) if val.subtype in (3, 4) else val.hex()
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
         """Convert aggregation cursor to DataTables-formatted list."""
