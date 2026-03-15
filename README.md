@@ -16,7 +16,7 @@ This package provides an elegant bridge between jQuery DataTables and MongoDB da
 
 - Server-side processing for efficient handling of large datasets
 - Advanced search functionality with column-specific filtering
-- Multi-column sorting with MongoDB optimization
+- Multi-column sorting with MongoDB optimization, including ColReorder compatibility (`order[i][name]` name-based column ordering is supported)
 - Complete Editor integration for create, read, update, and delete operations
 - Framework-agnostic design compatible with Flask, Django, and other Python web frameworks
 

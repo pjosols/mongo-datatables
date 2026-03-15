@@ -106,7 +106,7 @@ class MongoQueryBuilder:
                 else:
                     regex_flag = column_search.get("regex", False)
                     pattern = search_value if regex_flag else re.escape(search_value)
-                    conditions.append({column_name: {"$regex": pattern, "$options": "i"}})
+                    conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
 
         if conditions:
             return {"$and": conditions}
