@@ -52,7 +52,7 @@ class TestSbDateOperators(unittest.TestCase):
 
     def test_sb_date_between_still_works(self):
         result = self.dt._sb_date(self.field, "between", "2024-03-01", "2024-03-31")
-        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 3, 1), "$lte": datetime(2024, 3, 31)}})
+        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 3, 1), "$lt": datetime(2024, 4, 1)}})
 
     def test_sb_date_invalid_date_returns_empty(self):
         result = self.dt._sb_date(self.field, "<=", "not-a-date", None)

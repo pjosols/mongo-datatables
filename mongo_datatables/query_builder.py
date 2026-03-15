@@ -67,52 +67,52 @@ class MongoQueryBuilder:
                 field_type = self.field_mapper.get_field_type(column_name)
                 db_field = self.field_mapper.get_db_field(column_name)
 
-            if search_value and column.get("searchable") in (True, "true", "True", 1):
-                if field_type == "number":
-                    if '|' in search_value:
-                        parts = search_value.split('|', 1)
-                        range_cond: Dict[str, Any] = {}
-                        try:
-                            if parts[0].strip():
-                                range_cond['$gte'] = TypeConverter.to_number(parts[0].strip())
-                            if parts[1].strip():
-                                range_cond['$lte'] = TypeConverter.to_number(parts[1].strip())
-                        except (ValueError, TypeError, FieldMappingError):
-                            pass
-                        if range_cond:
-                            conditions.append({db_field: range_cond})
+                if search_value and column.get("searchable") in (True, "true", "True", 1):
+                    if field_type == "number":
+                        if '|' in search_value:
+                            parts = search_value.split('|', 1)
+                            range_cond: Dict[str, Any] = {}
+                            try:
+                                if parts[0].strip():
+                                    range_cond['$gte'] = TypeConverter.to_number(parts[0].strip())
+                                if parts[1].strip():
+                                    range_cond['$lte'] = TypeConverter.to_number(parts[1].strip())
+                            except (ValueError, TypeError, FieldMappingError):
+                                pass
+                            if range_cond:
+                                conditions.append({db_field: range_cond})
+                        else:
+                            try:
+                                numeric_value = TypeConverter.to_number(search_value)
+                                conditions.append({db_field: numeric_value})
+                            except Exception:
+                                pass
+                    elif field_type == "date":
+                        if '|' in search_value:
+                            parts = search_value.split('|', 1)
+                            range_cond = {}
+                            try:
+                                if parts[0].strip():
+                                    date_range = DateHandler.get_date_range_for_comparison(parts[0].strip(), '>=')
+                                    range_cond['$gte'] = date_range.get('$gte')
+                                if parts[1].strip():
+                                    date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
+                                    range_cond['$lt'] = date_range.get('$lt')
+                            except Exception:
+                                pass
+                            if range_cond:
+                                conditions.append({db_field: range_cond})
+                        else:
+                            cond = self._build_date_condition(db_field, search_value, '=')
+                            if cond:
+                                conditions.append(cond)
                     else:
-                        try:
-                            numeric_value = TypeConverter.to_number(search_value)
-                            conditions.append({db_field: numeric_value})
-                        except Exception:
-                            pass
-                elif field_type == "date":
-                    if '|' in search_value:
-                        parts = search_value.split('|', 1)
-                        range_cond = {}
-                        try:
-                            if parts[0].strip():
-                                date_range = DateHandler.get_date_range_for_comparison(parts[0].strip(), '>=')
-                                range_cond['$gte'] = date_range.get('$gte')
-                            if parts[1].strip():
-                                date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
-                                range_cond['$lt'] = date_range.get('$lt')
-                        except Exception:
-                            pass
-                        if range_cond:
-                            conditions.append({db_field: range_cond})
-                    else:
-                        cond = self._build_date_condition(db_field, search_value, '=')
-                        if cond:
-                            conditions.append(cond)
-                else:
-                    regex_flag = column_search.get("regex") in (True, "true", "True", 1)
-                    pattern = search_value if regex_flag else re.escape(search_value)
-                    conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
+                        regex_flag = column_search.get("regex") in (True, "true", "True", 1)
+                        pattern = search_value if regex_flag else re.escape(search_value)
+                        conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
 
-            if has_cc:
-                conditions.extend(self._build_column_control_condition(db_field, field_type, cc))
+                if has_cc:
+                    conditions.extend(self._build_column_control_condition(db_field, field_type, cc))
 
         if conditions:
             return {"$and": conditions}
