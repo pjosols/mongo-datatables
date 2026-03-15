@@ -44,12 +44,14 @@ class MongoQueryBuilder:
 
     def build_column_search(
         self,
-        columns: List[Dict[str, Any]]
+        columns: List[Dict[str, Any]],
+        case_insensitive: bool = True,
     ) -> Dict[str, Any]:
         """Build search conditions for individual column searches.
 
         Args:
             columns: List of column configurations from DataTables request
+            case_insensitive: Whether to perform case-insensitive regex searches (default: True)
 
         Returns:
             MongoDB query condition for column-specific searches
@@ -107,9 +109,14 @@ class MongoQueryBuilder:
                             if cond:
                                 conditions.append(cond)
                     else:
+                        col_ci_raw = column_search.get("caseInsensitive")
+                        if col_ci_raw is not None:
+                            col_ci = col_ci_raw in (True, "true", "True", 1)
+                        else:
+                            col_ci = case_insensitive
                         regex_flag = column_search.get("regex") in (True, "true", "True", 1)
                         pattern = search_value if regex_flag else re.escape(search_value)
-                        conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
+                        conditions.append({db_field: {"$regex": pattern, "$options": "i" if col_ci else ""}})
 
                 if has_cc:
                     conditions.extend(self._build_column_control_condition(db_field, field_type, cc))
@@ -125,6 +132,7 @@ class MongoQueryBuilder:
         original_search: str = "",
         search_regex: bool = False,
         search_smart: bool = True,
+        case_insensitive: bool = True,
     ) -> Dict[str, Any]:
         """Build global search conditions.
 
@@ -136,6 +144,9 @@ class MongoQueryBuilder:
             search_terms: List of parsed search terms (without colons)
             searchable_columns: List of searchable column names
             original_search: Original search string before parsing (for quote detection)
+            search_regex: Whether to treat search terms as regex patterns
+            search_smart: Whether to use smart (AND) multi-term search
+            case_insensitive: Whether to perform case-insensitive regex searches (default: True)
 
         Returns:
             MongoDB query condition for global search
@@ -164,7 +175,7 @@ class MongoQueryBuilder:
 
                 regex_term = search_terms[0] if search_regex else re.escape(search_terms[0])
                 pattern = regex_term if search_regex else f"\\b{regex_term}\\b"
-                or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i"}})
+                or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
 
             if or_conditions:
                 return {"$or": or_conditions}
@@ -193,7 +204,7 @@ class MongoQueryBuilder:
                             pass
                     else:
                         pattern = term if search_regex else re.escape(term)
-                        term_conds.append({db_field: {"$regex": pattern, "$options": "i"}})
+                        term_conds.append({db_field: {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
                 if term_conds:
                     per_term.append({"$or": term_conds} if len(term_conds) > 1 else term_conds[0])
             return {"$and": per_term} if per_term else {}
@@ -208,13 +219,14 @@ class MongoQueryBuilder:
                         pass
                 else:
                     pattern = term if search_regex else re.escape(term)
-                    or_conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
+                    or_conditions.append({db_field: {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
         return {"$or": or_conditions} if or_conditions else {}
 
     def build_column_specific_search(
         self,
         colon_terms: List[str],
-        searchable_columns: List[str]
+        searchable_columns: List[str],
+        case_insensitive: bool = True,
     ) -> Dict[str, Any]:
         """Build search conditions for column-specific searches using colon syntax.
 
@@ -267,7 +279,7 @@ class MongoQueryBuilder:
                 if condition:
                     and_conditions.append(condition)
             else:
-                and_conditions.append({db_field: {"$regex": re.escape(value), "$options": "i"}})
+                and_conditions.append({db_field: {"$regex": re.escape(value), "$options": "i" if case_insensitive else ""}})
 
         if and_conditions:
             return {"$and": and_conditions}

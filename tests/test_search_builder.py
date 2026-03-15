@@ -139,20 +139,45 @@ class TestSearchBuilderNumber:
 
 
 class TestSearchBuilderNullConditions:
-    def test_null_condition(self):
-        dt = _dt({"criteria": [{"condition": "null", "origData": "manager", "type": "string", "value": []}], "logic": "AND"})
-        result = dt._parse_search_builder()
-        assert result == {"manager": {"$in": [None, "", False]}}
+    def test_null_string_type(self):
+        """null on string type checks None and empty string."""
+        result = _dt({"criteria": [{"condition": "null", "data": "manager", "origData": "manager", "type": "string", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"manager": {"$in": [None, ""]}}
 
-    def test_not_null_condition(self):
-        dt = _dt({"criteria": [{"condition": "!null", "origData": "manager", "type": "string", "value": []}], "logic": "AND"})
-        result = dt._parse_search_builder()
-        assert result == {"manager": {"$nin": [None, "", False]}}
+    def test_not_null_string_type(self):
+        """!null on string type excludes None and empty string."""
+        result = _dt({"criteria": [{"condition": "!null", "data": "manager", "origData": "manager", "type": "string", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"manager": {"$nin": [None, ""]}}
 
-    def test_null_on_number_type(self):
-        dt = _dt({"criteria": [{"condition": "null", "origData": "score", "type": "num", "value": []}], "logic": "AND"})
-        result = dt._parse_search_builder()
-        assert result == {"score": {"$in": [None, "", False]}}
+    def test_null_num_type(self):
+        """null on num type checks only None (not empty string)."""
+        result = _dt({"criteria": [{"condition": "null", "data": "score", "origData": "score", "type": "num", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"score": None}
+
+    def test_not_null_num_type(self):
+        """!null on num type checks only None."""
+        result = _dt({"criteria": [{"condition": "!null", "data": "score", "origData": "score", "type": "num", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"score": {"$ne": None}}
+
+    def test_null_date_type(self):
+        """null on date type checks only None."""
+        result = _dt({"criteria": [{"condition": "null", "data": "created", "origData": "created", "type": "date", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"created": None}
+
+    def test_not_null_date_type(self):
+        """!null on date type checks only None."""
+        result = _dt({"criteria": [{"condition": "!null", "data": "created", "origData": "created", "type": "date", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"created": {"$ne": None}}
+
+    def test_null_html_num_type(self):
+        """null on html-num type checks only None."""
+        result = _dt({"criteria": [{"condition": "null", "data": "price", "origData": "price", "type": "html-num", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"price": None}
+
+    def test_null_html_type(self):
+        """null on html type (string-like) checks None and empty string."""
+        result = _dt({"criteria": [{"condition": "null", "data": "bio", "origData": "bio", "type": "html", "value": []}], "logic": "AND"})._parse_search_builder()
+        assert result == {"bio": {"$in": [None, ""]}}
 
 
 class TestSearchBuilderLogic:

@@ -412,10 +412,9 @@ class TestEditor(unittest.TestCase):
         invalid_args = {"action": "invalid"}
         editor = Editor(self.mongo, 'users', invalid_args)
 
-        with self.assertRaises(ValueError) as context:
-            editor.process()
-
-        self.assertIn("Unsupported action", str(context.exception))
+        result = editor.process()
+        self.assertIn("error", result)
+        self.assertIn("Unsupported action", result["error"])
 
 
 if __name__ == '__main__':

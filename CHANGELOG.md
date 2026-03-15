@@ -1,3 +1,20 @@
+## [1.32.0] - 2026-03-15
+
+### Added
+- `Editor.search()` — implements the DataTables Editor `action=search` protocol for `autocomplete` and `tags` field types. Supports `search=<term>` (case-insensitive regex prefix match) and `values[]=<val>` (exact `$in` lookup). Returns `{"data": [{"label": "...", "value": "..."}]}` with deduplication and a 100-result limit.
+
+## [1.31.1] - 2026-03-15
+
+### Changed
+- Narrowed bare `except Exception` to `except (ValueError, TypeError, FieldMappingError)` in `_sb_number` and `_sb_date` — unexpected exceptions now surface instead of being silently swallowed
+
+## [1.31.0] - 2026-03-15
+### Added
+- `search[caseInsensitive]` support: global search, column search, and colon-syntax search now
+  respect the DataTables `caseInsensitive` flag (default `true`). Pass `false` to opt into
+  case-sensitive regex matching. Per-column override via `columns[i][search][caseInsensitive]`
+  takes precedence over the global setting.
+
 ## [1.29.6] - 2026-03-15
 ### Added
 - `bson.Binary` serialization in `_format_result_values`: UUID subtypes (3/4) are converted to canonical UUID string form via `uuid.UUID`; other subtypes are hex-encoded. Fixes `TypeError` at JSON serialization time for documents containing binary fields. Handled in both top-level field and list-items branches.
