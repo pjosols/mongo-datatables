@@ -45,7 +45,7 @@ class DataField:
     
     # Valid MongoDB data types used in this application
     # all other types are treated as text with regex search
-    VALID_TYPES = ['string', 'number', 'date', 'boolean', 'array', 'object', 'objectid', 'null']
+    VALID_TYPES = frozenset(['string', 'number', 'date', 'boolean', 'array', 'object', 'objectid', 'null'])
     
     def __init__(self, name: str, data_type: str, alias: str = None):
         """Initialize a DataField.
@@ -66,7 +66,7 @@ class DataField:
         # Validate data type
         data_type = data_type.lower()
         if data_type not in self.VALID_TYPES:
-            raise ValueError(f"Invalid data type: {data_type}. Must be one of: {', '.join(self.VALID_TYPES)}")
+            raise ValueError(f"Invalid data type: {data_type}. Must be one of: {', '.join(sorted(self.VALID_TYPES))}")
         self.data_type = data_type
         
         # Use the last part of the field path as the default alias if none provided
@@ -305,6 +305,9 @@ class DataTables:
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
         """Generate SearchPanes options with both ``total`` and ``count`` per value.
 
+        Uses a single ``$facet`` aggregation for all columns, reducing MongoDB
+        round-trips from 2N to exactly 2 regardless of column count.
+
         DataTables SearchPanes server-side protocol requires two counts per option:
         - ``total``: count across the base dataset (custom_filter only, no search/pane filters)
         - ``count``: count with all current filters applied
@@ -312,65 +315,52 @@ class DataTables:
         Returns:
             Dictionary mapping column names to their option lists
         """
+        eligible = [
+            (col.get("data"), self.field_mapper.get_db_field(col.get("data")))
+            for col in self.columns
+            if col.get("searchable") in (True, "true", "True", 1)
+            and col.get("data")
+            and self.field_mapper.get_field_type(col.get("data")) not in ("object", "array")
+        ]
+        if not eligible:
+            return {}
+
+        facet_branches = {
+            col_name: [
+                {"$group": {"_id": f"${db_field}", "count": {"$sum": 1}}},
+                {"$match": {"_id": {"$ne": None}}},
+            ]
+            for col_name, db_field in eligible
+        }
+        total_pipeline = ([{"$match": self.custom_filter}] if self.custom_filter else []) + [{"$facet": facet_branches}]
+        count_pipeline = ([{"$match": self.filter}] if self.filter else []) + [{"$facet": facet_branches}]
+
+        try:
+            total_result = list(self.collection.aggregate(total_pipeline, allowDiskUse=self.allow_disk_use))[0]
+            count_result = list(self.collection.aggregate(count_pipeline, allowDiskUse=self.allow_disk_use))[0]
+        except Exception as e:
+            logger.error(f"Error generating SearchPanes options: {str(e)}")
+            return {col_name: [] for col_name, _ in eligible}
+
         options = {}
-
-        for column in self.columns:
-            if column.get("searchable") not in (True, "true", "True", 1):
-                continue
-
-            column_name = column.get("data")
-            if not column_name:
-                continue
-
-            db_field = self.field_mapper.get_db_field(column_name)
-            field_type = self.field_mapper.get_field_type(column_name)
-
-            if field_type in ["object", "array"]:
-                continue
-
-            try:
-                group_stage = [
-                    {"$group": {"_id": f"${db_field}", "count": {"$sum": 1}}},
-                    {"$match": {"_id": {"$ne": None}}},
-                ]
-
-                # total: base dataset (custom_filter only)
-                total_pipeline = ([{"$match": self.custom_filter}] if self.custom_filter else []) + group_stage
-                total_map = {
-                    r["_id"]: r["count"]
-                    for r in self.collection.aggregate(total_pipeline, allowDiskUse=self.allow_disk_use)
-                }
-
-                # count: full filter applied
-                count_pipeline = ([{"$match": self.filter}] if self.filter else []) + group_stage
-                count_map = {
-                    r["_id"]: r["count"]
-                    for r in self.collection.aggregate(count_pipeline, allowDiskUse=self.allow_disk_use)
-                }
-
-                # Merge: all values from total_map, count from count_map (0 if filtered out)
-                column_options = []
-                for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
-                    if isinstance(raw_value, ObjectId):
-                        display_value = str(raw_value)
-                    elif hasattr(raw_value, 'isoformat'):
-                        display_value = raw_value.isoformat()
-                    else:
-                        display_value = str(raw_value) if raw_value is not None else ""
-
-                    column_options.append({
-                        "label": display_value,
-                        "value": display_value,
-                        "total": total,
-                        "count": count_map.get(raw_value, 0),
-                    })
-
-                options[column_name] = column_options
-
-            except Exception as e:
-                logger.error(f"Error generating SearchPanes options for {column_name}: {str(e)}")
-                options[column_name] = []
-
+        for col_name, _ in eligible:
+            total_map = {r["_id"]: r["count"] for r in total_result.get(col_name, [])}
+            count_map = {r["_id"]: r["count"] for r in count_result.get(col_name, [])}
+            column_options = []
+            for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
+                if isinstance(raw_value, ObjectId):
+                    display_value = str(raw_value)
+                elif hasattr(raw_value, 'isoformat'):
+                    display_value = raw_value.isoformat()
+                else:
+                    display_value = str(raw_value) if raw_value is not None else ""
+                column_options.append({
+                    "label": display_value,
+                    "value": display_value,
+                    "total": total,
+                    "count": count_map.get(raw_value, 0),
+                })
+            options[col_name] = column_options
         return options
 
     def _parse_searchpanes_filters(self) -> Dict[str, Any]:
@@ -554,7 +544,7 @@ class DataTables:
             if condition == ">":   return {field: {"$gt": _n(v0)}}
             if condition == ">=":  return {field: {"$gte": _n(v0)}}
             if condition == "between":  return {field: {"$gte": _n(v0), "$lte": _n(v1)}}
-            if condition == "!between": return {field: {"$not": {"$gte": _n(v0), "$lte": _n(v1)}}}
+            if condition == "!between": return {"$or": [{field: {"$lt": _n(v0)}}, {field: {"$gt": _n(v1)}}]}
         except Exception:
             pass
         return {}
@@ -575,7 +565,7 @@ class DataTables:
             if condition == ">":   return {field: {"$gt": _d(v0)}}
             if condition == ">=":  return {field: {"$gte": _d(v0)}}
             if condition == "between":  return {field: {"$gte": _d(v0), "$lte": _d(v1)}}
-            if condition == "!between": return {field: {"$not": {"$gte": _d(v0), "$lte": _d(v1)}}}
+            if condition == "!between": return {"$or": [{field: {"$lt": _d(v0)}}, {field: {"$gt": _d(v1)}}]}
         except Exception:
             pass
         return {}
@@ -836,6 +826,28 @@ class DataTables:
                     doc[ui_alias] = doc.pop(db_field)
         return doc
 
+    def _build_pipeline(self, paginate: bool = True) -> list:
+        """Build the aggregation pipeline for results or export.
+
+        Args:
+            paginate: If True, include $skip and $limit stages.
+
+        Returns:
+            List of MongoDB aggregation pipeline stages.
+        """
+        pipeline = []
+        if self.filter:
+            pipeline.append({"$match": self.filter})
+        if self.sort_specification:
+            pipeline.append({"$sort": self.sort_specification})
+        if paginate:
+            if self.start > 0:
+                pipeline.append({"$skip": self.start})
+            if self.limit and self.limit > 0:
+                pipeline.append({"$limit": self.limit})
+        pipeline.append({"$project": self.projection})
+        return pipeline
+
     def results(self) -> List[Dict[str, Any]]:
         """Execute the MongoDB query with optimized pipeline.
 
@@ -846,25 +858,10 @@ class DataTables:
             return self._results
 
         try:
-            pipeline = []
-
-            if self.filter:
-                pipeline.append({"$match": self.filter})
-
-            if self.sort_specification:
-                pipeline.append({"$sort": self.sort_specification})
-
-            if self.start > 0:
-                pipeline.append({"$skip": self.start})
-
-            if self.limit and self.limit > 0:
-                pipeline.append({"$limit": self.limit})
-
-            pipeline.append({"$project": self.projection})
-
-            self._results = self._process_cursor(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
+            self._results = self._process_cursor(
+                self.collection.aggregate(self._build_pipeline(paginate=True), allowDiskUse=self.allow_disk_use)
+            )
             return self._results
-
         except PyMongoError as e:
             logger.error(f"Error executing MongoDB query: {str(e)}", exc_info=True)
             return []
@@ -1042,23 +1039,14 @@ class DataTables:
 
     def get_export_data(self) -> List[Dict[str, Any]]:
         """Get all data for export without pagination limits.
-        
+
         Returns:
             List of all documents matching current filters, formatted for export
         """
         try:
-            pipeline = []
-
-            if self.filter:
-                pipeline.append({"$match": self.filter})
-
-            if self.sort_specification:
-                pipeline.append({"$sort": self.sort_specification})
-
-            pipeline.append({"$project": self.projection})
-
-            return self._process_cursor(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
-
+            return self._process_cursor(
+                self.collection.aggregate(self._build_pipeline(paginate=False), allowDiskUse=self.allow_disk_use)
+            )
         except PyMongoError as e:
             logger.error(f"Error executing export query: {str(e)}", exc_info=True)
             return []
@@ -1072,10 +1060,12 @@ class DataTables:
         Returns:
             Dictionary containing all required DataTables response fields
         """
+        search_return = self.request_args.get("search", {}).get("return", True)
+        records_filtered = -1 if search_return in (False, "false") else self.count_filtered()
         response = {
             "draw": self.draw,
             "recordsTotal": self.count_total(),
-            "recordsFiltered": self.count_filtered(),
+            "recordsFiltered": records_filtered,
             "data": self.results(),
         }
         
