@@ -60,8 +60,8 @@ class MongoQueryBuilder:
             column_search = column.get("search", {})
             search_value = column_search.get("value", "")
 
-            if search_value and column.get("searchable", False):
-                column_name = column["data"]
+            if search_value and column.get("searchable") in (True, "true", "True", 1):
+                column_name = column.get("name") or column["data"]
                 field_type = self.field_mapper.get_field_type(column_name)
 
                 db_field = self.field_mapper.get_db_field(column_name)
@@ -104,7 +104,7 @@ class MongoQueryBuilder:
                         if cond:
                             conditions.append(cond)
                 else:
-                    regex_flag = column_search.get("regex", False)
+                    regex_flag = column_search.get("regex") in (True, "true", "True", 1)
                     pattern = search_value if regex_flag else re.escape(search_value)
                     conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
 
@@ -249,7 +249,7 @@ class MongoQueryBuilder:
                 if condition:
                     and_conditions.append(condition)
             else:
-                and_conditions.append({db_field: {"$regex": value, "$options": "i"}})
+                and_conditions.append({db_field: {"$regex": re.escape(value), "$options": "i"}})
 
         if and_conditions:
             return {"$and": and_conditions}
@@ -287,7 +287,7 @@ class MongoQueryBuilder:
             else:
                 return {field: numeric_value}
         except Exception:
-            return {field: {"$regex": value, "$options": "i"}}
+            return {field: {"$regex": re.escape(value), "$options": "i"}}
 
     def _build_date_condition(
         self,
@@ -310,6 +310,6 @@ class MongoQueryBuilder:
                 date_condition = DateHandler.get_date_range_for_comparison(value, operator)
                 return {field: date_condition}
             else:
-                return {field: {"$regex": value, "$options": "i"}}
+                return {field: {"$regex": re.escape(value), "$options": "i"}}
         except Exception:
-            return {field: {"$regex": value, "$options": "i"}}
+            return {field: {"$regex": re.escape(value), "$options": "i"}}

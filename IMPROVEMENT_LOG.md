@@ -4,7 +4,112 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
-**Iteration 5 (v1.18.1 → v1.18.2)** — Quality: Fixed dead-code / latent bug in `_format_result_values`. The `elif isinstance(val, float): result_dict[key] = val` branch was a no-op that silently passed `float('nan')` and `float('inf')` through unchanged, causing `ValueError` on JSON serialization. Replaced with `elif isinstance(val, float) and not math.isfinite(val): result_dict[key] = None`. Added `import math`. 6 tests added, 375 total passing.
+## Iteration 5 (v1.21.2) — 2026-03-14 — QUALITY: draw Property Refactor
+
+**Change:** Extracted inline `draw` validation from `get_rows()` into a dedicated `draw` property.
+
+**Problem:** The inline ternary called `request_args.get("draw")` twice, used `.lstrip("-").isdigit()` which accepted negative values (e.g. `-5` passed through as `-5`), and was inconsistent with the clean try/except pattern used by `start` and `limit`.
+
+**Fix:**
+- Added `draw` property using `max(1, int(...))` with try/except — consistent with `start`/`limit`
+- `get_rows()` now uses `self.draw` (single reference)
+- Negative and zero draw values are clamped to 1 (DataTables protocol requires positive echo)
+
+**Tests:** `tests/test_draw_property.py` — 9 new tests (negative clamp, zero clamp, non-numeric, None, float string, missing key, large value)
+**Suite:** 476 tests passing (was 467 before this iteration's new tests)
+
+---
+
+## Iteration 4 (v1.21.1) — 2026-03-14 — QUALITY: Input Validation
+
+**Change:** Added defensive input validation for `start`, `limit`, and `draw` request parameters.
+
+**Problem:** `int(request_args.get(...))` raised unhandled `ValueError` on non-numeric input (e.g. malformed/adversarial requests), crashing the endpoint. Negative `start` values would also cause a MongoDB error.
+
+**Fix:**
+- `start` property: try/except with `max(0, ...)` clamp — invalid/negative input returns 0
+- `limit` property: try/except — invalid input returns 10 (default page size)
+- `draw` in `get_rows`: inline isdigit guard — invalid input returns 1
+
+**Tests:** Added `tests/test_input_validation.py` with 13 tests covering valid, invalid string, negative, None, and missing values for all three parameters.
+
+**Result:** 467 tests passing (0 failures). Backward compatible — valid inputs unchanged.
+
+---
+
+## Iteration 3 (v1.20.2 → v1.21.0) — 2026-03-14
+**Type:** Feature
+**Focus:** Custom `row_id` field for `DT_RowId`
+
+### Problem
+`_process_cursor` always used MongoDB `_id` as `DT_RowId`. Users with natural keys (e.g., `employee_id`, `sku`, `order_number`) could not use those fields as the DataTables row identifier, breaking row selection and Editor integration for collections where `_id` is not the meaningful key.
+
+### Solution
+Added `row_id: Optional[str] = None` parameter to `DataTables.__init__()`. When set:
+- The specified field's value is used as `DT_RowId` in each result row
+- The field is NOT removed from the row data (unlike `_id` which is popped in default mode)
+- The field is always included in the MongoDB projection even if absent from the `columns` list
+- Default behavior (`row_id=None`) is unchanged: `_id` is popped and used as `DT_RowId`
+
+### Changes
+- `mongo_datatables/datatables.py`: `row_id` param in `__init__`, updated `_process_cursor`, updated `projection`
+- `tests/test_row_id.py`: 8 new tests
+- `setup.py`: version bump 1.20.2 → 1.21.0
+
+### Test Results
+- 8 new tests in `tests/test_row_id.py`
+- Full suite: 454 passed, 59 subtests — zero failures
+
+### Backward Compatibility
+Fully backward compatible. `row_id` defaults to `None`, preserving existing `_id`-based behavior.
+
+---
+
+## Iteration 10 — v1.20.1 → v1.20.2 (Quality)
+**Date:** 2026-03-14
+**Type:** Quality / Dead Code Removal
+**Change:** Removed dead `startRender`/`endRender` parsing from `_parse_rowgroup_config()` (datatables.py)
+**Problem:** `_parse_rowgroup_config()` parsed `startRender` and `endRender` from the request into the config dict, but `_get_rowgroup_data()` — the only caller — only ever reads `dataSrc`. The parsed values were built and immediately discarded. These are client-side DataTables rendering callbacks; the server has no use for them.
+**Fix:** Collapsed `_parse_rowgroup_config` from 20 lines to 6: reads `dataSrc` directly, returns `{"dataSrc": value}` or `None`. Removed the dead `startRender`/`endRender` branches entirely.
+**Tests:** 428 → 429 (+1 test: `test_rowgroup_config_no_datasrc_returns_none`). Updated `test_rowgroup_config_parsing` to assert the keys are absent (correct behavior).
+**Risk:** Minimal — identical behavior on all real code paths. `startRender`/`endRender` were never used server-side.
+
+---
+
+
+**Date:** 2026-03-14
+**Type:** Quality / Bug Fix
+**Change:** Fixed dead `except PyMongoError` block in `count_filtered()` (datatables.py)
+**Problem:** The outer `except PyMongoError` was unreachable dead code — the inner `except Exception` caught all exceptions first, silently preventing the double-failure fallback (returning 0) from ever executing. If both `aggregate()` and `count_documents()` failed, the exception would propagate uncaught.
+**Fix:** Collapsed nested try/except into a flat 3-level fallback: aggregate → count_documents → return 0. Eliminated the dead outer handler.
+**Tests:** 420 → 421 (+1 test: `test_count_filtered_both_aggregate_and_count_documents_fail`)
+**Risk:** Minimal — identical behavior on happy path, correct behavior on double-failure path.
+
+---
+
+**Iteration 15 (v1.19.1) — Feature: DT_RowClass / DT_RowData / DT_RowAttr per-row metadata**
+
+- Added three new optional constructor parameters to `DataTables.__init__`: `row_class`, `row_data`, `row_attr` (all default `None`, placed before `**custom_filter`).
+- Each accepts a static value (str/dict) or a callable `(row_dict) -> value` applied after alias remapping in `_process_cursor`.
+- When set, injects `DT_RowClass`, `DT_RowData`, or `DT_RowAttr` keys into each result row — consumed by DataTables client to set CSS class, `data-*` attributes, and arbitrary HTML attributes on `<tr>` elements.
+- Zero behavior change when parameters are omitted (fully backward compatible).
+- 14 tests added in `tests/test_row_metadata.py`. Total: 403 tests passing.
+
+---
+
+**Iteration 7 (v1.19.0 → v1.19.1)** — Bug fix: Global search `search[regex]` string coercion.
+
+- `datatables.py` `global_search_condition`: `search_regex=bool(self.request_args.get("search", {}).get("regex", False))` → `search_regex=self.request_args.get("search", {}).get("regex", False) in (True, "true", "True", 1)`. DataTables sends `search[regex]` as the string `"false"` or `"true"`, not a Python bool. `bool("false") == True`, so global search never escaped regex special characters (`.`, `+`, `*`, etc.) when it should. Mirrors the identical fix applied to column search in v1.19.0.
+- Tests added: 3 new tests in `test_datatables_regex_search.py` covering `"false"` string, `"true"` string, and absent key cases for global search. Total: 389 tests passing.
+
+---
+
+**Iteration 6 (v1.18.2 → v1.19.0)** — Feature: `columns[i][name]` support in column search + regex flag string coercion fix.
+
+- `query_builder.py` `build_column_search()`: `column_name = column["data"]` → `column_name = column.get("name") or column["data"]`. When DataTables sends `columns[i][name]` (e.g. via ColReorder), the name is now used for field/type lookup, falling back to `data` when name is absent or empty. Mirrors the same name-or-data resolution already used in `get_sort_specification()` for sort.
+- `query_builder.py` `build_column_search()`: `regex_flag = column_search.get("regex", False)` → `regex_flag = column_search.get("regex") in (True, "true", "True", 1)`. DataTables sends `regex` as the string `"false"` or `"true"`, not a Python bool. The old code treated `"false"` as truthy, so `re.escape()` was never applied. Fixed to coerce correctly.
+- 11 new tests in `test_colreorder_column_search.py` (6 for name resolution, 5 for regex coercion).
+- 386 passed (was 375).
 
 ---
 
@@ -324,3 +429,158 @@ Two-line change in `count_total()`: `count_documents({})` → `count_documents(s
 
 ### Result
 361 tests passing. Backward compatible — `custom_filter or {}` is identical to `{}` when no custom_filter is set.
+
+---
+
+## Iteration 8 — v1.20.0 — `allow_disk_use` Aggregation Support
+**Date:** 2026-03-14  
+**Type:** Feature  
+**Version:** 1.19.1 → 1.20.0
+
+### Problem
+MongoDB enforces a 100 MB in-memory limit on aggregation pipelines. Large datasets
+with complex SearchBuilder criteria trees, SearchPanes facet counts, RowGroup
+aggregations, or full-collection exports could silently fail or raise a
+`QueryExceededMemoryLimitNoPushdown` error in production.
+
+### Solution
+Added `allow_disk_use: bool = False` parameter to `DataTables.__init__()`. When
+`True`, `allowDiskUse=True` is forwarded to every `collection.aggregate()` call
+in the class (6 call sites: `results()`, `count_filtered()`, `get_export_data()`,
+`get_searchpanes_options()` ×2, `_get_rowgroup_data()`).
+
+### Changes
+- `mongo_datatables/datatables.py`: new `allow_disk_use` param + 6 aggregate call updates
+- `tests/test_allow_disk_use.py`: 7 new tests covering default=False, True propagation,
+  and backward compatibility
+- `setup.py`: version bump 1.19.1 → 1.20.0
+
+### Test Results
+- New tests: 7/7 passed
+- Full suite: 410 passed, 59 subtests — zero failures
+
+### Backward Compatibility
+Fully backward compatible. Default is `False` (existing behaviour unchanged).
+Existing call sites require no modification.
+
+## Iteration 16 (v1.19.1 → v1.19.2) — 2026-03-14
+
+**Type:** Bug Fix / Correctness
+**Focus:** Regex metacharacter escaping in colon-syntax column search
+
+### Problem
+`build_column_specific_search` in `query_builder.py` passed user-supplied values directly
+into MongoDB `$regex` without `re.escape()`. This caused regex metacharacters (`.`, `+`,
+`*`, `?`, `[`, `]`, `(`, `)`, `^`, `$`, `|`) to be interpreted as regex operators instead
+of literal characters. For example, searching `email:user@domain.com` would match
+`user@domainXcom` because `.` matched any character.
+
+The same bug existed in the fallback branches of `_build_number_condition` and
+`_build_date_condition`.
+
+By contrast, `build_column_search` and `build_global_search` already correctly applied
+`re.escape()` when `regex_flag=False` — making this an inconsistency.
+
+### Fix
+Applied `re.escape(value)` in three locations in `query_builder.py`:
+1. `build_column_specific_search` — string-type else branch
+2. `_build_number_condition` — except fallback
+3. `_build_date_condition` — except fallback
+
+### Tests Added
+- `tests/test_regex_escape_colon_search.py` — 9 new tests covering dot, plus, brackets,
+  caret, dollar, parentheses, star, question mark, and pipe metacharacters
+
+### Test Count
+410 → 419 tests passing
+
+---
+
+## Iteration 9 (v1.19.2 → v1.19.3) — 2026-03-14
+**Quality:** Replaced 4 near-identical extension config parser methods with a single generic helper
+- Removed `_parse_fixed_columns_config`, `_parse_responsive_config`, `_parse_buttons_config`, `_parse_select_config` (~100 lines of boilerplate)
+- Added `_parse_extension_config(key)`: returns `request_args[key]` if dict, `{}` if True, None otherwise
+- Replaced 16-line block in `get_rows()` with a 3-line loop over extension keys
+- Updated 3 test files to match new pass-through semantics
+- Net: -102 lines. 420 passed, 59 subtests. No regressions.
+
+## Iteration 10 (v1.19.3 → v1.20.0) — 2026-03-14
+**Type:** Feature / Bug Fix
+**Focus:** SearchBuilder date `<=` and `>=` operator support
+
+### Problem
+`_sb_date` was missing `<=` and `>=` conditions that `_sb_number` already supported.
+DataTables SearchBuilder sends these operators for date comparisons (e.g. "on or before",
+"on or after"). Without them, the conditions silently returned `{}` (no filter applied),
+causing incorrect results when users selected these operators in the SearchBuilder UI.
+
+### Solution
+Added two conditions to `_sb_date`:
+- `<=`: returns `{"$lt": parse(v0) + timedelta(days=1)}` — includes all of the given day
+- `>=`: returns `{"$gte": parse(v0)}` — includes from start of the given day
+
+This is consistent with the existing `=` (day-inclusive range) and `between` semantics.
+
+### Changes
+- `mongo_datatables/datatables.py`: 2 lines added to `_sb_date`
+- `tests/test_sb_date_operators.py`: 7 new tests
+- `setup.py`: version bump 1.19.3 → 1.20.0
+
+### Test Results
+- New tests: 7/7 passed
+- Full suite: 428 passed — zero failures
+
+### Backward Compatibility
+Fully backward compatible. Existing `<`, `>`, `=`, `!=`, `between`, `!between` conditions
+are unchanged. The new `<=` and `>=` conditions previously returned `{}` (no-op), so
+adding them can only make filtering more correct, never less.
+
+---
+
+## Iteration 10 (Quality Pass) — v1.20.2 (no version bump, non-functional)
+
+### Changes
+1. **Removed 6 unused imports** from `mongo_datatables/datatables.py`:
+   - `import json` — no `json.` calls in the file
+   - `datetime` from `from datetime import datetime, timedelta` → `from datetime import timedelta`
+   - `Tuple`, `Set` from typing import → `from typing import Dict, List, Any, Optional`
+   - Entire `from mongo_datatables.exceptions import DatabaseOperationError, QueryBuildError` line (neither used in datatables.py)
+
+2. **Updated CHANGELOG.md** to cover all versions v1.14.0–v1.20.2 (was missing 7+ versions: v1.17.4 through v1.20.2)
+
+### Test Results
+- No new tests (non-functional changes)
+- Full suite: 429 passed, 59 subtests — zero failures
+
+## Iteration 17 — v1.20.1 (2026-03-14)
+
+**Type:** Bug Fix  
+**Feature:** `columns[i][searchable]` string coercion
+
+### Problem
+DataTables sends `columns[i][searchable]` as the string `"true"` or `"false"` from HTTP form data. Three locations used `column.get("searchable", False)` which treats the non-empty string `"false"` as truthy — causing non-searchable columns to be included in global search, column search, and SearchPanes options generation.
+
+This is the same class of bug fixed in Iterations 1, 6, and 7 for the `regex` flag.
+
+### Fix
+Replaced all three occurrences with the membership-test pattern:
+```python
+column.get("searchable") in (True, "true", "True", 1)
+```
+
+### Files Changed
+- `mongo_datatables/datatables.py`: `searchable_columns` property (line ~211), `get_searchpanes_options` guard (line ~313)
+- `mongo_datatables/query_builder.py`: `build_column_search` guard (line ~63)
+- `tests/test_searchable_coercion.py`: 12 new tests covering all truthy/falsy variants
+
+### Test Results
+- 441 tests passing (12 new tests added)
+- 0 regressions
+
+## Iteration 2 (Enhancement) — 2026-03-14
+**Type:** Bug fix / coercion consistency  
+**Version:** 1.20.1 → 1.20.2  
+**Change:** Fixed `orderable` string/bool coercion in `get_sort_specification()`  
+**Details:** `column.get("orderable", "true") != "false"` failed when `orderable` was the Python boolean `False` (since `False != "false"` evaluates to `True`). Changed to `column.get("orderable") not in (False, "false", "False", 0)`, consistent with the `searchable` fix from Iter 17.  
+**Tests added:** `tests/test_orderable_coercion.py` (5 tests)  
+**Test results:** 446 passed, 59 subtests passed  

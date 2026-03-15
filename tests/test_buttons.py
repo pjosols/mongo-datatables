@@ -54,7 +54,7 @@ class TestButtonsExtension:
             self.data_fields
         )
 
-        buttons_config = dt._parse_buttons_config()
+        buttons_config = dt._parse_extension_config("buttons")
         assert buttons_config is not None
         assert "export" in buttons_config
         assert "colvis" in buttons_config
@@ -133,7 +133,7 @@ class TestButtonsExtension:
             self.data_fields
         )
 
-        buttons_config = dt._parse_buttons_config()
+        buttons_config = dt._parse_extension_config("buttons")
         assert buttons_config is None
 
         response = dt.get_rows()
