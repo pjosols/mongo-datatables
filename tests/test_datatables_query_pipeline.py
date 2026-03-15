@@ -227,5 +227,56 @@ class TestDataTablesQueryPipeline(BaseDataTablesTest):
             self.assertEqual(projection.get(field), 1)
 
 
+    def test_projection_with_alias_uses_db_field_name(self):
+        """Projection key must be the db field name, not the UI alias."""
+        data_fields = [DataField('author.fullName', 'string', alias='Author')]
+        request_args = {
+            'columns': [{'data': 'Author', 'searchable': True, 'orderable': True}],
+            'search': {'value': ''},
+            'order': [],
+            'start': 0,
+            'length': 10,
+        }
+        dt = DataTables(self.mongo, 'test_collection', request_args, data_fields=data_fields)
+        projection = dt.projection
+        self.assertIn('author.fullName', projection)
+        self.assertNotIn('Author', projection)
+
+    def test_projection_without_alias_unchanged(self):
+        """Projection key equals the field name when no alias is set."""
+        data_fields = [DataField('title', 'string')]
+        request_args = {
+            'columns': [{'data': 'title', 'searchable': True, 'orderable': True}],
+            'search': {'value': ''},
+            'order': [],
+            'start': 0,
+            'length': 10,
+        }
+        dt = DataTables(self.mongo, 'test_collection', request_args, data_fields=data_fields)
+        self.assertIn('title', dt.projection)
+
+    def test_projection_mixed_aliased_and_plain(self):
+        """All projection keys must be db field names for mixed aliased/plain fields."""
+        data_fields = [
+            DataField('author.fullName', 'string', alias='Author'),
+            DataField('title', 'string'),
+        ]
+        request_args = {
+            'columns': [
+                {'data': 'Author', 'searchable': True, 'orderable': True},
+                {'data': 'title', 'searchable': True, 'orderable': True},
+            ],
+            'search': {'value': ''},
+            'order': [],
+            'start': 0,
+            'length': 10,
+        }
+        dt = DataTables(self.mongo, 'test_collection', request_args, data_fields=data_fields)
+        projection = dt.projection
+        self.assertIn('author.fullName', projection)
+        self.assertIn('title', projection)
+        self.assertNotIn('Author', projection)
+
+
 if __name__ == '__main__':
     unittest.main()
