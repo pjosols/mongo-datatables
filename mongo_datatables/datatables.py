@@ -146,6 +146,7 @@ class DataTables:
         self._recordsTotal = None
         self._recordsFiltered = None
         self._filter_cache = None
+        self._search_terms_cache = None
         self._has_text_index = None
 
         self._check_text_index()
@@ -239,7 +240,9 @@ class DataTables:
         Returns:
             List of search terms with quoted phrases preserved as single terms
         """
-        return SearchTermParser.parse(self.search_value)
+        if self._search_terms_cache is None:
+            self._search_terms_cache = SearchTermParser.parse(self.search_value)
+        return self._search_terms_cache
 
     @property
     def search_terms_without_a_colon(self) -> List[str]:
@@ -563,7 +566,7 @@ class DataTables:
     def _sb_date(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
         """Build a MongoDB condition for a date SearchBuilder criterion."""
         def _d(v):
-            return DateHandler.parse_iso_date(v)
+            return DateHandler.parse_iso_date(v.split('T')[0])
         try:
             if condition == "=":
                 d = _d(v0)
