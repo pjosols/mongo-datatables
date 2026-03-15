@@ -4,6 +4,54 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+**Iteration 5 (v1.18.1 → v1.18.2)** — Quality: Fixed dead-code / latent bug in `_format_result_values`. The `elif isinstance(val, float): result_dict[key] = val` branch was a no-op that silently passed `float('nan')` and `float('inf')` through unchanged, causing `ValueError` on JSON serialization. Replaced with `elif isinstance(val, float) and not math.isfinite(val): result_dict[key] = None`. Added `import math`. 6 tests added, 375 total passing.
+
+---
+
+**Iteration 4 (v1.18.0 → v1.18.1)** — Quality: Fixed `_sb_string` BSON-serializability. Replaced `re.compile()` objects in `$not` queries for negative string conditions (`!=`, `!contains`, `!starts`, `!ends`) with pure-dict `{"$not": {"$regex": ..., "$options": "i"}}` form. This makes all SearchBuilder query dicts JSON/BSON-serializable and consistent with the rest of the codebase. 8 tests added, 369 total passing.
+
+---
+
+## Iteration 14 — 2026-03-14 (v1.17.4 → v1.18.0)
+
+**Type:** Feature
+**Focus:** SearchPanes `total` + `count` dual-count (full server-side protocol compliance)
+
+### Problem
+`get_searchpanes_options()` returned only a `count` key per option. The DataTables SearchPanes server-side protocol requires **two** counts:
+- `total`: count of each value across the base dataset (custom_filter only, no search/pane filters) — used to show the unfiltered badge and enable "deselect" behaviour
+- `count`: count with all current filters applied — used to show how many rows match after filtering
+
+Without `total`, SearchPanes badges showed incorrect numbers and the deselect/reset flow was broken.
+
+### Change
+`mongo_datatables/datatables.py` — `get_searchpanes_options()`:
+- Replaced single aggregation with two aggregations per column:
+  1. **total pipeline**: `custom_filter` only → builds `total_map`
+  2. **count pipeline**: full `self.filter` → builds `count_map`
+- Merged results: all values from `total_map`, `count` from `count_map` (defaults to 0 if filtered out)
+- Removed the now-redundant `$sort` and `$limit` pipeline stages (sorting done in Python via `sorted(..., key=lambda x: -x[1])[:1000]`)
+- Each option dict now has `{"label", "value", "total", "count"}`
+
+### Tests Added (9 new)
+`tests/test_searchpanes_total_count.py`:
+- `test_options_include_total_and_count_keys` — both keys present
+- `test_total_equals_base_count_no_filter` — equal when no active filter
+- `test_count_zero_when_filtered_out` — filtered-out value gets count=0
+- `test_two_aggregations_called_per_column` — exactly 2 aggregate calls per column
+- `test_total_pipeline_uses_custom_filter_only` — total pipeline isolation
+- `test_count_pipeline_uses_full_filter` — count pipeline uses full filter
+- `test_options_sorted_by_total_descending` — sort order
+- `test_no_searchpanes_no_options_in_response` — no key when not requested
+- `test_get_rows_includes_total_in_options` — end-to-end via get_rows()
+
+### Results
+- 359 tests passed (was 350)
+- No regressions
+- Backward compatible: existing `count` key still present; `total` is additive
+
+---
+
 ## Iteration 4 — 2026-03-14
 
 **Type:** Quality  
@@ -258,3 +306,21 @@ When `length=-1`, no `$limit` stage is added to the pipeline, returning all matc
 
 **Tests:** 350 passing (+8 from mock fixes + 1 new test in `test_count_optimization.py`)
 **Lines removed:** 9 (dead code) | **Lines added:** ~20 (mock fixes + 1 new test)
+
+## Iteration 14 (v1.18.0 → v1.18.1) — 2026-03-14
+**Type:** Quality (bug fix)
+**Focus:** Correctness of `count_total()` with `custom_filter`
+
+### Problem
+`count_total()` called `count_documents({})` (empty filter) in both the main branch and the PyMongoError fallback, even when `custom_filter` was set. This caused `recordsTotal` to reflect the entire collection size rather than the filtered base dataset, producing incorrect DataTables pagination info (e.g., "Showing 10 of 50,000" when the actual filtered set was 1,200).
+
+### Fix
+Two-line change in `count_total()`: `count_documents({})` → `count_documents(self.custom_filter or {})` in both the main branch and the error fallback.
+
+### Tests
+2 new tests in `test_count_optimization.py`:
+- `test_count_total_with_custom_filter_large_collection`: large collection (500k) with `status="active"` — verifies `count_documents({"status": "active"})` is called
+- `test_count_total_with_custom_filter_small_collection`: small collection (50) with `role="admin"` — verifies `count_documents({"role": "admin"})` is called
+
+### Result
+361 tests passing. Backward compatible — `custom_filter or {}` is identical to `{}` when no custom_filter is set.
