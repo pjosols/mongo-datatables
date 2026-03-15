@@ -67,10 +67,8 @@ class TestPagination(BaseDataTablesTest):
             skip_stage = next((stage for stage in pipeline if '$skip' in stage), None)
             limit_stage = next((stage for stage in pipeline if '$limit' in stage), None)
             
-            # In the implementation, when length is -1 (all records), it still adds a $limit: -1 stage
-            # This is likely to be handled by MongoDB as 'no limit'
-            self.assertIsNotNone(limit_stage)
-            self.assertEqual(limit_stage['$limit'], -1)
+            # When length=-1 (Show All), no $limit stage should be added — MongoDB rejects negative $limit
+            self.assertIsNone(limit_stage)
 
     def test_pagination_with_zero_length(self):
         """Test pagination when length is zero"""

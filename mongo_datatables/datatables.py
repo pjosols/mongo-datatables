@@ -707,7 +707,7 @@ class DataTables:
             if self.start > 0:
                 pipeline.append({"$skip": self.start})
 
-            if self.limit:
+            if self.limit and self.limit > 0:
                 pipeline.append({"$limit": self.limit})
 
             pipeline.append({"$project": self.projection})
