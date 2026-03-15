@@ -4,6 +4,28 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## Iteration 10 — v1.20.1 → v1.20.2 (Quality)
+**Date:** 2026-03-14
+**Type:** Quality / Dead Code Removal
+**Change:** Removed dead `startRender`/`endRender` parsing from `_parse_rowgroup_config()` (datatables.py)
+**Problem:** `_parse_rowgroup_config()` parsed `startRender` and `endRender` from the request into the config dict, but `_get_rowgroup_data()` — the only caller — only ever reads `dataSrc`. The parsed values were built and immediately discarded. These are client-side DataTables rendering callbacks; the server has no use for them.
+**Fix:** Collapsed `_parse_rowgroup_config` from 20 lines to 6: reads `dataSrc` directly, returns `{"dataSrc": value}` or `None`. Removed the dead `startRender`/`endRender` branches entirely.
+**Tests:** 428 → 429 (+1 test: `test_rowgroup_config_no_datasrc_returns_none`). Updated `test_rowgroup_config_parsing` to assert the keys are absent (correct behavior).
+**Risk:** Minimal — identical behavior on all real code paths. `startRender`/`endRender` were never used server-side.
+
+---
+
+
+**Date:** 2026-03-14
+**Type:** Quality / Bug Fix
+**Change:** Fixed dead `except PyMongoError` block in `count_filtered()` (datatables.py)
+**Problem:** The outer `except PyMongoError` was unreachable dead code — the inner `except Exception` caught all exceptions first, silently preventing the double-failure fallback (returning 0) from ever executing. If both `aggregate()` and `count_documents()` failed, the exception would propagate uncaught.
+**Fix:** Collapsed nested try/except into a flat 3-level fallback: aggregate → count_documents → return 0. Eliminated the dead outer handler.
+**Tests:** 420 → 421 (+1 test: `test_count_filtered_both_aggregate_and_count_documents_fail`)
+**Risk:** Minimal — identical behavior on happy path, correct behavior on double-failure path.
+
+---
+
 **Iteration 15 (v1.19.1) — Feature: DT_RowClass / DT_RowData / DT_RowAttr per-row metadata**
 
 - Added three new optional constructor parameters to `DataTables.__init__`: `row_class`, `row_data`, `row_attr` (all default `None`, placed before `**custom_filter`).
@@ -410,3 +432,86 @@ Applied `re.escape(value)` in three locations in `query_builder.py`:
 
 ### Test Count
 410 → 419 tests passing
+
+---
+
+## Iteration 9 (v1.19.2 → v1.19.3) — 2026-03-14
+**Quality:** Replaced 4 near-identical extension config parser methods with a single generic helper
+- Removed `_parse_fixed_columns_config`, `_parse_responsive_config`, `_parse_buttons_config`, `_parse_select_config` (~100 lines of boilerplate)
+- Added `_parse_extension_config(key)`: returns `request_args[key]` if dict, `{}` if True, None otherwise
+- Replaced 16-line block in `get_rows()` with a 3-line loop over extension keys
+- Updated 3 test files to match new pass-through semantics
+- Net: -102 lines. 420 passed, 59 subtests. No regressions.
+
+## Iteration 10 (v1.19.3 → v1.20.0) — 2026-03-14
+**Type:** Feature / Bug Fix
+**Focus:** SearchBuilder date `<=` and `>=` operator support
+
+### Problem
+`_sb_date` was missing `<=` and `>=` conditions that `_sb_number` already supported.
+DataTables SearchBuilder sends these operators for date comparisons (e.g. "on or before",
+"on or after"). Without them, the conditions silently returned `{}` (no filter applied),
+causing incorrect results when users selected these operators in the SearchBuilder UI.
+
+### Solution
+Added two conditions to `_sb_date`:
+- `<=`: returns `{"$lt": parse(v0) + timedelta(days=1)}` — includes all of the given day
+- `>=`: returns `{"$gte": parse(v0)}` — includes from start of the given day
+
+This is consistent with the existing `=` (day-inclusive range) and `between` semantics.
+
+### Changes
+- `mongo_datatables/datatables.py`: 2 lines added to `_sb_date`
+- `tests/test_sb_date_operators.py`: 7 new tests
+- `setup.py`: version bump 1.19.3 → 1.20.0
+
+### Test Results
+- New tests: 7/7 passed
+- Full suite: 428 passed — zero failures
+
+### Backward Compatibility
+Fully backward compatible. Existing `<`, `>`, `=`, `!=`, `between`, `!between` conditions
+are unchanged. The new `<=` and `>=` conditions previously returned `{}` (no-op), so
+adding them can only make filtering more correct, never less.
+
+---
+
+## Iteration 10 (Quality Pass) — v1.20.2 (no version bump, non-functional)
+
+### Changes
+1. **Removed 6 unused imports** from `mongo_datatables/datatables.py`:
+   - `import json` — no `json.` calls in the file
+   - `datetime` from `from datetime import datetime, timedelta` → `from datetime import timedelta`
+   - `Tuple`, `Set` from typing import → `from typing import Dict, List, Any, Optional`
+   - Entire `from mongo_datatables.exceptions import DatabaseOperationError, QueryBuildError` line (neither used in datatables.py)
+
+2. **Updated CHANGELOG.md** to cover all versions v1.14.0–v1.20.2 (was missing 7+ versions: v1.17.4 through v1.20.2)
+
+### Test Results
+- No new tests (non-functional changes)
+- Full suite: 429 passed, 59 subtests — zero failures
+
+## Iteration 17 — v1.20.1 (2026-03-14)
+
+**Type:** Bug Fix  
+**Feature:** `columns[i][searchable]` string coercion
+
+### Problem
+DataTables sends `columns[i][searchable]` as the string `"true"` or `"false"` from HTTP form data. Three locations used `column.get("searchable", False)` which treats the non-empty string `"false"` as truthy — causing non-searchable columns to be included in global search, column search, and SearchPanes options generation.
+
+This is the same class of bug fixed in Iterations 1, 6, and 7 for the `regex` flag.
+
+### Fix
+Replaced all three occurrences with the membership-test pattern:
+```python
+column.get("searchable") in (True, "true", "True", 1)
+```
+
+### Files Changed
+- `mongo_datatables/datatables.py`: `searchable_columns` property (line ~211), `get_searchpanes_options` guard (line ~313)
+- `mongo_datatables/query_builder.py`: `build_column_search` guard (line ~63)
+- `tests/test_searchable_coercion.py`: 12 new tests covering all truthy/falsy variants
+
+### Test Results
+- 441 tests passing (12 new tests added)
+- 0 regressions
