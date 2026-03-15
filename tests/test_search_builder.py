@@ -45,7 +45,8 @@ class TestSearchBuilderString:
     def test_not_equals(self):
         dt = _dt({"criteria": [{"condition": "!=", "origData": "name", "type": "string", "value": ["Alice"]}], "logic": "AND"})
         result = dt._parse_search_builder()
-        assert result == {"name": {"$not": {"$regex": "^Alice$", "$options": "i"}}}
+        not_val = result["name"]["$not"]
+        assert isinstance(not_val, re.Pattern) and not_val.pattern == r"^Alice$" and not_val.flags & re.IGNORECASE
 
     def test_contains(self):
         dt = _dt({"criteria": [{"condition": "contains", "origData": "city", "type": "string", "value": ["York"]}], "logic": "AND"})
@@ -55,7 +56,8 @@ class TestSearchBuilderString:
     def test_not_contains(self):
         dt = _dt({"criteria": [{"condition": "!contains", "origData": "city", "type": "string", "value": ["York"]}], "logic": "AND"})
         result = dt._parse_search_builder()
-        assert result == {"city": {"$not": {"$regex": "York", "$options": "i"}}}
+        not_val = result["city"]["$not"]
+        assert isinstance(not_val, re.Pattern) and not_val.pattern == r"York" and not_val.flags & re.IGNORECASE
 
     def test_starts(self):
         dt = _dt({"criteria": [{"condition": "starts", "origData": "name", "type": "string", "value": ["Al"]}], "logic": "AND"})
@@ -65,7 +67,8 @@ class TestSearchBuilderString:
     def test_not_starts(self):
         dt = _dt({"criteria": [{"condition": "!starts", "origData": "name", "type": "string", "value": ["Al"]}], "logic": "AND"})
         result = dt._parse_search_builder()
-        assert result == {"name": {"$not": {"$regex": "^Al", "$options": "i"}}}
+        not_val = result["name"]["$not"]
+        assert isinstance(not_val, re.Pattern) and not_val.pattern == r"^Al" and not_val.flags & re.IGNORECASE
 
     def test_ends(self):
         dt = _dt({"criteria": [{"condition": "ends", "origData": "name", "type": "string", "value": ["ice"]}], "logic": "AND"})
@@ -75,7 +78,8 @@ class TestSearchBuilderString:
     def test_not_ends(self):
         dt = _dt({"criteria": [{"condition": "!ends", "origData": "name", "type": "string", "value": ["ice"]}], "logic": "AND"})
         result = dt._parse_search_builder()
-        assert result == {"name": {"$not": {"$regex": "ice$", "$options": "i"}}}
+        not_val = result["name"]["$not"]
+        assert isinstance(not_val, re.Pattern) and not_val.pattern == r"ice$" and not_val.flags & re.IGNORECASE
 
     def test_special_chars_escaped(self):
         dt = _dt({"criteria": [{"condition": "contains", "origData": "email", "type": "string", "value": ["user.name+tag"]}], "logic": "AND"})
