@@ -284,73 +284,74 @@ class DataTables:
         )
 
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Generate SearchPanes options data for all searchable columns.
+        """Generate SearchPanes options with both ``total`` and ``count`` per value.
+
+        DataTables SearchPanes server-side protocol requires two counts per option:
+        - ``total``: count across the base dataset (custom_filter only, no search/pane filters)
+        - ``count``: count with all current filters applied
 
         Returns:
             Dictionary mapping column names to their option lists
         """
         options = {}
-        
+
         for column in self.columns:
             if not column.get("searchable", False):
                 continue
-                
+
             column_name = column.get("data")
             if not column_name:
                 continue
-                
+
             db_field = self.field_mapper.get_db_field(column_name)
             field_type = self.field_mapper.get_field_type(column_name)
-            
-            # Skip complex types that don't work well with SearchPanes
+
             if field_type in ["object", "array"]:
                 continue
-                
+
             try:
-                pipeline = []
-                
-                # Apply base filter if exists
-                if self.custom_filter:
-                    pipeline.append({"$match": self.custom_filter})
-                
-                # Group by field value and count occurrences
-                pipeline.extend([
-                    {"$group": {
-                        "_id": f"${db_field}",
-                        "count": {"$sum": 1}
-                    }},
+                group_stage = [
+                    {"$group": {"_id": f"${db_field}", "count": {"$sum": 1}}},
                     {"$match": {"_id": {"$ne": None}}},
-                    {"$sort": {"count": -1}},
-                    {"$limit": 1000}  # Limit options for performance
-                ])
-                
-                cursor = self.collection.aggregate(pipeline)
+                ]
+
+                # total: base dataset (custom_filter only)
+                total_pipeline = ([{"$match": self.custom_filter}] if self.custom_filter else []) + group_stage
+                total_map = {
+                    r["_id"]: r["count"]
+                    for r in self.collection.aggregate(total_pipeline)
+                }
+
+                # count: full filter applied
+                count_pipeline = ([{"$match": self.filter}] if self.filter else []) + group_stage
+                count_map = {
+                    r["_id"]: r["count"]
+                    for r in self.collection.aggregate(count_pipeline)
+                }
+
+                # Merge: all values from total_map, count from count_map (0 if filtered out)
                 column_options = []
-                
-                for result in cursor:
-                    value = result["_id"]
-                    count = result["count"]
-                    
-                    # Format value for display
-                    if isinstance(value, ObjectId):
-                        display_value = str(value)
-                    elif hasattr(value, 'isoformat'):
-                        display_value = value.isoformat()
+                for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
+                    if isinstance(raw_value, ObjectId):
+                        display_value = str(raw_value)
+                    elif hasattr(raw_value, 'isoformat'):
+                        display_value = raw_value.isoformat()
                     else:
-                        display_value = str(value) if value is not None else ""
-                    
+                        display_value = str(raw_value) if raw_value is not None else ""
+
                     column_options.append({
                         "label": display_value,
                         "value": display_value,
-                        "count": count
+                        "total": total,
+                        "count": count_map.get(raw_value, 0),
                     })
-                
+
                 options[column_name] = column_options
-                
+
             except Exception as e:
                 logger.error(f"Error generating SearchPanes options for {column_name}: {str(e)}")
                 options[column_name] = []
-        
+
         return options
 
     def _parse_searchpanes_filters(self) -> Dict[str, Any]:
@@ -511,13 +512,13 @@ class DataTables:
             return {}
         s = re.escape(v0)
         if condition == "=":        return {field: {"$regex": f"^{s}$", "$options": "i"}}
-        if condition == "!=":       return {field: {"$not": re.compile(f"^{s}$", re.IGNORECASE)}}
+        if condition == "!=":       return {field: {"$not": {"$regex": f"^{s}$", "$options": "i"}}}
         if condition == "contains":  return {field: {"$regex": s, "$options": "i"}}
-        if condition == "!contains": return {field: {"$not": re.compile(s, re.IGNORECASE)}}
+        if condition == "!contains": return {field: {"$not": {"$regex": s, "$options": "i"}}}
         if condition == "starts":    return {field: {"$regex": f"^{s}", "$options": "i"}}
-        if condition == "!starts":   return {field: {"$not": re.compile(f"^{s}", re.IGNORECASE)}}
+        if condition == "!starts":   return {field: {"$not": {"$regex": f"^{s}", "$options": "i"}}}
         if condition == "ends":      return {field: {"$regex": f"{s}$", "$options": "i"}}
-        if condition == "!ends":     return {field: {"$not": re.compile(f"{s}$", re.IGNORECASE)}}
+        if condition == "!ends":     return {field: {"$not": {"$regex": f"{s}$", "$options": "i"}}}
         return {}
 
     @property
@@ -780,7 +781,7 @@ class DataTables:
                 
                 # Use exact count for small collections or when custom filter exists
                 if estimated_count < 100000 or self.custom_filter:
-                    self._recordsTotal = self.collection.count_documents({})
+                    self._recordsTotal = self.collection.count_documents(self.custom_filter or {})
                     logger.debug(f"Using exact count: {self._recordsTotal}")
                 else:
                     self._recordsTotal = estimated_count
@@ -790,7 +791,7 @@ class DataTables:
                 logger.error(f"Error counting total records: {str(e)}", exc_info=True)
                 # Fallback to basic count
                 try:
-                    self._recordsTotal = self.collection.count_documents({})
+                    self._recordsTotal = self.collection.count_documents(self.custom_filter or {})
                 except PyMongoError:
                     self._recordsTotal = 0
         return self._recordsTotal
