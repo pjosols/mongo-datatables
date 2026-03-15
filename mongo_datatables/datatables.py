@@ -511,13 +511,13 @@ class DataTables:
             return {}
         s = re.escape(v0)
         if condition == "=":        return {field: {"$regex": f"^{s}$", "$options": "i"}}
-        if condition == "!=":       return {field: {"$not": {"$regex": f"^{s}$", "$options": "i"}}}
+        if condition == "!=":       return {field: {"$not": re.compile(f"^{s}$", re.IGNORECASE)}}
         if condition == "contains":  return {field: {"$regex": s, "$options": "i"}}
-        if condition == "!contains": return {field: {"$not": {"$regex": s, "$options": "i"}}}
+        if condition == "!contains": return {field: {"$not": re.compile(s, re.IGNORECASE)}}
         if condition == "starts":    return {field: {"$regex": f"^{s}", "$options": "i"}}
-        if condition == "!starts":   return {field: {"$not": {"$regex": f"^{s}", "$options": "i"}}}
+        if condition == "!starts":   return {field: {"$not": re.compile(f"^{s}", re.IGNORECASE)}}
         if condition == "ends":      return {field: {"$regex": f"{s}$", "$options": "i"}}
-        if condition == "!ends":     return {field: {"$not": {"$regex": f"{s}$", "$options": "i"}}}
+        if condition == "!ends":     return {field: {"$not": re.compile(f"{s}$", re.IGNORECASE)}}
         return {}
 
     @property

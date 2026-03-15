@@ -157,7 +157,7 @@ class MongoQueryBuilder:
 
                 regex_term = search_terms[0] if search_regex else re.escape(search_terms[0])
                 pattern = regex_term if search_regex else f"\\b{regex_term}\\b"
-                or_conditions.append({column: {"$regex": pattern, "$options": "i"}})
+                or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i"}})
 
             if or_conditions:
                 return {"$or": or_conditions}
@@ -178,12 +178,12 @@ class MongoQueryBuilder:
                 if field_type == "number":
                     try:
                         numeric_value = TypeConverter.to_number(term)
-                        or_conditions.append({column: numeric_value})
+                        or_conditions.append({self.field_mapper.get_db_field(column): numeric_value})
                     except Exception:
                         pass
                 else:
                     pattern = term if search_regex else re.escape(term)
-                    or_conditions.append({column: {"$regex": pattern, "$options": "i"}})
+                    or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i"}})
 
         if or_conditions:
             return {"$or": or_conditions}
