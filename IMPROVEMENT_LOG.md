@@ -584,3 +584,23 @@ column.get("searchable") in (True, "true", "True", 1)
 **Details:** `column.get("orderable", "true") != "false"` failed when `orderable` was the Python boolean `False` (since `False != "false"` evaluates to `True`). Changed to `column.get("orderable") not in (False, "false", "False", 0)`, consistent with the `searchable` fix from Iter 17.  
 **Tests added:** `tests/test_orderable_coercion.py` (5 tests)  
 **Test results:** 446 passed, 59 subtests passed  
+
+## Iteration 6 — v1.22.0 (2026-03-14)
+
+**Type:** Feature
+**Focus:** searchFixed named searches (DataTables 2.0+)
+
+### What was implemented
+- `_parse_search_fixed()` method in `DataTables` class
+- Parses `searchFixed` dict from request args (DataTables 2.0 sends `searchFixed[name]=value`)
+- Each named search value is treated as a global search term across all searchable columns
+- Multiple named searches are ANDed together
+- Integrated into `_build_filter()` alongside SearchBuilder, SearchPanes, and global search
+- 8 new tests in `tests/test_search_fixed.py`
+
+### Test results
+- New tests: 8 passed
+- Full suite: 484 passed, 59 subtests (0 failures)
+
+### Backward compatibility
+- Fully backward compatible: `searchFixed` key is optional; absent or empty dict is a no-op
