@@ -262,7 +262,8 @@ class DataTables:
         return self.query_builder.build_global_search(
             search_terms,
             self.searchable_columns,
-            self.search_value
+            original_search=self.search_value,
+            search_regex=bool(self.request_args.get("search", {}).get("regex", False))
         )
 
     @property
