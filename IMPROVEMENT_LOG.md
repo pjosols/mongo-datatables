@@ -220,3 +220,23 @@ One-line change in `projection` property: `projection[self.field_mapper.get_db_f
 
 ### Result
 333 tests passing. Backward compatible — no alias means `get_db_field` returns the original name unchanged.
+
+## Iteration 12 — v1.17.3 (2026-03-14)
+
+**Type:** Feature / Bug Fix  
+**Focus:** Proper `length=-1` (Show All) handling
+
+### Problem
+DataTables sends `length=-1` when the user selects "Show All" from the page length menu. The `results()` method was adding `{"$limit": -1}` to the MongoDB aggregation pipeline. MongoDB rejects negative `$limit` values, causing a runtime error on real databases. The existing test incorrectly asserted `$limit: -1` was present and noted "This is likely to be handled by MongoDB as 'no limit'" — it is not.
+
+### Fix
+One-line change in `results()`: `if self.limit:` → `if self.limit and self.limit > 0:`
+
+When `length=-1`, no `$limit` stage is added to the pipeline, returning all matching documents. The `limit` property still returns `-1` for backward compatibility (callers can check `datatables.limit == -1`).
+
+### Tests
+- Fixed `test_pagination_with_all_records` in `test_datatables_pagination.py` to assert no `$limit` stage when `length=-1`
+- Added `tests/test_length_all.py` with 5 new tests covering: omit limit on -1, limit property value, positive limit included, zero length omits limit, get_rows() works end-to-end
+
+### Result
+338 tests passing. Backward compatible.
