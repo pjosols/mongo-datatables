@@ -59,12 +59,15 @@ class MongoQueryBuilder:
         for column in columns:
             column_search = column.get("search", {})
             search_value = column_search.get("value", "")
+            cc = column.get("columnControl")
+            has_cc = cc and isinstance(cc, dict)
 
-            if search_value and column.get("searchable") in (True, "true", "True", 1):
+            if (search_value and column.get("searchable") in (True, "true", "True", 1)) or has_cc:
                 column_name = column.get("name") or column["data"]
                 field_type = self.field_mapper.get_field_type(column_name)
-
                 db_field = self.field_mapper.get_db_field(column_name)
+
+            if search_value and column.get("searchable") in (True, "true", "True", 1):
                 if field_type == "number":
                     if '|' in search_value:
                         parts = search_value.split('|', 1)
@@ -107,6 +110,9 @@ class MongoQueryBuilder:
                     regex_flag = column_search.get("regex") in (True, "true", "True", 1)
                     pattern = search_value if regex_flag else re.escape(search_value)
                     conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
+
+            if has_cc:
+                conditions.extend(self._build_column_control_condition(db_field, field_type, cc))
 
         if conditions:
             return {"$and": conditions}
@@ -250,6 +256,84 @@ class MongoQueryBuilder:
         if and_conditions:
             return {"$and": and_conditions}
         return {}
+
+    def _build_column_control_condition(self, db_field: str, field_type: str, cc: Dict[str, Any]) -> List[Dict[str, Any]]:
+        conditions = []
+
+        list_data = cc.get("list")
+        if list_data and isinstance(list_data, dict):
+            values = list(list_data.values())
+            if values:
+                if field_type == "number":
+                    converted = []
+                    for v in values:
+                        try:
+                            converted.append(TypeConverter.to_number(v))
+                        except Exception:
+                            pass
+                    if converted:
+                        conditions.append({db_field: {"$in": converted}})
+                else:
+                    conditions.append({db_field: {"$in": values}})
+
+        search = cc.get("search")
+        if search and isinstance(search, dict):
+            value = search.get("value", "")
+            logic = search.get("logic", "")
+            stype = search.get("type", field_type or "text")
+
+            if logic in ("empty",):
+                conditions.append({db_field: {"$in": [None, ""]}})
+            elif logic in ("notEmpty",):
+                conditions.append({db_field: {"$nin": [None, ""]}})
+            elif value:
+                if stype == "num":
+                    try:
+                        num = TypeConverter.to_number(value)
+                        if logic == "equal":
+                            conditions.append({db_field: num})
+                        elif logic == "notEqual":
+                            conditions.append({db_field: {"$ne": num}})
+                        elif logic == "greater":
+                            conditions.append({db_field: {"$gt": num}})
+                        elif logic == "greaterOrEqual":
+                            conditions.append({db_field: {"$gte": num}})
+                        elif logic == "less":
+                            conditions.append({db_field: {"$lt": num}})
+                        elif logic == "lessOrEqual":
+                            conditions.append({db_field: {"$lte": num}})
+                    except Exception:
+                        pass
+                elif stype == "date":
+                    try:
+                        parsed = DateHandler.parse_iso_date(value)
+                        next_day = DateHandler.get_next_day(parsed)
+                        if logic == "equal":
+                            conditions.append({db_field: {"$gte": parsed, "$lt": next_day}})
+                        elif logic == "notEqual":
+                            conditions.append({"$or": [{db_field: {"$lt": parsed}}, {db_field: {"$gte": next_day}}]})
+                        elif logic == "greater":
+                            conditions.append({db_field: {"$gt": parsed}})
+                        elif logic == "less":
+                            conditions.append({db_field: {"$lt": parsed}})
+                    except Exception:
+                        pass
+                else:
+                    escaped = re.escape(value)
+                    if logic == "contains":
+                        conditions.append({db_field: {"$regex": escaped, "$options": "i"}})
+                    elif logic == "notContains":
+                        conditions.append({db_field: {"$not": re.compile(escaped, re.IGNORECASE)}})
+                    elif logic == "equal":
+                        conditions.append({db_field: {"$regex": f"^{escaped}$", "$options": "i"}})
+                    elif logic == "notEqual":
+                        conditions.append({db_field: {"$not": re.compile(f"^{escaped}$", re.IGNORECASE)}})
+                    elif logic == "starts":
+                        conditions.append({db_field: {"$regex": f"^{escaped}", "$options": "i"}})
+                    elif logic == "ends":
+                        conditions.append({db_field: {"$regex": f"{escaped}$", "$options": "i"}})
+
+        return conditions
 
     def _build_number_condition(
         self,
