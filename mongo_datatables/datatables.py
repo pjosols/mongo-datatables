@@ -352,10 +352,11 @@ class DataTables:
             logger.error(f"Error generating SearchPanes options: {str(e)}")
             return {col_name: [] for col_name, _ in eligible}
 
+        def _hashable(v):
+            return str(v.to_decimal()) if isinstance(v, Decimal128) else v
+
         options = {}
         for col_name, _ in eligible:
-            def _hashable(v):
-                return str(v.to_decimal()) if isinstance(v, Decimal128) else v
             total_map = {_hashable(r["_id"]): r["count"] for r in total_result.get(col_name, [])}
             count_map = {_hashable(r["_id"]): r["count"] for r in count_result.get(col_name, [])}
             column_options = []
@@ -581,8 +582,8 @@ class DataTables:
             if condition == "<=":  return {field: {"$lt": _d(v0) + timedelta(days=1)}}
             if condition == ">":   return {field: {"$gt": _d(v0)}}
             if condition == ">=":  return {field: {"$gte": _d(v0)}}
-            if condition == "between":  return {field: {"$gte": _d(v0), "$lte": _d(v1)}}
-            if condition == "!between": return {"$or": [{field: {"$lt": _d(v0)}}, {field: {"$gt": _d(v1)}}]}
+            if condition == "between":  return {field: {"$gte": _d(v0), "$lt": _d(v1) + timedelta(days=1)}}
+            if condition == "!between": return {"$or": [{field: {"$lt": _d(v0)}}, {field: {"$gte": _d(v1) + timedelta(days=1)}}]}
         except Exception:
             pass
         return {}

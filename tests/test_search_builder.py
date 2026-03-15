@@ -135,7 +135,7 @@ class TestSearchBuilderNumber:
         assert "$or" in result
         assert len(result["$or"]) == 2
         assert "$lt" in result["$or"][0].get("created", {})
-        assert "$gt" in result["$or"][1].get("created", {})
+        assert "$gte" in result["$or"][1].get("created", {})
 
 
 class TestSearchBuilderNullConditions:
