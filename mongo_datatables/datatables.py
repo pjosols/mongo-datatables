@@ -683,8 +683,50 @@ class DataTables:
             if "_id" in d:
                 d["DT_RowId"] = str(d.pop("_id"))
             self._format_result_values(d)
+            d = self._remap_aliases(d)
             processed.append(d)
         return processed
+
+    def _remap_aliases(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Remap DB field names to UI aliases in a result document.
+
+        For DataFields with dot-notation names (e.g. 'PublisherInfo.Date'),
+        MongoDB returns nested dicts. This method extracts the value and
+        stores it under the UI alias key, removing the intermediate nesting
+        when no other fields from that parent are needed.
+        """
+        if not self.field_mapper.db_to_ui:
+            return doc
+        for db_field, ui_alias in self.field_mapper.db_to_ui.items():
+            if db_field == ui_alias:
+                continue  # no remapping needed
+            if '.' in db_field:
+                # Extract value from nested structure
+                parts = db_field.split('.')
+                val = doc
+                for part in parts:
+                    if isinstance(val, dict) and part in val:
+                        val = val[part]
+                    else:
+                        val = None
+                        break
+                if val is not None:
+                    doc[ui_alias] = val
+                    # Remove top-level parent key only if it's no longer needed
+                    top = parts[0]
+                    if top in doc and isinstance(doc[top], dict):
+                        # Check if any other db_field uses this same top-level key
+                        other_uses = any(
+                            f != db_field and f.startswith(top + '.')
+                            for f in self.field_mapper.db_to_ui
+                        )
+                        if not other_uses:
+                            del doc[top]
+            else:
+                # Simple rename: db_field key -> ui_alias key
+                if db_field in doc:
+                    doc[ui_alias] = doc.pop(db_field)
+        return doc
 
     def results(self) -> List[Dict[str, Any]]:
         """Execute the MongoDB query with optimized pipeline.
