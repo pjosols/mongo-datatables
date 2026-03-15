@@ -336,8 +336,10 @@ class DataTables:
         count_pipeline = ([{"$match": self.filter}] if self.filter else []) + [{"$facet": facet_branches}]
 
         try:
-            total_result = list(self.collection.aggregate(total_pipeline, allowDiskUse=self.allow_disk_use))[0]
-            count_result = list(self.collection.aggregate(count_pipeline, allowDiskUse=self.allow_disk_use))[0]
+            total_docs = list(self.collection.aggregate(total_pipeline, allowDiskUse=self.allow_disk_use))
+            total_result = total_docs[0] if total_docs else {}
+            count_docs = list(self.collection.aggregate(count_pipeline, allowDiskUse=self.allow_disk_use))
+            count_result = count_docs[0] if count_docs else {}
         except Exception as e:
             logger.error(f"Error generating SearchPanes options: {str(e)}")
             return {col_name: [] for col_name, _ in eligible}
@@ -659,7 +661,6 @@ class DataTables:
         for order_info in self.request_args.get("order", []):
             col_idx = int(order_info["column"])
             order_name = order_info.get("name", "")
-            # Resolve column: prefer name-based lookup (ColReorder), fall back to index
             column = None
             if order_name:
                 column = next(
@@ -670,11 +671,25 @@ class DataTables:
                 column = self.columns[col_idx]
             if column is None:
                 continue
-            ui_field_name = column.get("data")
-            if ui_field_name and column.get("orderable") not in (False, "false", "False", 0):
-                db_field_name = self.field_mapper.get_db_field(ui_field_name)
-                if db_field_name not in sort_spec:
-                    sort_spec[db_field_name] = 1 if order_info["dir"] == "asc" else -1
+            direction = 1 if order_info["dir"] == "asc" else -1
+            order_data = column.get("orderData")
+            if order_data is not None:
+                indices = [order_data] if isinstance(order_data, int) else list(order_data)
+                for idx in indices:
+                    if 0 <= idx < len(self.columns):
+                        target = self.columns[idx]
+                        if target.get("orderable") not in (False, "false", "False", 0):
+                            field = target.get("data")
+                            if field:
+                                db_field = self.field_mapper.get_db_field(field)
+                                if db_field not in sort_spec:
+                                    sort_spec[db_field] = direction
+            else:
+                ui_field_name = column.get("data")
+                if ui_field_name and column.get("orderable") not in (False, "false", "False", 0):
+                    db_field_name = self.field_mapper.get_db_field(ui_field_name)
+                    if db_field_name not in sort_spec:
+                        sort_spec[db_field_name] = direction
         if "_id" not in sort_spec:
             sort_spec["_id"] = 1
         return sort_spec
@@ -885,7 +900,7 @@ class DataTables:
                 
                 # Use exact count for small collections or when custom filter exists
                 if estimated_count < 100000 or self.custom_filter:
-                    self._recordsTotal = self.collection.count_documents(self.custom_filter or {})
+                    self._recordsTotal = self.collection.count_documents(self.custom_filter)
                     logger.debug(f"Using exact count: {self._recordsTotal}")
                 else:
                     self._recordsTotal = estimated_count
@@ -895,7 +910,7 @@ class DataTables:
                 logger.error(f"Error counting total records: {str(e)}", exc_info=True)
                 # Fallback to basic count
                 try:
-                    self._recordsTotal = self.collection.count_documents(self.custom_filter or {})
+                    self._recordsTotal = self.collection.count_documents(self.custom_filter)
                 except PyMongoError:
                     self._recordsTotal = 0
         return self._recordsTotal
@@ -998,35 +1013,16 @@ class DataTables:
                 }
             }
             
-            # Add sum and avg for numeric fields
-            for field in self.data_fields:
-                if field.data_type == "number":
-                    group_stage["$group"][f"{field.alias}_sum"] = {"$sum": f"${field.name}"}
-                    group_stage["$group"][f"{field.alias}_avg"] = {"$avg": f"${field.name}"}
-                    
             pipeline.append(group_stage)
             pipeline.append({"$sort": {"_id": 1}})
             
             cursor = self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use)
             groups = list(cursor)
             
-            # Format group data
-            group_data = {}
-            for group in groups:
-                group_key = str(group["_id"]) if group["_id"] is not None else "null"
-                group_data[group_key] = {
-                    "count": group["count"]
-                }
-                
-                # Add numeric summaries
-                for field in self.data_fields:
-                    if field.data_type == "number":
-                        sum_key = f"{field.alias}_sum"
-                        avg_key = f"{field.alias}_avg"
-                        if sum_key in group:
-                            group_data[group_key][sum_key] = group[sum_key]
-                        if avg_key in group:
-                            group_data[group_key][avg_key] = group[avg_key]
+            group_data = {
+                str(group["_id"]) if group["_id"] is not None else "null": {"count": group["count"]}
+                for group in groups
+            }
                             
             return {
                 "dataSrc": data_src,
