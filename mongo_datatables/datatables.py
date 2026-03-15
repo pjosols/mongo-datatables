@@ -281,12 +281,13 @@ class DataTables:
         Returns:
             MongoDB query condition for global search
         """
-        search_terms = self.search_terms_without_a_colon
+        search = self.request_args.get("search", {})
         return self.query_builder.build_global_search(
-            search_terms,
+            self.search_terms_without_a_colon,
             self.searchable_columns,
             original_search=self.search_value,
-            search_regex=self.request_args.get("search", {}).get("regex", False) in (True, "true", "True", 1)
+            search_regex=search.get("regex", False) in (True, "true", "True", 1),
+            search_smart=search.get("smart", True) not in (False, "false", "False", 0),
         )
 
     @property

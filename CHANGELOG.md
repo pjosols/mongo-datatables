@@ -1,3 +1,10 @@
+## [1.29.0] - 2026-03-15
+
+### Changed
+- Editor now supports all pymongo object types (MongoClient, raw Database, Flask-PyMongo, dict-style), matching DataTables._get_collection behavior
+- `db` property updated to resolve correctly for all supported pymongo object types
+- `collection` property now resolved at construction time via `_resolve_collection()` static method
+
 ## [1.28.0] - 2026-03-15
 
 ### Added
