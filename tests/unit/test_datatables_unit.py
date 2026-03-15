@@ -1,36 +1,22 @@
 """Consolidated DataTables core and utility tests."""
-from bson.objectid import ObjectId
-from datetime import datetime
-from datetime import datetime, timedelta
-from mongo_datatables import DataField
-from mongo_datatables import DataTables
-from mongo_datatables import DataTables, DataField
-from mongo_datatables.datatables import DataField
-from mongo_datatables.datatables import DataTables, DataField
-from mongo_datatables.exceptions import FieldMappingError
-from mongo_datatables.query_builder import MongoQueryBuilder
-from mongo_datatables.utils import FieldMapper
-from mongo_datatables.utils import SearchTermParser
-from mongo_datatables.utils import TypeConverter
-from pymongo import MongoClient
-from pymongo.collection import Collection
-from pymongo.database import Database
-from pymongo.errors import PyMongoError
-from tests.base_test import BaseDataTablesTest
-from unittest.mock import MagicMock
-from unittest.mock import MagicMock, call
-from unittest.mock import MagicMock, patch
-from unittest.mock import Mock, patch, MagicMock
-from unittest.mock import call, patch
-from unittest.mock import patch
-from unittest.mock import patch, MagicMock
 import json
 import os
 import pymongo
 import pytest
-import re
 import sys
-import unittest
+from bson.objectid import ObjectId
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, Mock, call, patch
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from pymongo.database import Database
+from pymongo.errors import PyMongoError
+from mongo_datatables import DataTables, DataField
+from mongo_datatables.datatables import DataTables, DataField
+from mongo_datatables.exceptions import FieldMappingError
+from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter
+from tests.base_test import BaseDataTablesTest
 
 
 # --- from tests/test_datatables_edge_cases.py ---
@@ -462,12 +448,6 @@ class TestFiltering(BaseDataTablesTest):
 
         # Should include the complex filter structure
         self.assertIn('$or', result)
-
-    def test_filter_with_id_conversion(self):
-        """Test filter property with _id field conversion"""
-        # Skip this test if the new implementation doesn't handle _id conversion
-        # or handles it differently
-        pass
 
     def test_filter_with_nested_fields(self):
         """Test filter property with nested fields in search"""
@@ -941,12 +921,6 @@ class TestResults(BaseDataTablesTest):
         self.assertIn('DT_RowId', result[0])  # DT_RowId should be added
         self.assertEqual(result[0]['DT_RowId'], str(doc_id))  # Should be string representation of ObjectId
         self.assertEqual(result[0]['name'], "Test User")
-
-    def test_results_with_date_conversion(self):
-        """Test results method with date conversion"""
-        # Skip this test if the new implementation doesn't handle date conversion
-        # or handles it differently
-        pass
 
     def test_results_error_handling(self):
         """Test results method error handling"""
