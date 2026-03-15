@@ -126,6 +126,7 @@ class DataTables:
         self._results = None
         self._recordsTotal = None
         self._recordsFiltered = None
+        self._filter_cache = None
         self._has_text_index = None
 
         self._check_text_index()
@@ -529,6 +530,16 @@ class DataTables:
         Returns:
             MongoDB query with all filter conditions
         """
+        if self._filter_cache is None:
+            self._filter_cache = self._build_filter()
+        return self._filter_cache
+
+    def _build_filter(self) -> Dict[str, Any]:
+        """Build the combined MongoDB filter from all active conditions.
+
+        Returns:
+            MongoDB query with all filter conditions
+        """
         conditions = []
 
         if self.custom_filter:
@@ -577,13 +588,23 @@ class DataTables:
         sort_spec = {}
         for order_info in self.request_args.get("order", []):
             col_idx = int(order_info["column"])
-            if 0 <= col_idx < len(self.columns):
+            order_name = order_info.get("name", "")
+            # Resolve column: prefer name-based lookup (ColReorder), fall back to index
+            column = None
+            if order_name:
+                column = next(
+                    (c for c in self.columns if c.get("name") == order_name or c.get("data") == order_name),
+                    None
+                )
+            if column is None and 0 <= col_idx < len(self.columns):
                 column = self.columns[col_idx]
-                ui_field_name = column.get("data")
-                if ui_field_name and column.get("orderable", "true") != "false":
-                    db_field_name = self.field_mapper.get_db_field(ui_field_name)
-                    if db_field_name not in sort_spec:
-                        sort_spec[db_field_name] = 1 if order_info["dir"] == "asc" else -1
+            if column is None:
+                continue
+            ui_field_name = column.get("data")
+            if ui_field_name and column.get("orderable", "true") != "false":
+                db_field_name = self.field_mapper.get_db_field(ui_field_name)
+                if db_field_name not in sort_spec:
+                    sort_spec[db_field_name] = 1 if order_info["dir"] == "asc" else -1
         if "_id" not in sort_spec:
             sort_spec["_id"] = 1
         return sort_spec
