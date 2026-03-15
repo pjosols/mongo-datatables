@@ -442,6 +442,35 @@ class DataTables:
             return {}
         return {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
+    def _parse_column_search_fixed(self) -> Dict[str, Any]:
+        """Parse per-column searchFixed dicts (DataTables 2.0+) into a MongoDB filter.
+
+        Each column may carry a ``searchFixed`` dict of named fixed searches.
+        Values are applied as column-scoped searches using ``build_column_search``.
+
+        Returns:
+            MongoDB query condition, or ``{}`` if no column-level fixed searches exist.
+        """
+        conditions = []
+        for col in self.columns:
+            col_fixed = col.get("searchFixed", {})
+            if not isinstance(col_fixed, dict) or not col_fixed:
+                continue
+            db_field = self.field_mapper.get_db_field(col.get("data", ""))
+            if not db_field:
+                continue
+            for value in col_fixed.values():
+                if not value:
+                    continue
+                cond = self.query_builder.build_column_search(
+                    [{**col, "search": {"value": str(value), "regex": False}}]
+                )
+                if cond:
+                    conditions.append(cond)
+        if not conditions:
+            return {}
+        return {"$and": conditions} if len(conditions) > 1 else conditions[0]
+
     def _parse_search_builder(self) -> Dict[str, Any]:
         """Translate a SearchBuilder criteria tree into a MongoDB query.
 
@@ -601,6 +630,10 @@ class DataTables:
         search_fixed_filter = self._parse_search_fixed()
         if search_fixed_filter:
             conditions.append(search_fixed_filter)
+
+        col_search_fixed_filter = self._parse_column_search_fixed()
+        if col_search_fixed_filter:
+            conditions.append(col_search_fixed_filter)
 
         global_search = self.global_search_condition
         if global_search:
