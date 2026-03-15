@@ -75,9 +75,9 @@ class MongoQueryBuilder:
                         {column_name: {"$regex": search_value, "$options": "i"}}
                     )
                 else:
-                    conditions.append(
-                        {column_name: {"$regex": search_value, "$options": "i"}}
-                    )
+                    regex_flag = column_search.get("regex", False)
+                    pattern = search_value if regex_flag else re.escape(search_value)
+                    conditions.append({column_name: {"$regex": pattern, "$options": "i"}})
 
         if conditions:
             return {"$and": conditions}
@@ -87,7 +87,8 @@ class MongoQueryBuilder:
         self,
         search_terms: List[str],
         searchable_columns: List[str],
-        original_search: str = ""
+        original_search: str = "",
+        search_regex: bool = False
     ) -> Dict[str, Any]:
         """Build global search conditions.
 
@@ -126,7 +127,7 @@ class MongoQueryBuilder:
                     continue
 
                 clean_term = search_terms[0]
-                regex_term = re.escape(clean_term)
+                regex_term = search_terms[0] if search_regex else re.escape(search_terms[0])
                 or_conditions.append({column: {"$regex": f"\\b{regex_term}\\b", "$options": "i"}})
 
             if or_conditions:
@@ -152,7 +153,8 @@ class MongoQueryBuilder:
                     except Exception:
                         pass
                 else:
-                    or_conditions.append({column: {"$regex": term, "$options": "i"}})
+                    pattern = term if search_regex else re.escape(term)
+                    or_conditions.append({column: {"$regex": pattern, "$options": "i"}})
 
         if or_conditions:
             return {"$or": or_conditions}

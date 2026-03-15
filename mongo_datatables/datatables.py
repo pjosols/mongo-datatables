@@ -262,7 +262,8 @@ class DataTables:
         return self.query_builder.build_global_search(
             search_terms,
             self.searchable_columns,
-            self.search_value
+            original_search=self.search_value,
+            search_regex=bool(self.request_args.get("search", {}).get("regex", False))
         )
 
     @property
@@ -281,6 +282,121 @@ class DataTables:
             self.searchable_columns
         )
 
+    def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Generate SearchPanes options data for all searchable columns.
+
+        Returns:
+            Dictionary mapping column names to their option lists
+        """
+        options = {}
+        
+        for column in self.columns:
+            if not column.get("searchable", False):
+                continue
+                
+            column_name = column.get("data")
+            if not column_name:
+                continue
+                
+            db_field = self.field_mapper.get_db_field(column_name)
+            field_type = self.field_mapper.get_field_type(column_name)
+            
+            # Skip complex types that don't work well with SearchPanes
+            if field_type in ["object", "array"]:
+                continue
+                
+            try:
+                pipeline = []
+                
+                # Apply base filter if exists
+                if self.custom_filter:
+                    pipeline.append({"$match": self.custom_filter})
+                
+                # Group by field value and count occurrences
+                pipeline.extend([
+                    {"$group": {
+                        "_id": f"${db_field}",
+                        "count": {"$sum": 1}
+                    }},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 1000}  # Limit options for performance
+                ])
+                
+                cursor = self.collection.aggregate(pipeline)
+                column_options = []
+                
+                for result in cursor:
+                    value = result["_id"]
+                    count = result["count"]
+                    
+                    # Format value for display
+                    if isinstance(value, ObjectId):
+                        display_value = str(value)
+                    elif hasattr(value, 'isoformat'):
+                        display_value = value.isoformat()
+                    else:
+                        display_value = str(value) if value is not None else ""
+                    
+                    column_options.append({
+                        "label": display_value,
+                        "value": display_value,
+                        "count": count
+                    })
+                
+                options[column_name] = column_options
+                
+            except Exception as e:
+                logger.error(f"Error generating SearchPanes options for {column_name}: {str(e)}")
+                options[column_name] = []
+        
+        return options
+
+    def _parse_searchpanes_filters(self) -> Dict[str, Any]:
+        """Parse SearchPanes filter parameters from request.
+
+        Returns:
+            MongoDB query conditions for SearchPanes filters
+        """
+        conditions = []
+        
+        # Check for searchPanes parameter in request
+        searchpanes = self.request_args.get("searchPanes", {})
+        
+        # If searchPanes is just a boolean flag, no filters to apply
+        if not isinstance(searchpanes, dict):
+            return {}
+        
+        for column_name, selected_values in searchpanes.items():
+            if not selected_values:
+                continue
+                
+            db_field = self.field_mapper.get_db_field(column_name)
+            field_type = self.field_mapper.get_field_type(column_name)
+            
+            # Convert values based on field type
+            converted_values = []
+            for value in selected_values:
+                if field_type == "number":
+                    try:
+                        converted_values.append(TypeConverter.to_number(value))
+                    except:
+                        converted_values.append(value)
+                elif field_type == "objectid":
+                    try:
+                        converted_values.append(ObjectId(value))
+                    except:
+                        converted_values.append(value)
+                else:
+                    converted_values.append(value)
+            
+            if converted_values:
+                conditions.append({db_field: {"$in": converted_values}})
+        
+        if conditions:
+            return {"$and": conditions}
+        return {}
+
     @property
     def filter(self) -> Dict[str, Any]:
         """Combine all filter conditions into a single MongoDB query.
@@ -292,6 +408,11 @@ class DataTables:
 
         if self.custom_filter:
             conditions.append(self.custom_filter)
+
+        # Add SearchPanes filters
+        searchpanes_filter = self._parse_searchpanes_filters()
+        if searchpanes_filter:
+            conditions.append(searchpanes_filter)
 
         global_search = self.global_search_condition
         if global_search:
@@ -458,35 +579,358 @@ class DataTables:
             return []
 
     def count_total(self) -> int:
-        """Count total records in the collection.
+        """Count total records in the collection with optimized performance.
+
+        Uses estimated_document_count() for large collections (>100k docs) and
+        count_documents({}) for smaller collections to maintain accuracy.
 
         Returns:
             Total number of records, or 0 if an error occurs
         """
         if self._recordsTotal is None:
             try:
-                self._recordsTotal = self.collection.count_documents({})
+                # Try estimated count first for performance
+                estimated_count = self.collection.estimated_document_count()
+                
+                # Convert to int in case it's a mock object
+                try:
+                    estimated_count = int(estimated_count)
+                except (TypeError, ValueError):
+                    # If conversion fails, fall back to exact count
+                    self._recordsTotal = self.collection.count_documents({})
+                    logger.debug(f"Using exact count (fallback): {self._recordsTotal}")
+                    return self._recordsTotal
+                
+                # Use exact count for small collections or when custom filter exists
+                if estimated_count < 100000 or self.custom_filter:
+                    self._recordsTotal = self.collection.count_documents({})
+                    logger.debug(f"Using exact count: {self._recordsTotal}")
+                else:
+                    self._recordsTotal = estimated_count
+                    logger.debug(f"Using estimated count: {self._recordsTotal}")
+                    
             except PyMongoError as e:
                 logger.error(f"Error counting total records: {str(e)}", exc_info=True)
-                self._recordsTotal = 0
+                # Fallback to basic count
+                try:
+                    self._recordsTotal = self.collection.count_documents({})
+                except PyMongoError:
+                    self._recordsTotal = 0
         return self._recordsTotal
 
     def count_filtered(self) -> int:
-        """Count records after applying filters.
+        """Count records after applying filters with optimized performance.
+
+        Uses aggregation pipeline for complex filters to improve performance
+        on large datasets.
 
         Returns:
             Number of filtered records, or 0 if an error occurs
         """
         if self._recordsFiltered is None:
             try:
-                if self.filter:
-                    self._recordsFiltered = self.collection.count_documents(self.filter)
-                else:
+                if not self.filter:
                     self._recordsFiltered = self.count_total()
+                else:
+                    # Try aggregation pipeline for better performance on large datasets
+                    try:
+                        pipeline = [
+                            {"$match": self.filter},
+                            {"$count": "total"}
+                        ]
+                        
+                        result = list(self.collection.aggregate(pipeline))
+                        self._recordsFiltered = result[0]["total"] if result else 0
+                        logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")
+                    except (PyMongoError, Exception) as e:
+                        # Fallback to traditional count_documents
+                        logger.debug(f"Aggregation failed, using count_documents: {str(e)}")
+                        self._recordsFiltered = self.collection.count_documents(self.filter)
+                    
             except PyMongoError as e:
                 logger.error(f"Error counting filtered records: {str(e)}", exc_info=True)
-                self._recordsFiltered = 0
+                # Final fallback
+                try:
+                    if self.filter:
+                        self._recordsFiltered = self.collection.count_documents(self.filter)
+                    else:
+                        self._recordsFiltered = self.count_total()
+                except PyMongoError:
+                    self._recordsFiltered = 0
         return self._recordsFiltered
+
+    def _parse_fixed_columns_config(self) -> Optional[Dict[str, Any]]:
+        """Parse FixedColumns configuration from request parameters.
+        
+        Returns:
+            FixedColumns configuration dict or None if not requested
+        """
+        fixed_columns = self.request_args.get("fixedColumns")
+        if not fixed_columns:
+            return None
+            
+        config = {}
+        
+        # Parse left fixed columns
+        if "left" in fixed_columns:
+            try:
+                config["left"] = int(fixed_columns["left"])
+            except (ValueError, TypeError):
+                config["left"] = 0
+                
+        # Parse right fixed columns  
+        if "right" in fixed_columns:
+            try:
+                config["right"] = int(fixed_columns["right"])
+            except (ValueError, TypeError):
+                config["right"] = 0
+                
+        return config if config else None
+
+    def _parse_responsive_config(self) -> Optional[Dict[str, Any]]:
+        """Parse Responsive extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing responsive configuration or None if not requested
+        """
+        responsive_params = self.request_args.get("responsive")
+        if not responsive_params:
+            return None
+            
+        config = {}
+        
+        # Parse breakpoints configuration
+        if "breakpoints" in responsive_params:
+            breakpoints = responsive_params["breakpoints"]
+            if isinstance(breakpoints, dict):
+                config["breakpoints"] = breakpoints
+                
+        # Parse display configuration
+        if "display" in responsive_params:
+            display = responsive_params["display"]
+            if isinstance(display, dict):
+                config["display"] = display
+                
+        # Parse column priorities
+        if "priorities" in responsive_params:
+            priorities = responsive_params["priorities"]
+            if isinstance(priorities, dict):
+                config["priorities"] = priorities
+                
+        return config if config else None
+
+    def _parse_buttons_config(self) -> Optional[Dict[str, Any]]:
+        """Parse Buttons extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing buttons configuration or None if not requested
+        """
+        buttons_params = self.request_args.get("buttons")
+        if not buttons_params:
+            return None
+            
+        config = {}
+        
+        # Parse export configuration
+        if "export" in buttons_params:
+            export_config = buttons_params["export"]
+            if isinstance(export_config, dict):
+                config["export"] = export_config
+                
+        # Parse column visibility configuration
+        if "colvis" in buttons_params:
+            colvis_config = buttons_params["colvis"]
+            if isinstance(colvis_config, dict):
+                config["colvis"] = colvis_config
+                
+        # Parse print configuration
+        if "print" in buttons_params:
+            print_config = buttons_params["print"]
+            if isinstance(print_config, dict):
+                config["print"] = print_config
+                
+        # Parse copy configuration
+        if "copy" in buttons_params:
+            copy_config = buttons_params["copy"]
+            if isinstance(copy_config, dict):
+                config["copy"] = copy_config
+                
+        return config if config else None
+
+    def _parse_select_config(self) -> Optional[Dict[str, Any]]:
+        """Parse Select extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing select configuration or None if not requested
+        """
+        select_params = self.request_args.get("select")
+        if not select_params:
+            return None
+            
+        # Handle boolean true case (default configuration)
+        if select_params is True:
+            return {"style": "os"}
+            
+        config = {}
+        
+        # Parse selection style
+        if isinstance(select_params, dict):
+            style = select_params.get("style", "os")
+            if style in ["os", "single", "multi", "multi+shift"]:
+                config["style"] = style
+            else:
+                config["style"] = "os"
+                
+        return config if config else None
+
+    def _parse_rowgroup_config(self) -> Optional[Dict[str, Any]]:
+        """Parse RowGroup extension configuration from request parameters.
+        
+        Returns:
+            Dictionary containing rowGroup configuration or None if not requested
+        """
+        rowgroup_params = self.request_args.get("rowGroup")
+        if not rowgroup_params:
+            return None
+            
+        config = {}
+        
+        # Parse data source for grouping
+        if "dataSrc" in rowgroup_params:
+            data_src = rowgroup_params["dataSrc"]
+            if isinstance(data_src, (str, int)):
+                config["dataSrc"] = data_src
+                
+        # Parse start render function indicator
+        if "startRender" in rowgroup_params:
+            config["startRender"] = bool(rowgroup_params["startRender"])
+            
+        # Parse end render function indicator  
+        if "endRender" in rowgroup_params:
+            config["endRender"] = bool(rowgroup_params["endRender"])
+            
+        return config if config else None
+
+    def _get_rowgroup_data(self) -> Optional[Dict[str, Any]]:
+        """Generate RowGroup aggregation data using MongoDB pipeline.
+        
+        Returns:
+            Dictionary containing group summaries or None if RowGroup not configured
+        """
+        rowgroup_config = self._parse_rowgroup_config()
+        if not rowgroup_config or "dataSrc" not in rowgroup_config:
+            return None
+            
+        data_src = rowgroup_config["dataSrc"]
+        
+        # Map column index to field name if dataSrc is numeric
+        if isinstance(data_src, int):
+            if data_src < len(self.columns):
+                field_name = self.columns[data_src].get("data")
+            else:
+                return None
+        else:
+            field_name = data_src
+            
+        # Get the actual MongoDB field name
+        mongo_field = self.field_mapper.get_db_field(field_name) if field_name else None
+        if not mongo_field:
+            return None
+            
+        try:
+            # Build aggregation pipeline for group summaries
+            pipeline = []
+            
+            # Apply filters
+            if self.filter:
+                pipeline.append({"$match": self.filter})
+                
+            # Group by the specified field and calculate summaries
+            group_stage = {
+                "$group": {
+                    "_id": f"${mongo_field}",
+                    "count": {"$sum": 1}
+                }
+            }
+            
+            # Add sum and avg for numeric fields
+            for field in self.data_fields:
+                if field.data_type == "number":
+                    group_stage["$group"][f"{field.alias}_sum"] = {"$sum": f"${field.name}"}
+                    group_stage["$group"][f"{field.alias}_avg"] = {"$avg": f"${field.name}"}
+                    
+            pipeline.append(group_stage)
+            pipeline.append({"$sort": {"_id": 1}})
+            
+            cursor = self.collection.aggregate(pipeline)
+            groups = list(cursor)
+            
+            # Format group data
+            group_data = {}
+            for group in groups:
+                group_key = str(group["_id"]) if group["_id"] is not None else "null"
+                group_data[group_key] = {
+                    "count": group["count"]
+                }
+                
+                # Add numeric summaries
+                for field in self.data_fields:
+                    if field.data_type == "number":
+                        sum_key = f"{field.alias}_sum"
+                        avg_key = f"{field.alias}_avg"
+                        if sum_key in group:
+                            group_data[group_key][sum_key] = group[sum_key]
+                        if avg_key in group:
+                            group_data[group_key][avg_key] = group[avg_key]
+                            
+            return {
+                "dataSrc": data_src,
+                "groups": group_data
+            }
+            
+        except PyMongoError as e:
+            logger.error(f"Error generating RowGroup data: {str(e)}", exc_info=True)
+            return None
+
+    def get_export_data(self) -> List[Dict[str, Any]]:
+        """Get all data for export without pagination limits.
+        
+        Returns:
+            List of all documents matching current filters, formatted for export
+        """
+        try:
+            pipeline = []
+
+            if self.filter:
+                pipeline.append({"$match": self.filter})
+
+            if self.sort_specification:
+                pipeline.append({"$sort": self.sort_specification})
+
+            pipeline.append({"$project": self.projection})
+
+            cursor = self.collection.aggregate(pipeline)
+            results = list(cursor)
+
+            processed_results = []
+            for result in results:
+                result_dict = dict(result)
+
+                if "_id" in result_dict:
+                    result_dict["DT_RowId"] = str(result_dict["_id"])
+                    del result_dict["_id"]
+
+                self._format_result_values(result_dict)
+                processed_results.append(result_dict)
+
+            return processed_results
+
+        except PyMongoError as e:
+            logger.error(f"Error executing export query: {str(e)}", exc_info=True)
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error in get_export_data(): {str(e)}", exc_info=True)
+            return []
 
     def get_rows(self) -> Dict[str, Any]:
         """Get the complete formatted response for DataTables.
@@ -494,9 +938,40 @@ class DataTables:
         Returns:
             Dictionary containing all required DataTables response fields
         """
-        return {
+        response = {
             "draw": int(self.request_args.get("draw", 1)),
             "recordsTotal": self.count_total(),
             "recordsFiltered": self.count_filtered(),
             "data": self.results(),
         }
+        
+        # Add SearchPanes options if requested
+        if self.request_args.get("searchPanes"):
+            response["searchPanes"] = {"options": self.get_searchpanes_options()}
+            
+        # Add FixedColumns configuration if requested
+        fixed_columns_config = self._parse_fixed_columns_config()
+        if fixed_columns_config:
+            response["fixedColumns"] = fixed_columns_config
+            
+        # Add Responsive configuration if requested
+        responsive_config = self._parse_responsive_config()
+        if responsive_config:
+            response["responsive"] = responsive_config
+            
+        # Add Buttons configuration if requested
+        buttons_config = self._parse_buttons_config()
+        if buttons_config:
+            response["buttons"] = buttons_config
+            
+        # Add Select configuration if requested
+        select_config = self._parse_select_config()
+        if select_config:
+            response["select"] = select_config
+            
+        # Add RowGroup data if requested
+        rowgroup_data = self._get_rowgroup_data()
+        if rowgroup_data:
+            response["rowGroup"] = rowgroup_data
+        
+        return response

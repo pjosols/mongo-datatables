@@ -60,7 +60,8 @@ class TestInitialization(BaseDataTablesTest):
         custom_filter = {"status": "active"}
         datatables = DataTables(self.mongo, 'users', self.request_args, **custom_filter)
         
-        # Set up the mock return value
+        # Set up the mock return values - aggregation should work and return the count
+        self.collection.aggregate.return_value = [{"total": 50}]
         self.collection.count_documents.return_value = 50
         
         # Call the method
@@ -69,9 +70,8 @@ class TestInitialization(BaseDataTablesTest):
         # Verify the result
         self.assertEqual(result, 50)
         
-        # Verify that count_documents was called with the filter
-        # Note: We can't check the exact filter content because it depends on the implementation
-        self.collection.count_documents.assert_called_once()
+        # Verify that aggregate was called (new optimized behavior)
+        self.collection.aggregate.assert_called_once()
 
     def test_projection(self):
         """Test projection property"""
