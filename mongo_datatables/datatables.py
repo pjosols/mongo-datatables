@@ -436,27 +436,26 @@ class DataTables:
     def get_sort_specification(self) -> Dict[str, int]:
         """Generate sort specification from the request.
 
+        Supports multi-column sorting by iterating over all entries in the
+        ``order`` array. Non-orderable columns (``orderable == "false"``) are
+        skipped, and the first occurrence of a field wins (matching DataTables
+        behaviour).
+
         Returns:
             MongoDB sort specification
         """
         sort_spec = {}
-
-        if self.request_args.get("order"):
-            order_info = self.request_args.get("order")[0]
+        for order_info in self.request_args.get("order", []):
             col_idx = int(order_info["column"])
-
             if 0 <= col_idx < len(self.columns):
                 column = self.columns[col_idx]
                 ui_field_name = column.get("data")
-
-                if ui_field_name:
+                if ui_field_name and column.get("orderable", "true") != "false":
                     db_field_name = self.field_mapper.get_db_field(ui_field_name)
-                    direction = order_info["dir"]
-                    sort_spec[db_field_name] = 1 if direction == "asc" else -1
-
+                    if db_field_name not in sort_spec:
+                        sort_spec[db_field_name] = 1 if order_info["dir"] == "asc" else -1
         if "_id" not in sort_spec:
             sort_spec["_id"] = 1
-
         return sort_spec
     
     # For backward compatibility, keep the property interface
