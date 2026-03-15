@@ -2,6 +2,13 @@
 
 All notable changes to mongo-datatables are documented here.
 
+## [1.22.0] - 2026-03-14
+
+### Added
+- `searchFixed` support (DataTables 2.0+ named searches): named fixed searches sent as
+  `searchFixed[name]=value` in request args are now applied as additional AND-combined
+  global search conditions across all searchable columns.
+
 ## [1.21.0] - 2026-03-14
 ### Added
 - `row_id` parameter to `DataTables.__init__()`: specify a custom field to use as `DT_RowId` instead of MongoDB `_id`. The field stays in the row data and is always projected. Default `None` preserves existing behavior.
