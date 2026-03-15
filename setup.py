@@ -15,7 +15,7 @@ except FileNotFoundError:
 
 setup(
     name='mongo_datatables',
-    version='1.27.3',
+    version='1.27.4',
     description='Server-side processing for DataTables and Editor with MongoDB',
     long_description=long_description,
     long_description_content_type=long_description_content_type,
