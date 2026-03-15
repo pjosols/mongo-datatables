@@ -4,6 +4,167 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## v1.29.5 — Decimal128 Serialization (2026-03-15)
+
+### Problem
+`bson.Decimal128` values (used for precise monetary/financial data) passed through `_format_result_values` unhandled, causing JSON serialization errors at the response layer. Also, `get_searchpanes_options` would raise `TypeError: cannot use 'bson.decimal128.Decimal128' as a dict key` when a SearchPanes column contained Decimal128 values.
+
+### Changes
+- `datatables.py`: `from bson import Decimal128, ObjectId` (was `from bson.objectid import ObjectId`)
+- `_format_result_values`: added `Decimal128 → float(val.to_decimal())` branch for top-level fields and list items
+- `get_searchpanes_options`: added `_hashable()` inline helper to normalize Decimal128 (unhashable) to string before building `total_map`/`count_map` dicts
+- `tests/test_decimal128_serialization.py`: 8 new tests (top-level, nested, list, zero, negative, unaffected types, mixed list, SearchPanes)
+
+### Backward Compatibility
+Fully backward compatible — only adds handling for a previously-unhandled type.
+
+### Test Results
+- New tests: 8/8 passed
+- Full suite: 624 passed (was 616)
+- Branch: feature/decimal128-serialization, commit: be7a578
+
+---
+
+## v1.29.4 — 2026-03-15 — BUG FIX: `_sb_date` ISO datetime string handling
+
+**Type:** Bug Fix  
+**Iteration:** 1 of 10
+
+### Problem
+`_sb_date` in `datatables.py` called `DateHandler.parse_iso_date(v)` directly. `parse_iso_date` only accepts `YYYY-MM-DD` format. DataTables SearchBuilder sends full ISO datetime strings (e.g. `2024-01-15T00:00:00.000Z`) as the value for date conditions. When such a value was received, `parse_iso_date` raised `FieldMappingError`, caught by `except Exception: pass` in `_sb_date`, silently returning `{}` — the SearchBuilder date filter appeared to work in the UI but had no effect on results.
+
+This is the same class of bug fixed in v1.28.2 (`_build_column_control_condition`) and v1.29.2 (`_parse_searchpanes_filters`).
+
+### Fix
+One-line change in `_sb_date`'s inner `_d` helper:
+
+**Before:** `return DateHandler.parse_iso_date(v)`  
+**After:** `return DateHandler.parse_iso_date(v.split('T')[0])`
+
+`v.split('T')[0]` extracts the date portion from any ISO string:
+- `"2024-01-15"` → `"2024-01-15"` (unchanged)
+- `"2024-01-15T00:00:00.000Z"` → `"2024-01-15"` (date extracted)
+
+### Tests Added
+4 new tests in `tests/test_sb_date_iso_datetime.py`:
+- `test_equal_iso_datetime_string` — ISO datetime with `=` produces day-range condition
+- `test_greater_iso_datetime_string` — ISO datetime with `>` produces `$gt` condition
+- `test_less_iso_datetime_string` — ISO datetime with `<` produces `$lt` condition
+- `test_plain_date_string_unchanged` — plain `YYYY-MM-DD` still works correctly
+
+### Test Results
+- 4 new tests added, all passing
+- Full suite: 616 passed (was 612), 0 regressions
+
+### Backward Compatibility
+Fully backward compatible. `YYYY-MM-DD` values are unchanged (split on `T` returns the original string as `[0]`). Only ISO datetime strings (previously silently broken) now work correctly.
+
+---
+
+## v1.29.3 — Quality: Cache `search_terms` property (Iteration 5 of 10)
+
+**Date:** 2026-03-15  
+**Type:** Quality / Performance  
+**Backward Compatible:** Yes
+
+### Problem
+`search_terms` was an uncached property that called `SearchTermParser.parse(self.search_value)` on every access. It is accessed via `search_terms_without_a_colon`, `search_terms_with_a_colon`, and `_parse_search_fixed` — meaning the parser ran 3+ times per request even though `search_value` is immutable for the lifetime of a DataTables instance.
+
+### Fix
+- Added `self._search_terms_cache = None` in `__init__` alongside existing cache attributes.
+- `search_terms` property now memoizes: parses once on first access, returns cached list on subsequent calls.
+- 2 lines changed in `datatables.py`.
+
+### Tests
+- Added `tests/test_search_terms_cache.py` (5 tests): cache initialized to None, populated on first access, `SearchTermParser.parse` called exactly once across multiple accesses, same object identity returned, empty string cached correctly.
+- **Suite: 612 passed, 59 subtests passed.**
+
+---
+
+## v1.29.2 — 2026-03-15 — BUG FIX: SearchPanes date value conversion in `_parse_searchpanes_filters`
+
+**Type:** Quality / Bug Fix
+**Iteration:** 4 of 10
+
+### Problem
+`_parse_searchpanes_filters` in `datatables.py` converted `number` and `objectid` values from their string representations but silently skipped `date` fields — leaving them as raw strings. MongoDB stores dates as `datetime` objects, so a `$in` filter with string values never matched any documents. SearchPanes date column filters appeared to work in the UI but had no effect on results.
+
+This is the same class of bug fixed in v1.28.2 (`_build_column_control_condition`) and v1.28.1 (`_build_column_control_condition` notContains/notEqual).
+
+### Fix
+Added a `date` branch to the value-conversion loop in `_parse_searchpanes_filters`:
+
+**Before:** `date` values fell through to the `else` branch, remaining as raw strings.
+
+**After:**
+```python
+elif field_type == "date":
+    try:
+        converted_values.append(DateHandler.parse_iso_date(value.split('T')[0]))
+    except Exception:
+        converted_values.append(value)
+```
+
+`value.split('T')[0]` handles both `"YYYY-MM-DD"` and `"YYYY-MM-DDTHH:MM:SS.sssZ"` forms (same pattern as v1.28.2). On parse failure, falls back to the raw string.
+
+### Tests Added
+4 new tests in `tests/test_searchpanes_date_filter.py`:
+- `test_date_iso_date_string_converted_to_datetime` — `"YYYY-MM-DD"` → `datetime`
+- `test_date_iso_datetime_string_converted_to_datetime` — `"YYYY-MM-DDTHH:MM:SS.sssZ"` → `datetime`
+- `test_date_invalid_falls_back_to_string` — unparseable value stays as string
+- `test_date_multiple_values` — multiple values all converted
+
+### Test Results
+- 4 new tests added, all passing
+- Full suite: 607 passed (was 603), 0 regressions
+
+### Backward Compatibility
+Fully backward compatible. Only `date`-typed SearchPanes columns are affected. Previously broken (silently no-op), now correct.
+
+---
+
+## v1.29.1 — 2026-03-15 — BUG FIX: BSON-serializable `$not` in `_sb_string`
+
+**Type:** Bug Fix  
+**Iteration:** 3 of 10
+
+### Problem
+`_sb_string` in `datatables.py` used `re.compile()` objects as the value of `$not` for all four negation conditions (`!=`, `!contains`, `!starts`, `!ends`). `re.Pattern` objects are not BSON/JSON-serializable, causing failures when these conditions appear in aggregation pipelines (e.g. SearchPanes, count_filtered) or any serialization path.
+
+### Fix
+Four one-line changes in `_sb_string`:
+
+**Before:**
+```python
+if condition == "!=":       return {field: {"$not": re.compile(f"^{s}$", re.IGNORECASE)}}
+if condition == "!contains": return {field: {"$not": re.compile(s, re.IGNORECASE)}}
+if condition == "!starts":   return {field: {"$not": re.compile(f"^{s}", re.IGNORECASE)}}
+if condition == "!ends":     return {field: {"$not": re.compile(f"{s}$", re.IGNORECASE)}}
+```
+
+**After:**
+```python
+if condition == "!=":       return {field: {"$not": {"$regex": f"^{s}$", "$options": "i"}}}
+if condition == "!contains": return {field: {"$not": {"$regex": s, "$options": "i"}}}
+if condition == "!starts":   return {field: {"$not": {"$regex": f"^{s}", "$options": "i"}}}
+if condition == "!ends":     return {field: {"$not": {"$regex": f"{s}$", "$options": "i"}}}
+```
+
+Same class of fix as v1.28.1 (`_build_column_control_condition`) — pure-dict `{"$not": {"$regex": ..., "$options": "i"}}` is fully BSON-serializable and consistent with the rest of the codebase.
+
+### Tests Updated
+- `tests/test_sb_string_not_bson.py`: Replaced 8 bug-documenting tests (asserting `re.Pattern`) with 8 correctness tests (asserting dict form + JSON serializability)
+- `tests/test_search_builder.py`: Updated 4 negation test methods (`test_not_equals`, `test_not_contains`, `test_not_starts`, `test_not_ends`) to assert dict equality; removed unused `import re`
+
+### Test Results
+- 603 passed (unchanged count — replaced tests, not added), 0 regressions
+- Flask-demo integration validated: `test_searchbuilder_simple.py` and `test_searchbuilder_focused.py` both pass
+
+### Backward Compatibility
+Fully backward compatible. The MongoDB query semantics are identical — `{"$not": {"$regex": ...}}` produces the same results as `{"$not": re.compile(...)}` in PyMongo, but is now serializable.
+
+---
+
 ## v1.28.2 — 2026-03-15 — BUG FIX: ColumnControl date search with ISO datetime strings
 
 **Type:** Bug Fix  
