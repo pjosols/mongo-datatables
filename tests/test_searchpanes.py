@@ -42,11 +42,13 @@ class TestSearchPanes:
             "searchPanes": True
         }
         
-        # Mock aggregation results
-        self.collection.aggregate.return_value = [
-            {"_id": "Active", "count": 5},
-            {"_id": "Inactive", "count": 3},
-        ]
+        # Mock aggregation results: two $facet calls, each returns a single doc keyed by column name
+        facet_doc = {
+            "name": [{"_id": "Alice", "count": 8}],
+            "age": [{"_id": 30, "count": 4}],
+            "status": [{"_id": "Active", "count": 5}, {"_id": "Inactive", "count": 3}],
+        }
+        self.collection.aggregate.side_effect = [[facet_doc], [facet_doc]]
         
         dt = DataTables(
             self.mongo,
