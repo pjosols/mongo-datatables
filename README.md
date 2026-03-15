@@ -97,6 +97,16 @@ For comprehensive documentation, visit [mongo-datatables.readthedocs.io](https:/
 
 ## Search Functionality
 
+### Regex Search Support (v1.14.0)
+
+mongo-datatables fully honors the DataTables server-side protocol's regex flags:
+
+- `search[regex]=true` — treats the global search value as a raw MongoDB regex pattern
+- `columns[i][search][regex]=true` — treats a column's search value as a raw regex pattern
+- When `regex=false` (default), special regex characters are automatically escaped for safe literal matching
+
+This means DataTables clients can enable `searchRegex: true` in their configuration and send patterns like `^John` or `doe$` for precise matching.
+
 ### How Search Works in mongo-datatables
 
 mongo-datatables provides powerful search capabilities that adapt based on your MongoDB configuration and search syntax. Understanding how search works can help you optimize performance, especially for large collections.
