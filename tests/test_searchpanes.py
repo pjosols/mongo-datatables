@@ -20,6 +20,7 @@ class TestSearchPanes:
         
         # Mock indexes
         self.collection.list_indexes.return_value = []
+        self.collection.estimated_document_count.return_value = 0
         
         self.data_fields = [
             DataField("name", "string"),

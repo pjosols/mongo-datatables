@@ -106,3 +106,17 @@ class TestCountOptimization:
         # Should return 0 on errors
         assert dt.count_total() == 0
         assert dt.count_filtered() == 0
+
+
+def test_count_total_no_int_conversion_needed():
+    """estimated_document_count() always returns int; no conversion needed."""
+    mock_collection = Mock()
+    mock_collection.estimated_document_count.return_value = 200000
+    mock_collection.list_indexes.return_value = []
+    dt = DataTables(
+        pymongo_object={"test_collection": mock_collection},
+        collection_name="test_collection",
+        request_args={"draw": 1, "start": 0, "length": 10}
+    )
+    assert dt.count_total() == 200000
+    mock_collection.count_documents.assert_not_called()
