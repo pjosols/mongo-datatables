@@ -82,6 +82,7 @@ class Editor:
         row_class=None,
         row_data=None,
         row_attr=None,
+        file_fields=None,
     ) -> None:
         """Initialize the Editor processor.
 
@@ -99,6 +100,8 @@ class Editor:
             row_class: Optional string or callable(row) -> str to set DT_RowClass on each response row.
             row_data: Optional dict or callable(row) -> dict to set DT_RowData on each response row.
             row_attr: Optional dict or callable(row) -> dict to set DT_RowAttr on each response row.
+            file_fields: Optional list of field names that are upload fields. When set and
+                storage_adapter has files_for_field(), 'files' is included in create/edit responses.
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
@@ -113,6 +116,7 @@ class Editor:
         self.row_class = row_class
         self.row_data = row_data
         self.row_attr = row_attr
+        self.file_fields = file_fields or []
         self._collection = self._resolve_collection(pymongo_object, collection_name)
 
     def _resolve_options(self):
@@ -339,6 +343,24 @@ class Editor:
             files[field] = self.storage_adapter.files_for_field(field)
         return {"upload": {"id": file_id}, "files": files}
 
+    def _collect_files(self) -> Optional[Dict[str, Any]]:
+        """Collect file metadata from the storage adapter for all configured upload fields.
+
+        Returns:
+            Dict of {field: {file_id: metadata}} if adapter has files_for_field and file_fields
+            are configured, otherwise None.
+        """
+        if not self.file_fields or not self.storage_adapter:
+            return None
+        if not hasattr(self.storage_adapter, 'files_for_field'):
+            return None
+        files = {}
+        for field in self.file_fields:
+            field_files = self.storage_adapter.files_for_field(field)
+            if field_files:
+                files[field] = field_files
+        return files if files else None
+
     def create(self) -> Dict[str, Any]:
         """Create one or more new documents in the collection.
 
@@ -375,6 +397,9 @@ class Editor:
             response = {"data": results}
             if cancelled:
                 response["cancelled"] = cancelled
+            files = self._collect_files()
+            if files is not None:
+                response["files"] = files
             return response
         except (InvalidDataError, FieldMappingError):
             raise
@@ -485,6 +510,9 @@ class Editor:
             response = {"data": data}
             if cancelled:
                 response["cancelled"] = cancelled
+            files = self._collect_files()
+            if files is not None:
+                response["files"] = files
             return response
         except (InvalidDataError, FieldMappingError):
             raise

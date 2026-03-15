@@ -124,3 +124,106 @@ class TestEditorUpload(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+import pytest
+from bson.objectid import ObjectId
+from unittest.mock import MagicMock
+from mongo_datatables.editor import StorageAdapter
+
+
+@pytest.fixture
+def mock_collection():
+    return MagicMock()
+
+
+class TestEditorFilesInResponse:
+    """Gap #8: files metadata in create/edit responses."""
+
+    def _make_adapter_with_files(self, files_data):
+        class Adapter(StorageAdapter):
+            def store(self, field, filename, content_type, data): return "1"
+            def retrieve(self, file_id): return b""
+            def files_for_field(self, field): return files_data.get(field, {})
+        return Adapter()
+
+    def test_create_includes_files_when_file_fields_configured(self, mock_collection):
+        files_data = {"photo": {"1": {"filename": "a.png", "web_path": "/uploads/a.png"}}}
+        adapter = self._make_adapter_with_files(files_data)
+        mock_collection.insert_one.return_value = MagicMock(inserted_id=ObjectId())
+        mock_collection.find_one.return_value = {"_id": ObjectId(), "name": "Alice", "photo": "1"}
+        editor = Editor(MagicMock(), "col", {"action": "create", "data": {"0": {"name": "Alice", "photo": "1"}}},
+                        storage_adapter=adapter, file_fields=["photo"])
+        editor._collection = mock_collection
+        result = editor.create()
+        assert "files" in result
+        assert result["files"]["photo"] == {"1": {"filename": "a.png", "web_path": "/uploads/a.png"}}
+
+    def test_edit_includes_files_when_file_fields_configured(self, mock_collection):
+        doc_id = str(ObjectId())
+        files_data = {"photo": {"1": {"filename": "b.png", "web_path": "/uploads/b.png"}}}
+        adapter = self._make_adapter_with_files(files_data)
+        mock_collection.update_one.return_value = MagicMock()
+        mock_collection.find_one.return_value = {"_id": ObjectId(doc_id), "name": "Bob", "photo": "1"}
+        editor = Editor(MagicMock(), "col", {"action": "edit", "data": {doc_id: {"name": "Bob", "photo": "1"}}},
+                        doc_id=doc_id, storage_adapter=adapter, file_fields=["photo"])
+        editor._collection = mock_collection
+        result = editor.edit()
+        assert "files" in result
+        assert result["files"]["photo"] == {"1": {"filename": "b.png", "web_path": "/uploads/b.png"}}
+
+    def test_create_no_files_without_file_fields(self, mock_collection):
+        adapter = self._make_adapter_with_files({"photo": {"1": {}}})
+        mock_collection.insert_one.return_value = MagicMock(inserted_id=ObjectId())
+        mock_collection.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
+        editor = Editor(MagicMock(), "col", {"action": "create", "data": {"0": {"name": "Alice"}}},
+                        storage_adapter=adapter)  # no file_fields
+        editor._collection = mock_collection
+        result = editor.create()
+        assert "files" not in result
+
+    def test_create_no_files_without_adapter(self, mock_collection):
+        mock_collection.insert_one.return_value = MagicMock(inserted_id=ObjectId())
+        mock_collection.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
+        editor = Editor(MagicMock(), "col", {"action": "create", "data": {"0": {"name": "Alice"}}},
+                        file_fields=["photo"])  # no adapter
+        editor._collection = mock_collection
+        result = editor.create()
+        assert "files" not in result
+
+    def test_create_no_files_when_adapter_lacks_files_for_field(self, mock_collection):
+        class BasicAdapter(StorageAdapter):
+            def store(self, field, filename, content_type, data): return "1"
+            def retrieve(self, file_id): return b""
+        mock_collection.insert_one.return_value = MagicMock(inserted_id=ObjectId())
+        mock_collection.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
+        editor = Editor(MagicMock(), "col", {"action": "create", "data": {"0": {"name": "Alice"}}},
+                        storage_adapter=BasicAdapter(), file_fields=["photo"])
+        editor._collection = mock_collection
+        result = editor.create()
+        assert "files" not in result
+
+    def test_files_empty_when_no_files_stored(self, mock_collection):
+        adapter = self._make_adapter_with_files({})  # files_for_field returns {}
+        mock_collection.insert_one.return_value = MagicMock(inserted_id=ObjectId())
+        mock_collection.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
+        editor = Editor(MagicMock(), "col", {"action": "create", "data": {"0": {"name": "Alice"}}},
+                        storage_adapter=adapter, file_fields=["photo"])
+        editor._collection = mock_collection
+        result = editor.create()
+        # files_for_field returns {} for 'photo', so files dict is empty -> not included
+        assert "files" not in result
+
+    def test_multiple_file_fields(self, mock_collection):
+        files_data = {
+            "photo": {"1": {"web_path": "/uploads/1.png"}},
+            "doc": {"2": {"web_path": "/uploads/2.pdf"}},
+        }
+        adapter = self._make_adapter_with_files(files_data)
+        mock_collection.insert_one.return_value = MagicMock(inserted_id=ObjectId())
+        mock_collection.find_one.return_value = {"_id": ObjectId(), "photo": "1", "doc": "2"}
+        editor = Editor(MagicMock(), "col", {"action": "create", "data": {"0": {"photo": "1", "doc": "2"}}},
+                        storage_adapter=adapter, file_fields=["photo", "doc"])
+        editor._collection = mock_collection
+        result = editor.create()
+        assert result["files"]["photo"] == {"1": {"web_path": "/uploads/1.png"}}
+        assert result["files"]["doc"] == {"2": {"web_path": "/uploads/2.pdf"}}
