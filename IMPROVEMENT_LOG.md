@@ -4,6 +4,29 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## v1.36.0 — FEATURE: DT_RowClass/DT_RowData/DT_RowAttr in Editor responses (2026-03-15)
+
+**Type:** Feature
+**Iteration:** 8 of 12
+
+### Problem
+`_format_response_document` in `editor.py` only set `DT_RowId`. The DataTables class already supports `DT_RowClass`, `DT_RowData`, and `DT_RowAttr` row metadata fields, but Editor responses never included them. This meant Editor create/edit responses couldn't drive CSS classes, jQuery `.data()` attributes, or HTML `<tr>` attributes — a gap vs. the standard DataTables read response.
+
+### Changes
+- `editor.py`: added `row_class=None`, `row_data=None`, `row_attr=None` kwargs to `__init__` (after `hooks`)
+- `editor.py`: stored as `self.row_class`, `self.row_data`, `self.row_attr`
+- `editor.py`: `_format_response_document` — appended 6 lines before `return` applying each field using the same callable-or-static pattern as the DataTables class (callable receives the already-formatted row with `DT_RowId` set)
+- `EDITOR_GAPS.md`: item #7 marked ✅ DONE
+
+### Tests
+- `tests/test_editor_row_metadata.py`: 11 new tests (absent by default ×3, static row_class in create/edit, callable row_class receives DT_RowId, callable return value used, static row_data dict, callable row_data, static row_attr dict, all three combined)
+- **760 passed** (was 749), 59 subtests passed
+
+### Backward Compatibility
+Fully backward compatible. All three params default to `None`; keys only appear in responses when explicitly configured. No existing behavior changed.
+
+---
+
 ## v1.32.0 — FEATURE: Editor `action=search` (autocomplete/tags lookup) (2026-03-15)
 
 **Type:** Feature  

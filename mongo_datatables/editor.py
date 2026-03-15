@@ -79,6 +79,9 @@ class Editor:
         storage_adapter: Optional["StorageAdapter"] = None,
         options=None,
         hooks: Optional[Dict[str, Any]] = None,
+        row_class=None,
+        row_data=None,
+        row_attr=None,
     ) -> None:
         """Initialize the Editor processor.
 
@@ -93,6 +96,9 @@ class Editor:
             options: Optional options dict or callable returning options dict
             hooks: Optional dict of pre-action hooks keyed by 'pre_create', 'pre_edit', 'pre_remove'.
                 Each hook is callable(row_id, row_data) -> bool; falsy return cancels the row.
+            row_class: Optional string or callable(row) -> str to set DT_RowClass on each response row.
+            row_data: Optional dict or callable(row) -> dict to set DT_RowData on each response row.
+            row_attr: Optional dict or callable(row) -> dict to set DT_RowAttr on each response row.
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
@@ -104,6 +110,9 @@ class Editor:
         self.storage_adapter = storage_adapter
         self._options = options
         self.hooks = hooks or {}
+        self.row_class = row_class
+        self.row_data = row_data
+        self.row_attr = row_attr
         self._collection = self._resolve_collection(pymongo_object, collection_name)
 
     def _resolve_options(self):
@@ -218,6 +227,13 @@ class Editor:
                 response_doc[key] = str(val)
             elif isinstance(val, datetime):
                 response_doc[key] = val.isoformat()
+
+        if self.row_class is not None:
+            response_doc['DT_RowClass'] = self.row_class(response_doc) if callable(self.row_class) else self.row_class
+        if self.row_data is not None:
+            response_doc['DT_RowData'] = self.row_data(response_doc) if callable(self.row_data) else self.row_data
+        if self.row_attr is not None:
+            response_doc['DT_RowAttr'] = self.row_attr(response_doc) if callable(self.row_attr) else self.row_attr
 
         return response_doc
 

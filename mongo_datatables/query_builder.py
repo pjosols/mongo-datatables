@@ -87,7 +87,7 @@ class MongoQueryBuilder:
                             try:
                                 numeric_value = TypeConverter.to_number(search_value)
                                 conditions.append({db_field: numeric_value})
-                            except Exception:
+                            except (ValueError, TypeError, FieldMappingError):
                                 pass
                     elif field_type == "date":
                         if '|' in search_value:
@@ -100,7 +100,7 @@ class MongoQueryBuilder:
                                 if parts[1].strip():
                                     date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
                                     range_cond['$lt'] = date_range.get('$lt')
-                            except Exception:
+                            except (ValueError, TypeError, FieldMappingError):
                                 pass
                             if range_cond:
                                 conditions.append({db_field: range_cond})
@@ -200,7 +200,7 @@ class MongoQueryBuilder:
                     if field_type == "number":
                         try:
                             term_conds.append({db_field: TypeConverter.to_number(term)})
-                        except Exception:
+                        except (ValueError, TypeError, FieldMappingError):
                             pass
                     else:
                         pattern = term if search_regex else re.escape(term)
@@ -215,7 +215,7 @@ class MongoQueryBuilder:
                 if field_type == "number":
                     try:
                         or_conditions.append({db_field: TypeConverter.to_number(term)})
-                    except Exception:
+                    except (ValueError, TypeError, FieldMappingError):
                         pass
                 else:
                     pattern = term if search_regex else re.escape(term)
@@ -297,7 +297,7 @@ class MongoQueryBuilder:
                     for v in values:
                         try:
                             converted.append(TypeConverter.to_number(v))
-                        except Exception:
+                        except (ValueError, TypeError, FieldMappingError):
                             pass
                     if converted:
                         conditions.append({db_field: {"$in": converted}})
@@ -330,7 +330,7 @@ class MongoQueryBuilder:
                             conditions.append({db_field: {"$lt": num}})
                         elif logic == "lessOrEqual":
                             conditions.append({db_field: {"$lte": num}})
-                    except Exception:
+                    except (ValueError, TypeError, FieldMappingError):
                         pass
                 elif stype == "date":
                     try:
@@ -344,7 +344,7 @@ class MongoQueryBuilder:
                             conditions.append({db_field: {"$gt": parsed}})
                         elif logic == "less":
                             conditions.append({db_field: {"$lt": parsed}})
-                    except Exception:
+                    except (ValueError, TypeError, FieldMappingError):
                         pass
                 else:
                     escaped = re.escape(value)
@@ -394,7 +394,7 @@ class MongoQueryBuilder:
                 return {field: numeric_value}
             else:
                 return {field: numeric_value}
-        except Exception:
+        except (ValueError, TypeError, FieldMappingError):
             return None
 
     def _build_date_condition(
@@ -419,5 +419,5 @@ class MongoQueryBuilder:
                 return {field: date_condition}
             else:
                 return {field: {"$regex": re.escape(value), "$options": "i"}}
-        except Exception:
+        except (ValueError, TypeError, FieldMappingError):
             return {field: {"$regex": re.escape(value), "$options": "i"}}

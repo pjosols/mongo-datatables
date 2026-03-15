@@ -55,11 +55,11 @@ response only when non-empty. `_run_pre_hook()` helper centralises the dispatch.
 Tests: `tests/test_editor.py::TestEditor::test_run_pre_hook_*`, `test_create_with_hook_*`,
 `test_edit_with_hook_*`, `test_remove_with_hook_*`, `test_remove_partial_cancel`
 
-### 7. `DT_RowClass`/`DT_RowData`/`DT_RowAttr` in Editor responses (LOW)
-`datatables.py` supports these row metadata fields, but
-`_format_response_document` in `editor.py` only sets `DT_RowId`.
-Accept optional `row_class`, `row_data`, `row_attr` params (mirroring
-the DataTables class) and apply them in Editor responses too.
+### 7. `DT_RowClass`/`DT_RowData`/`DT_RowAttr` in Editor responses (LOW) ✅ DONE
+`row_class`, `row_data`, `row_attr` kwargs added to `Editor.__init__` (mirroring the DataTables class).
+Applied in `_format_response_document` after `DT_RowId` is set, using the same callable-or-static
+pattern as the DataTables class. Absent by default — keys only appear in responses when configured.
+Tests: `tests/test_editor_row_metadata.py` (11 tests)
 
 ### 8. `files` in DataTables read response (LOW)
 Depends on upload support (#4). Once uploads exist, include file
