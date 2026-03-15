@@ -126,9 +126,9 @@ class MongoQueryBuilder:
                 if field_type in ("date", "number"):
                     continue
 
-                clean_term = search_terms[0]
                 regex_term = search_terms[0] if search_regex else re.escape(search_terms[0])
-                or_conditions.append({column: {"$regex": f"\\b{regex_term}\\b", "$options": "i"}})
+                pattern = regex_term if search_regex else f"\\b{regex_term}\\b"
+                or_conditions.append({column: {"$regex": pattern, "$options": "i"}})
 
             if or_conditions:
                 return {"$or": or_conditions}
