@@ -240,3 +240,21 @@ When `length=-1`, no `$limit` stage is added to the pipeline, returning all matc
 
 ### Result
 338 tests passing. Backward compatible.
+
+## Iteration 13 (v1.17.3 → v1.17.4) — 2026-03-14
+
+**Type:** Quality (dead code removal)
+**Focus:** Code clarity and test correctness
+
+### Change: Removed dead inner try/except from `count_total()`
+
+**File:** `mongo_datatables/datatables.py`
+
+**Problem:** `count_total()` had an inner `try/except (TypeError, ValueError)` block wrapping `int(estimated_count)`. The comment said "Convert to int in case it's a mock object" — a test concern embedded in production code. `estimated_document_count()` always returns `int` per PyMongo spec, so the except branch was unreachable in production. The block also contained an early `return` that bypassed the outer cache assignment path, making the control flow harder to reason about.
+
+**Fix:** Removed the 9-line dead block entirely. The method now reads linearly: call `estimated_document_count()`, branch on size/custom_filter, assign `_recordsTotal`, return.
+
+**Side effect discovered:** Three test files (`base_test.py`, `test_buttons.py`, `test_searchpanes.py`) had mocks that never set `estimated_document_count.return_value`, relying silently on the dead fallback path to handle the `MagicMock < 100000` comparison failure. Fixed all three mocks to explicitly set `return_value = 0`.
+
+**Tests:** 350 passing (+8 from mock fixes + 1 new test in `test_count_optimization.py`)
+**Lines removed:** 9 (dead code) | **Lines added:** ~20 (mock fixes + 1 new test)
