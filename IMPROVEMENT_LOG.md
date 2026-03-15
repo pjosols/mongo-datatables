@@ -4,7 +4,29 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
-**Iteration 5 (v1.18.1 → v1.18.2)** — Quality: Fixed dead-code / latent bug in `_format_result_values`. The `elif isinstance(val, float): result_dict[key] = val` branch was a no-op that silently passed `float('nan')` and `float('inf')` through unchanged, causing `ValueError` on JSON serialization. Replaced with `elif isinstance(val, float) and not math.isfinite(val): result_dict[key] = None`. Added `import math`. 6 tests added, 375 total passing.
+**Iteration 15 (v1.19.1) — Feature: DT_RowClass / DT_RowData / DT_RowAttr per-row metadata**
+
+- Added three new optional constructor parameters to `DataTables.__init__`: `row_class`, `row_data`, `row_attr` (all default `None`, placed before `**custom_filter`).
+- Each accepts a static value (str/dict) or a callable `(row_dict) -> value` applied after alias remapping in `_process_cursor`.
+- When set, injects `DT_RowClass`, `DT_RowData`, or `DT_RowAttr` keys into each result row — consumed by DataTables client to set CSS class, `data-*` attributes, and arbitrary HTML attributes on `<tr>` elements.
+- Zero behavior change when parameters are omitted (fully backward compatible).
+- 14 tests added in `tests/test_row_metadata.py`. Total: 403 tests passing.
+
+---
+
+**Iteration 7 (v1.19.0 → v1.19.1)** — Bug fix: Global search `search[regex]` string coercion.
+
+- `datatables.py` `global_search_condition`: `search_regex=bool(self.request_args.get("search", {}).get("regex", False))` → `search_regex=self.request_args.get("search", {}).get("regex", False) in (True, "true", "True", 1)`. DataTables sends `search[regex]` as the string `"false"` or `"true"`, not a Python bool. `bool("false") == True`, so global search never escaped regex special characters (`.`, `+`, `*`, etc.) when it should. Mirrors the identical fix applied to column search in v1.19.0.
+- Tests added: 3 new tests in `test_datatables_regex_search.py` covering `"false"` string, `"true"` string, and absent key cases for global search. Total: 389 tests passing.
+
+---
+
+**Iteration 6 (v1.18.2 → v1.19.0)** — Feature: `columns[i][name]` support in column search + regex flag string coercion fix.
+
+- `query_builder.py` `build_column_search()`: `column_name = column["data"]` → `column_name = column.get("name") or column["data"]`. When DataTables sends `columns[i][name]` (e.g. via ColReorder), the name is now used for field/type lookup, falling back to `data` when name is absent or empty. Mirrors the same name-or-data resolution already used in `get_sort_specification()` for sort.
+- `query_builder.py` `build_column_search()`: `regex_flag = column_search.get("regex", False)` → `regex_flag = column_search.get("regex") in (True, "true", "True", 1)`. DataTables sends `regex` as the string `"false"` or `"true"`, not a Python bool. The old code treated `"false"` as truthy, so `re.escape()` was never applied. Fixed to coerce correctly.
+- 11 new tests in `test_colreorder_column_search.py` (6 for name resolution, 5 for regex coercion).
+- 386 passed (was 375).
 
 ---
 
@@ -324,3 +346,67 @@ Two-line change in `count_total()`: `count_documents({})` → `count_documents(s
 
 ### Result
 361 tests passing. Backward compatible — `custom_filter or {}` is identical to `{}` when no custom_filter is set.
+
+---
+
+## Iteration 8 — v1.20.0 — `allow_disk_use` Aggregation Support
+**Date:** 2026-03-14  
+**Type:** Feature  
+**Version:** 1.19.1 → 1.20.0
+
+### Problem
+MongoDB enforces a 100 MB in-memory limit on aggregation pipelines. Large datasets
+with complex SearchBuilder criteria trees, SearchPanes facet counts, RowGroup
+aggregations, or full-collection exports could silently fail or raise a
+`QueryExceededMemoryLimitNoPushdown` error in production.
+
+### Solution
+Added `allow_disk_use: bool = False` parameter to `DataTables.__init__()`. When
+`True`, `allowDiskUse=True` is forwarded to every `collection.aggregate()` call
+in the class (6 call sites: `results()`, `count_filtered()`, `get_export_data()`,
+`get_searchpanes_options()` ×2, `_get_rowgroup_data()`).
+
+### Changes
+- `mongo_datatables/datatables.py`: new `allow_disk_use` param + 6 aggregate call updates
+- `tests/test_allow_disk_use.py`: 7 new tests covering default=False, True propagation,
+  and backward compatibility
+- `setup.py`: version bump 1.19.1 → 1.20.0
+
+### Test Results
+- New tests: 7/7 passed
+- Full suite: 410 passed, 59 subtests — zero failures
+
+### Backward Compatibility
+Fully backward compatible. Default is `False` (existing behaviour unchanged).
+Existing call sites require no modification.
+
+## Iteration 16 (v1.19.1 → v1.19.2) — 2026-03-14
+
+**Type:** Bug Fix / Correctness
+**Focus:** Regex metacharacter escaping in colon-syntax column search
+
+### Problem
+`build_column_specific_search` in `query_builder.py` passed user-supplied values directly
+into MongoDB `$regex` without `re.escape()`. This caused regex metacharacters (`.`, `+`,
+`*`, `?`, `[`, `]`, `(`, `)`, `^`, `$`, `|`) to be interpreted as regex operators instead
+of literal characters. For example, searching `email:user@domain.com` would match
+`user@domainXcom` because `.` matched any character.
+
+The same bug existed in the fallback branches of `_build_number_condition` and
+`_build_date_condition`.
+
+By contrast, `build_column_search` and `build_global_search` already correctly applied
+`re.escape()` when `regex_flag=False` — making this an inconsistency.
+
+### Fix
+Applied `re.escape(value)` in three locations in `query_builder.py`:
+1. `build_column_specific_search` — string-type else branch
+2. `_build_number_condition` — except fallback
+3. `_build_date_condition` — except fallback
+
+### Tests Added
+- `tests/test_regex_escape_colon_search.py` — 9 new tests covering dot, plus, brackets,
+  caret, dollar, parentheses, star, question mark, and pipe metacharacters
+
+### Test Count
+410 → 419 tests passing
