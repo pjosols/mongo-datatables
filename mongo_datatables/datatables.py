@@ -11,7 +11,7 @@ from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
-from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler
+from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler, is_truthy
 from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.query_builder import MongoQueryBuilder
 
@@ -221,7 +221,7 @@ class DataTables:
             List of column names that are searchable
         """
         return [
-            column["data"] for column in self.columns if column.get("searchable") in (True, "true", "True", 1)
+            column["data"] for column in self.columns if is_truthy(column.get("searchable"))
         ]
 
     @property
@@ -276,7 +276,7 @@ class DataTables:
             MongoDB query condition for column-specific searches
         """
         search = self.request_args.get("search", {})
-        case_insensitive = search.get("caseInsensitive", True) not in (False, "false", "False", 0)
+        case_insensitive = is_truthy(search.get("caseInsensitive", True))
         return self.query_builder.build_column_search(self.columns, case_insensitive=case_insensitive)
 
     @property
@@ -295,9 +295,9 @@ class DataTables:
             self.search_terms_without_a_colon,
             self.searchable_columns,
             original_search=self.search_value,
-            search_regex=search.get("regex", False) in (True, "true", "True", 1),
-            search_smart=search.get("smart", True) not in (False, "false", "False", 0),
-            case_insensitive=search.get("caseInsensitive", True) not in (False, "false", "False", 0),
+            search_regex=is_truthy(search.get("regex", False)),
+            search_smart=is_truthy(search.get("smart", True)),
+            case_insensitive=is_truthy(search.get("caseInsensitive", True)),
         )
 
     @property
@@ -312,7 +312,7 @@ class DataTables:
         """
         colon_terms = self.search_terms_with_a_colon
         search = self.request_args.get("search", {})
-        case_insensitive = search.get("caseInsensitive", True) not in (False, "false", "False", 0)
+        case_insensitive = is_truthy(search.get("caseInsensitive", True))
         return self.query_builder.build_column_specific_search(
             colon_terms,
             self.searchable_columns,
@@ -335,7 +335,7 @@ class DataTables:
         eligible = [
             (col.get("data"), self.field_mapper.get_db_field(col.get("data")))
             for col in self.columns
-            if col.get("searchable") in (True, "true", "True", 1)
+            if is_truthy(col.get("searchable"))
             and col.get("data")
             and self.field_mapper.get_field_type(col.get("data")) not in ("object", "array")
         ]
@@ -707,7 +707,7 @@ class DataTables:
                 for idx in indices:
                     if 0 <= idx < len(self.columns):
                         target = self.columns[idx]
-                        if target.get("orderable") not in (False, "false", "False", 0):
+                        if is_truthy(target.get("orderable", True)):
                             field = target.get("data")
                             if field:
                                 db_field = self.field_mapper.get_db_field(field)
@@ -715,7 +715,7 @@ class DataTables:
                                     sort_spec[db_field] = direction
             else:
                 ui_field_name = column.get("data")
-                if ui_field_name and column.get("orderable") not in (False, "false", "False", 0):
+                if ui_field_name and is_truthy(column.get("orderable", True)):
                     db_field_name = self.field_mapper.get_db_field(ui_field_name)
                     if db_field_name not in sort_spec:
                         sort_spec[db_field_name] = direction
