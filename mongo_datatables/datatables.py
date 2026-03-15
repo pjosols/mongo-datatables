@@ -106,7 +106,7 @@ class DataTables:
         collection_name: str,
         request_args: Dict[str, Any],
         data_fields: Optional[List['DataField']] = None,
-        use_text_index: bool = True,
+        use_text_index: bool = False,
         allow_disk_use: bool = False,
         row_class=None,
         row_data=None,
@@ -122,7 +122,10 @@ class DataTables:
             collection_name: Name of the MongoDB collection
             request_args: DataTables request parameters
             data_fields: List of DataField objects defining database fields with UI mappings
-            use_text_index: Whether to use text indexes when available (default: True)
+            use_text_index: Whether to use text indexes when available (default: False).
+                            When False, uses regex for substring matching (matches DataTables
+                            client-side behavior). Set True for faster whole-word search on
+                            large collections.
             allow_disk_use: Pass allowDiskUse=True to all aggregation pipelines (default: False).
                             Enables MongoDB to write temporary files when the 100 MB in-memory
                             aggregation limit is exceeded. Useful for large datasets with complex
