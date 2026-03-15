@@ -18,6 +18,9 @@ from mongo_datatables.query_builder import MongoQueryBuilder
 
 logger = logging.getLogger(__name__)
 
+# Bitmask → regex flag letter mapping for BSON Regex serialization
+_REGEX_FLAGS = ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re.VERBOSE, 'x'))
+
 
 class DataField:
     """Represents a data field with MongoDB and DataTables column mapping.
@@ -109,6 +112,7 @@ class DataTables:
         row_data=None,
         row_attr=None,
         row_id: Optional[str] = None,
+        pipeline_stages: Optional[List[Dict[str, Any]]] = None,
         **custom_filter: Any,
     ) -> None:
         """Initialize the DataTables processor.
@@ -129,6 +133,8 @@ class DataTables:
             row_id: Field name to use as DT_RowId (default: None uses MongoDB _id).
                     When set, the specified field's value is used as DT_RowId instead of _id.
                     The _id field is still included in the projection for internal use.
+            pipeline_stages: Optional list of MongoDB aggregation stages to inject before
+                    the $match stage in all pipelines (e.g. $lookup, $addFields).
             **custom_filter: Additional filtering criteria
         """
         self.collection = self._get_collection(pymongo_object, collection_name)
@@ -141,6 +147,7 @@ class DataTables:
         self.row_data = row_data
         self.row_attr = row_attr
         self.row_id = row_id
+        self.pipeline_stages = list(pipeline_stages) if pipeline_stages else []
 
         if 'data_fields' in custom_filter:
             del custom_filter['data_fields']
@@ -172,12 +179,12 @@ class DataTables:
         Returns:
             MongoDB collection object
         """
-        if hasattr(pymongo_object, "db"):
+        if isinstance(pymongo_object, Database):
+            db = pymongo_object
+        elif hasattr(pymongo_object, "db"):
             db = pymongo_object.db
         elif hasattr(pymongo_object, "get_database"):
             db = pymongo_object.get_database()
-        elif isinstance(pymongo_object, Database):
-            db = pymongo_object
         else:
             return pymongo_object[collection_name]
 
@@ -381,7 +388,7 @@ class DataTables:
                     "label": display_value,
                     "value": display_value,
                     "total": total,
-                    "count": count_map.get(raw_value, 0),
+                    "count": count_map.get(_hashable(raw_value), 0),
                 })
             options[col_name] = column_options
         return options
@@ -439,20 +446,38 @@ class DataTables:
     def _parse_search_fixed(self) -> Dict[str, Any]:
         """Parse searchFixed named searches (DataTables 2.0+) into a MongoDB filter.
 
+        Supports both the DataTables 2.x wire format (``search.fixed`` array of
+        ``{name, term}`` objects) and the legacy dict format (``searchFixed`` dict).
+        Entries with ``term == "function"`` are skipped (client-side-only functions).
+
         Each named fixed search is ANDed with the main query. Values are treated
         as global search terms across all searchable columns.
         """
-        search_fixed = self.request_args.get("searchFixed", {})
-        if not isinstance(search_fixed, dict) or not search_fixed:
-            return {}
+        # DataTables 2.x wire format: search.fixed is an array of {name, term}
+        fixed_array = self.request_args.get("search", {}).get("fixed", [])
+        # Legacy/custom format: top-level searchFixed dict
+        legacy_dict = self.request_args.get("searchFixed", {})
+
+        terms_to_apply = []
+        if isinstance(fixed_array, list):
+            for entry in fixed_array:
+                term = entry.get("term") if isinstance(entry, dict) else None
+                if term and term != "function":
+                    terms_to_apply.append(term)
+        if isinstance(legacy_dict, dict):
+            for value in legacy_dict.values():
+                if value:
+                    terms_to_apply.append(str(value))
+
+        search_config = self.request_args.get("search", {}) if isinstance(self.request_args.get("search"), dict) else {}
+        search_regex = is_truthy(search_config.get("regex", False))
+        case_insensitive = is_truthy(search_config.get("caseInsensitive", True))
         conditions = []
-        for value in search_fixed.values():
-            if not value:
-                continue
-            terms = SearchTermParser.parse(str(value))
+        for value in terms_to_apply:
+            parsed = SearchTermParser.parse(str(value))
             cond = self.query_builder.build_global_search(
-                terms, self.searchable_columns, original_search=str(value),
-                search_regex=False
+                parsed, self.searchable_columns, original_search=str(value),
+                search_regex=search_regex, case_insensitive=case_insensitive
             )
             if cond:
                 conditions.append(cond)
@@ -461,30 +486,51 @@ class DataTables:
         return {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
     def _parse_column_search_fixed(self) -> Dict[str, Any]:
-        """Parse per-column searchFixed dicts (DataTables 2.0+) into a MongoDB filter.
+        """Parse per-column searchFixed (DataTables 2.0+) into a MongoDB filter.
 
-        Each column may carry a ``searchFixed`` dict of named fixed searches.
-        Values are applied as column-scoped searches using ``build_column_search``.
+        Supports both the DataTables 2.x wire format (``columns[i].search.fixed``
+        array of ``{name, term}`` objects) and the legacy dict format
+        (``columns[i].searchFixed`` dict). Entries with ``term == "function"`` are
+        skipped.
 
         Returns:
             MongoDB query condition, or ``{}`` if no column-level fixed searches exist.
         """
         conditions = []
         for col in self.columns:
-            col_fixed = col.get("searchFixed", {})
-            if not isinstance(col_fixed, dict) or not col_fixed:
-                continue
             db_field = self.field_mapper.get_db_field(col.get("data", ""))
             if not db_field:
                 continue
-            for value in col_fixed.values():
-                if not value:
-                    continue
+
+            # DataTables 2.x wire format: col.search.fixed array
+            fixed_array = col.get("search", {}).get("fixed", []) if isinstance(col.get("search"), dict) else []
+            # Legacy format: col.searchFixed dict
+            legacy_dict = col.get("searchFixed", {})
+
+            col_terms = []
+            if isinstance(fixed_array, list):
+                for entry in fixed_array:
+                    term = entry.get("term") if isinstance(entry, dict) else None
+                    if term and term != "function":
+                        col_terms.append(term)
+            if isinstance(legacy_dict, dict):
+                for value in legacy_dict.values():
+                    if value:
+                        col_terms.append(str(value))
+
+            existing_search = col.get("search", {}) if isinstance(col.get("search"), dict) else {}
+            for value in col_terms:
                 cond = self.query_builder.build_column_search(
-                    [{**col, "search": {"value": str(value), "regex": False}}]
+                    [{**col, "search": {
+                        "value": str(value),
+                        "regex": False,
+                        "smart": existing_search.get("smart", True),
+                        "caseInsensitive": existing_search.get("caseInsensitive", True),
+                    }}]
                 )
                 if cond:
                     conditions.append(cond)
+
         if not conditions:
             return {}
         return {"$and": conditions} if len(conditions) > 1 else conditions[0]
@@ -545,7 +591,7 @@ class DataTables:
 
         db_field = self.field_mapper.get_db_field(orig_data)
         v0 = values[0] if values else None
-        v1 = values[1] if len(values) > 1 else None
+        v1 = values[1] if len(values) > 1 else criterion.get("value2")
 
         # null / not-null — type-aware: num/date only check None; string/html also check empty string
         if condition == "null":
@@ -808,7 +854,7 @@ class DataTables:
                     elif isinstance(item, Binary):
                         val[i] = str(uuid.UUID(bytes=bytes(item))) if item.subtype in (3, 4) else item.hex()
                     elif isinstance(item, Regex):
-                        flags = ''.join(v for k, v in ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re.VERBOSE, 'x')) if int(item.flags) & int(k))
+                        flags = ''.join(v for k, v in _REGEX_FLAGS if int(item.flags) & int(k))
                         val[i] = f'/{item.pattern}/{flags}'
                     elif isinstance(item, float) and not math.isfinite(item):
                         val[i] = None
@@ -823,7 +869,7 @@ class DataTables:
             elif isinstance(val, Binary):
                 result_dict[key] = str(uuid.UUID(bytes=bytes(val))) if val.subtype in (3, 4) else val.hex()
             elif isinstance(val, Regex):
-                flags = ''.join(v for k, v in ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re.VERBOSE, 'x')) if int(val.flags) & int(k))
+                flags = ''.join(v for k, v in _REGEX_FLAGS if int(val.flags) & int(k))
                 result_dict[key] = f'/{val.pattern}/{flags}'
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
@@ -896,7 +942,7 @@ class DataTables:
         Returns:
             List of MongoDB aggregation pipeline stages.
         """
-        pipeline = []
+        pipeline = list(self.pipeline_stages)
         if self.filter:
             pipeline.append({"$match": self.filter})
         if self.sort_specification:
@@ -974,7 +1020,7 @@ class DataTables:
                 self._recordsFiltered = self.count_total()
             else:
                 try:
-                    pipeline = [{"$match": self.filter}, {"$count": "total"}]
+                    pipeline = list(self.pipeline_stages) + [{"$match": self.filter}, {"$count": "total"}]
                     result = list(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
                     self._recordsFiltered = result[0]["total"] if result else 0
                     logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")
