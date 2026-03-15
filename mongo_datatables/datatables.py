@@ -185,7 +185,10 @@ class DataTables:
         if not self.use_text_index:
             self._has_text_index = False
             return
-        self._has_text_index = any("textIndexVersion" in idx for idx in self.collection.list_indexes())
+        try:
+            self._has_text_index = any("textIndexVersion" in idx for idx in self.collection.list_indexes())
+        except PyMongoError:
+            self._has_text_index = False
 
     @property
     def has_text_index(self) -> bool:
@@ -1054,29 +1057,40 @@ class DataTables:
         """Get the complete formatted response for DataTables.
 
         Returns:
-            Dictionary containing all required DataTables response fields
+            Dictionary containing all required DataTables response fields.
+            Includes an 'error' key if an unhandled exception occurs.
         """
-        search_return = self.request_args.get("search", {}).get("return", True)
-        records_filtered = -1 if search_return in (False, "false") else self.count_filtered()
-        response = {
-            "draw": self.draw,
-            "recordsTotal": self.count_total(),
-            "recordsFiltered": records_filtered,
-            "data": self.results(),
-        }
-        
-        # Add SearchPanes options if requested
-        if self.request_args.get("searchPanes"):
-            response["searchPanes"] = {"options": self.get_searchpanes_options()}
-            
-        for ext_key in ("fixedColumns", "responsive", "buttons", "select"):
-            cfg = self._parse_extension_config(ext_key)
-            if cfg is not None:
-                response[ext_key] = cfg
-            
-        # Add RowGroup data if requested
-        rowgroup_data = self._get_rowgroup_data()
-        if rowgroup_data:
-            response["rowGroup"] = rowgroup_data
-        
-        return response
+        try:
+            search_return = self.request_args.get("search", {}).get("return", True)
+            records_filtered = -1 if search_return in (False, "false") else self.count_filtered()
+            response = {
+                "draw": self.draw,
+                "recordsTotal": self.count_total(),
+                "recordsFiltered": records_filtered,
+                "data": self.results(),
+            }
+
+            # Add SearchPanes options if requested
+            if self.request_args.get("searchPanes"):
+                response["searchPanes"] = {"options": self.get_searchpanes_options()}
+
+            for ext_key in ("fixedColumns", "responsive", "buttons", "select"):
+                cfg = self._parse_extension_config(ext_key)
+                if cfg is not None:
+                    response[ext_key] = cfg
+
+            # Add RowGroup data if requested
+            rowgroup_data = self._get_rowgroup_data()
+            if rowgroup_data:
+                response["rowGroup"] = rowgroup_data
+
+            return response
+        except Exception as e:
+            logger.error("DataTables get_rows failed: %s", e)
+            return {
+                "draw": self.draw,
+                "error": str(e),
+                "recordsTotal": 0,
+                "recordsFiltered": 0,
+                "data": [],
+            }

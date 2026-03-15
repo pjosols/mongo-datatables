@@ -162,5 +162,41 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         self.assertEqual(result, 0)
 
 
+    def test_get_rows_returns_error_field_on_exception(self):
+        """get_rows() returns DataTables error response when an unhandled exception occurs."""
+        dt = DataTables(self.mongo, "test_collection", self.request_args)
+        with patch.object(dt, "results", side_effect=RuntimeError("pipeline failed")):
+            response = dt.get_rows()
+        self.assertIn("error", response)
+        self.assertEqual(response["error"], "pipeline failed")
+        self.assertEqual(response["data"], [])
+        self.assertEqual(response["recordsTotal"], 0)
+        self.assertEqual(response["recordsFiltered"], 0)
+        self.assertIn("draw", response)
+
+    def test_get_rows_returns_error_field_on_pymongo_error(self):
+        """get_rows() returns DataTables error response on PyMongoError."""
+        dt = DataTables(self.mongo, "test_collection", self.request_args)
+        with patch.object(dt, "count_total", side_effect=PyMongoError("connection refused")):
+            response = dt.get_rows()
+        self.assertIn("error", response)
+        self.assertIn("connection refused", response["error"])
+        self.assertEqual(response["data"], [])
+
+    def test_check_text_index_handles_pymongo_error(self):
+        """_check_text_index() sets has_text_index=False when list_indexes raises PyMongoError."""
+        self.collection.list_indexes.side_effect = PyMongoError("not connected")
+        dt = DataTables(self.mongo, "test_collection", self.request_args)
+        self.assertFalse(dt.has_text_index)
+
+    def test_get_rows_success_has_no_error_field(self):
+        """get_rows() does NOT include 'error' key in a successful response."""
+        dt = DataTables(self.mongo, "test_collection", self.request_args)
+        response = dt.get_rows()
+        self.assertNotIn("error", response)
+        self.assertIn("data", response)
+        self.assertIn("draw", response)
+
+
 if __name__ == '__main__':
     unittest.main()
