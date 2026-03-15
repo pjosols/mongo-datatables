@@ -4,6 +4,22 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## Iteration 5 (v1.21.2) — 2026-03-14 — QUALITY: draw Property Refactor
+
+**Change:** Extracted inline `draw` validation from `get_rows()` into a dedicated `draw` property.
+
+**Problem:** The inline ternary called `request_args.get("draw")` twice, used `.lstrip("-").isdigit()` which accepted negative values (e.g. `-5` passed through as `-5`), and was inconsistent with the clean try/except pattern used by `start` and `limit`.
+
+**Fix:**
+- Added `draw` property using `max(1, int(...))` with try/except — consistent with `start`/`limit`
+- `get_rows()` now uses `self.draw` (single reference)
+- Negative and zero draw values are clamped to 1 (DataTables protocol requires positive echo)
+
+**Tests:** `tests/test_draw_property.py` — 9 new tests (negative clamp, zero clamp, non-numeric, None, float string, missing key, large value)
+**Suite:** 476 tests passing (was 467 before this iteration's new tests)
+
+---
+
 ## Iteration 4 (v1.21.1) — 2026-03-14 — QUALITY: Input Validation
 
 **Change:** Added defensive input validation for `start`, `limit`, and `draw` request parameters.
