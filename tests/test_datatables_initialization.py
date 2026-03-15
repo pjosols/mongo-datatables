@@ -98,3 +98,31 @@ class TestInitialization(BaseDataTablesTest):
         
         # The parent field is not automatically included
         self.assertNotIn("address", projection)
+
+    # --- _check_text_index optimization tests ---
+
+    def test_use_text_index_false_skips_list_indexes(self):
+        """When use_text_index=False, list_indexes() must NOT be called."""
+        self.collection.list_indexes.reset_mock()
+        dt = DataTables(self.mongo, 'users', self.request_args, use_text_index=False)
+        self.collection.list_indexes.assert_not_called()
+        self.assertFalse(dt.has_text_index)
+
+    def test_use_text_index_true_calls_list_indexes(self):
+        """When use_text_index=True, list_indexes() IS called to detect the index."""
+        self.collection.list_indexes.return_value = iter([])
+        self.collection.list_indexes.reset_mock()
+        DataTables(self.mongo, 'users', self.request_args, use_text_index=True)
+        self.collection.list_indexes.assert_called_once()
+
+    def test_has_text_index_true_when_index_present(self):
+        """has_text_index is True when list_indexes returns a text index entry."""
+        self.collection.list_indexes.return_value = iter([{"textIndexVersion": 3, "key": {"$**": "text"}}])
+        dt = DataTables(self.mongo, 'users', self.request_args, use_text_index=True)
+        self.assertTrue(dt.has_text_index)
+
+    def test_has_text_index_false_when_no_index(self):
+        """has_text_index is False when list_indexes returns no text index."""
+        self.collection.list_indexes.return_value = iter([{"key": {"_id": 1}}])
+        dt = DataTables(self.mongo, 'users', self.request_args, use_text_index=True)
+        self.assertFalse(dt.has_text_index)
