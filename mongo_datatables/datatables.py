@@ -640,7 +640,10 @@ class DataTables:
         Returns:
             Start index for pagination
         """
-        return int(self.request_args.get("start", 0))
+        try:
+            return max(0, int(self.request_args.get("start", 0)))
+        except (ValueError, TypeError):
+            return 0
 
     @property
     def limit(self) -> int:
@@ -649,7 +652,18 @@ class DataTables:
         Returns:
             Number of records to return
         """
-        return int(self.request_args.get("length", 10))
+        try:
+            return int(self.request_args.get("length", 10))
+        except (ValueError, TypeError):
+            return 10
+
+    @property
+    def draw(self) -> int:
+        """Get the draw counter for DataTables response sequencing."""
+        try:
+            return max(1, int(self.request_args.get("draw", 1)))
+        except (ValueError, TypeError):
+            return 1
 
     @property
     def projection(self) -> Dict[str, int]:
@@ -998,7 +1012,7 @@ class DataTables:
             Dictionary containing all required DataTables response fields
         """
         response = {
-            "draw": int(self.request_args.get("draw", 1)),
+            "draw": self.draw,
             "recordsTotal": self.count_total(),
             "recordsFiltered": self.count_filtered(),
             "data": self.results(),
