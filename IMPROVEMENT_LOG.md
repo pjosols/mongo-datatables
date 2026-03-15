@@ -50,3 +50,12 @@ This log tracks iterative improvements made to the mongo-datatables library.
 **Test results:** 258 passed, 59 subtests passed, 0 failed
 
 **Backward compatibility:** Fully maintained. The `search_regex=False` (default) path is unchanged in behavior. The `search_regex=True` path now correctly passes raw patterns without wrapping them in `\b` anchors.
+
+## Iteration 3 — 2026-03-14 (v1.14.1 → v1.15.0)
+**Feature: Multi-Column Sort Support**
+- `get_sort_specification()` now iterates the full `order` array instead of only `order[0]`
+- Respects `columns[i][orderable]` flag — non-orderable columns are skipped
+- First occurrence of a field wins when the same column appears multiple times
+- `_id` tiebreaker still appended unless `_id` is already in the sort spec
+- Added 10 tests in `test_datatables_sort.py`
+- Result: 246 passed, 0 failed
