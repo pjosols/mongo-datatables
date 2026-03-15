@@ -28,6 +28,7 @@ Example usage with Flask:
 """
 import json
 import logging
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from bson.objectid import ObjectId
 from bson.errors import InvalidId as ObjectIdError
@@ -57,7 +58,8 @@ class Editor:
         collection_name: str,
         request_args: Dict[str, Any],
         doc_id: Optional[str] = None,
-        data_fields: Optional[List[DataField]] = None
+        data_fields: Optional[List[DataField]] = None,
+        validators: Optional[Dict[str, Any]] = None
     ) -> None:
         """Initialize the Editor processor.
 
@@ -67,6 +69,7 @@ class Editor:
             request_args: Editor request parameters (from request.get_json())
             doc_id: Comma-separated list of document IDs for edit/remove operations
             data_fields: List of DataField objects defining database fields with UI mappings
+            validators: Optional dict mapping field names to callables for field-level validation
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
@@ -74,6 +77,7 @@ class Editor:
         self.doc_id = doc_id or ""
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
+        self.validators = validators or {}
         self._collection = self._resolve_collection(pymongo_object, collection_name)
 
     @staticmethod
@@ -211,8 +215,35 @@ class Editor:
         except PyMongoError as e:
             raise DatabaseOperationError(f"Failed to delete documents: {str(e)}") from e
 
+    def search(self) -> Dict[str, Any]:
+        """Handle action=search for autocomplete/tags field lookups."""
+        field = self.request_args.get("field", "")
+        search_term = self.request_args.get("search", None)
+        values = self.request_args.get("values", [])
+        db_field = self.field_mapper.get_db_field(field) or field
+
+        if search_term is not None:
+            query = {db_field: {"$regex": re.escape(search_term), "$options": "i"}}
+        elif values:
+            query = {db_field: {"$in": values}}
+        else:
+            return {"data": []}
+
+        docs = self.collection.find(query, {db_field: 1}).limit(100)
+        seen = set()
+        results = []
+        for doc in docs:
+            val = doc.get(db_field)
+            if val is None:
+                continue
+            str_val = str(val)
+            if str_val not in seen:
+                seen.add(str_val)
+                results.append({"label": str_val, "value": str_val})
+        return {"data": results}
+
     def create(self) -> Dict[str, Any]:
-        """Create a new document in the collection.
+        """Create one or more new documents in the collection.
 
         Returns:
             Dictionary with created document data
@@ -221,29 +252,26 @@ class Editor:
             InvalidDataError: If data is missing or malformed
             DatabaseOperationError: If database operation fails
         """
-        if not self.data or '0' not in self.data:
+        if not self.data:
             raise InvalidDataError("Data is required for create operation")
-
         try:
-            main_data, dot_notation_data = self._preprocess_document(self.data['0'])
-            data_obj = main_data.copy()
-
-            for dot_key, value in dot_notation_data.items():
-                parts = dot_key.split('.')
-                current = data_obj
-
-                for part in parts[:-1]:
-                    if part not in current:
-                        current[part] = {}
-                    current = current[part]
-
-                current[parts[-1]] = value
-
-            result = self.collection.insert_one(data_obj)
-            created_doc = self.collection.find_one({"_id": result.inserted_id})
-            response_data = self._format_response_document(created_doc)
-
-            return {"data": [response_data]}
+            results = []
+            for key in sorted(self.data.keys(), key=lambda k: int(k) if k.isdigit() else k):
+                row = self.data[key]
+                main_data, dot_notation_data = self._preprocess_document(row)
+                data_obj = main_data.copy()
+                for dot_key, value in dot_notation_data.items():
+                    parts = dot_key.split('.')
+                    current = data_obj
+                    for part in parts[:-1]:
+                        if part not in current:
+                            current[part] = {}
+                        current = current[part]
+                    current[parts[-1]] = value
+                result = self.collection.insert_one(data_obj)
+                created_doc = self.collection.find_one({"_id": result.inserted_id})
+                results.append(self._format_response_document(created_doc))
+            return {"data": results}
         except (InvalidDataError, FieldMappingError):
             raise
         except PyMongoError as e:
@@ -401,22 +429,56 @@ class Editor:
                 else:
                     updates[full_key] = value
 
+    def _run_validators(self, row_data: Dict[str, Any]) -> List[Dict[str, str]]:
+        """Run field validators against a data row.
+
+        Args:
+            row_data: The row data dict to validate
+
+        Returns:
+            List of {"name": field, "status": message} dicts for failed fields
+        """
+        errors = []
+        for field, validator in self.validators.items():
+            value = row_data.get(field)
+            result = validator(value)
+            if result:
+                errors.append({"name": field, "status": result})
+        return errors
+
     def process(self) -> Dict[str, Any]:
         """Process the Editor request based on the action.
 
-        Returns:
-            Response data for the Editor client
+        Catches exceptions and returns Editor protocol error/fieldErrors JSON
+        instead of raising, so the Editor client can display errors inline.
 
-        Raises:
-            ValueError: If action is not supported
+        Returns:
+            Response data for the Editor client, or error dict on failure
         """
         actions = {
             "create": self.create,
             "edit": self.edit,
-            "remove": self.remove
+            "remove": self.remove,
+            "search": self.search,
         }
 
         if self.action not in actions:
-            raise ValueError(f"Unsupported action: {self.action}")
+            return {"error": f"Unsupported action: {self.action}"}
 
-        return actions[self.action]()
+        # Run validators for write operations that have data rows
+        if self.validators and self.action in ("create", "edit"):
+            field_errors = []
+            for row_data in self.data.values():
+                field_errors.extend(self._run_validators(row_data))
+            if field_errors:
+                return {"fieldErrors": field_errors}
+
+        try:
+            return actions[self.action]()
+        except (InvalidDataError, FieldMappingError) as e:
+            return {"error": str(e)}
+        except DatabaseOperationError as e:
+            return {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Unexpected error in process: {e}", exc_info=True)
+            return {"error": str(e)}
