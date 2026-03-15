@@ -6,12 +6,13 @@ import re
 import uuid
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
-from bson import Binary, Decimal128, ObjectId
+from bson import Binary, Decimal128, ObjectId, Regex
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
 from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler
+from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.query_builder import MongoQueryBuilder
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,14 @@ class DataField:
         Raises:
             ValueError: If data_type is not a valid MongoDB type
         """
+        if not name or not name.strip():
+            raise ValueError("DataField name must be a non-empty string")
         self.name = name
         
         # Validate data type
         data_type = data_type.lower()
         if data_type not in self.VALID_TYPES:
-            raise ValueError(f"Invalid data type: {data_type}. Must be one of: {', '.join(sorted(self.VALID_TYPES))}")
+            raise ValueError(f"Invalid data_type '{data_type}'. Must be one of: {sorted(self.VALID_TYPES)}")
         self.data_type = data_type
         
         # Use the last part of the field path as the default alias if none provided
@@ -272,7 +275,9 @@ class DataTables:
         Returns:
             MongoDB query condition for column-specific searches
         """
-        return self.query_builder.build_column_search(self.columns)
+        search = self.request_args.get("search", {})
+        case_insensitive = search.get("caseInsensitive", True) not in (False, "false", "False", 0)
+        return self.query_builder.build_column_search(self.columns, case_insensitive=case_insensitive)
 
     @property
     def global_search_condition(self) -> Dict[str, Any]:
@@ -292,6 +297,7 @@ class DataTables:
             original_search=self.search_value,
             search_regex=search.get("regex", False) in (True, "true", "True", 1),
             search_smart=search.get("smart", True) not in (False, "false", "False", 0),
+            case_insensitive=search.get("caseInsensitive", True) not in (False, "false", "False", 0),
         )
 
     @property
@@ -305,9 +311,12 @@ class DataTables:
             MongoDB query condition for column-specific searches
         """
         colon_terms = self.search_terms_with_a_colon
+        search = self.request_args.get("search", {})
+        case_insensitive = search.get("caseInsensitive", True) not in (False, "false", "False", 0)
         return self.query_builder.build_column_specific_search(
             colon_terms,
-            self.searchable_columns
+            self.searchable_columns,
+            case_insensitive=case_insensitive,
         )
 
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -537,11 +546,15 @@ class DataTables:
         v0 = values[0] if values else None
         v1 = values[1] if len(values) > 1 else None
 
-        # null / not-null (all types)
+        # null / not-null — type-aware: num/date only check None; string/html also check empty string
         if condition == "null":
-            return {db_field: {"$in": [None, "", False]}}
+            if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt", "date", "moment", "luxon"):
+                return {db_field: None}
+            return {db_field: {"$in": [None, ""]}}
         if condition == "!null":
-            return {db_field: {"$nin": [None, "", False]}}
+            if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt", "date", "moment", "luxon"):
+                return {db_field: {"$ne": None}}
+            return {db_field: {"$nin": [None, ""]}}
 
         if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt"):
             return self._sb_number(db_field, condition, v0, v1)
@@ -563,7 +576,7 @@ class DataTables:
             if condition == ">=":  return {field: {"$gte": _n(v0)}}
             if condition == "between":  return {field: {"$gte": _n(v0), "$lte": _n(v1)}}
             if condition == "!between": return {"$or": [{field: {"$lt": _n(v0)}}, {field: {"$gt": _n(v1)}}]}
-        except Exception:
+        except (ValueError, TypeError, FieldMappingError):
             pass
         return {}
 
@@ -584,7 +597,7 @@ class DataTables:
             if condition == ">=":  return {field: {"$gte": _d(v0)}}
             if condition == "between":  return {field: {"$gte": _d(v0), "$lt": _d(v1) + timedelta(days=1)}}
             if condition == "!between": return {"$or": [{field: {"$lt": _d(v0)}}, {field: {"$gte": _d(v1) + timedelta(days=1)}}]}
-        except Exception:
+        except (ValueError, TypeError, FieldMappingError):
             pass
         return {}
 
@@ -793,6 +806,11 @@ class DataTables:
                         val[i] = float(item.to_decimal())
                     elif isinstance(item, Binary):
                         val[i] = str(uuid.UUID(bytes=bytes(item))) if item.subtype in (3, 4) else item.hex()
+                    elif isinstance(item, Regex):
+                        flags = ''.join(v for k, v in ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re.VERBOSE, 'x')) if int(item.flags) & int(k))
+                        val[i] = f'/{item.pattern}/{flags}'
+                    elif isinstance(item, float) and not math.isfinite(item):
+                        val[i] = None
             elif isinstance(val, ObjectId):
                 result_dict[key] = str(val)
             elif hasattr(val, 'isoformat'):
@@ -803,6 +821,9 @@ class DataTables:
                 result_dict[key] = float(val.to_decimal())
             elif isinstance(val, Binary):
                 result_dict[key] = str(uuid.UUID(bytes=bytes(val))) if val.subtype in (3, 4) else val.hex()
+            elif isinstance(val, Regex):
+                flags = ''.join(v for k, v in ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re.VERBOSE, 'x')) if int(val.flags) & int(k))
+                result_dict[key] = f'/{val.pattern}/{flags}'
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
         """Convert aggregation cursor to DataTables-formatted list."""

@@ -42,12 +42,12 @@ log_with_timestamp() {
 # Function to determine iteration type
 get_iteration_type() {
     local iteration=$1
-    local mod5=$((iteration % 5))
+    local mod6=$((iteration % 6))
     
-    case $mod5 in
-        1|3) echo "FEATURE";;      # 40% - Feature development
-        2) echo "ENHANCEMENT";;    # 20% - Enhancements  
-        4|0) echo "QUALITY";;      # 40% - Quality assurance
+    case $mod6 in
+        1|4) echo "EDITOR";;       # 33% - Editor protocol gaps
+        2|5) echo "FEATURE";;      # 33% - Feature development
+        3|0) echo "QUALITY";;      # 33% - Quality assurance
     esac
 }
 
@@ -55,8 +55,8 @@ get_iteration_type() {
 get_iteration_focus() {
     local type=$1
     case $type in
+        "EDITOR") echo "Close Editor protocol gaps per EDITOR_GAPS.md (priority order)";;
         "FEATURE") echo "Implement new DataTables feature with comprehensive testing";;
-        "ENHANCEMENT") echo "Enhance existing functionality and user experience";;
         "QUALITY") echo "Focus on code quality, performance, and testing improvements";;
     esac
 }
@@ -103,7 +103,7 @@ cd "$PROJECTS_DIR"
 # Initial setup
 log_with_timestamp "========================================="
 log_with_timestamp "Starting Development Loop for mongo-datatables"
-log_with_timestamp "Strategy: 60% Feature Development, 40% Quality Assurance"
+log_with_timestamp "Strategy: 33% Editor Protocol, 33% Feature Development, 33% Quality Assurance"
 log_with_timestamp "Max iterations: $MAX_ITERATIONS"
 log_with_timestamp "========================================="
 
@@ -137,11 +137,11 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     
     # Build context based on iteration type
     case $ITERATION_TYPE in
+        "EDITOR")
+            CONTEXT="EDITOR PROTOCOL ITERATION: Read EDITOR_GAPS.md in the project root for the prioritized list of gaps between our Editor implementation and the official DataTables Editor client/server protocol (https://editor.datatables.net/manual/server). Pick the highest-priority unfinished gap and implement it with comprehensive tests. Work only in editor.py and its tests — do not modify datatables.py or query_builder.py. After implementation, update EDITOR_GAPS.md to mark the item as done."
+            ;;
         "FEATURE")
             CONTEXT="FEATURE DEVELOPMENT ITERATION: Research and implement a new high-value DataTables feature. Focus on comprehensive testing and documentation. Ensure backward compatibility and integration with existing features."
-            ;;
-        "ENHANCEMENT") 
-            CONTEXT="ENHANCEMENT ITERATION: Improve existing functionality, user experience, or add complementary features. Focus on incremental improvements that add value without breaking changes."
             ;;
         "QUALITY")
             CONTEXT="QUALITY ASSURANCE ITERATION: Focus on code quality, performance optimization, test coverage expansion, and technical debt reduction. No new features - improve what exists."

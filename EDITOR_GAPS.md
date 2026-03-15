@@ -34,11 +34,12 @@ Supports `search=<term>` (case-insensitive regex) and `values[]=<val>` (exact `$
 Returns `{"data": [{"label": "...", "value": "..."}]}` with deduplication, limit 100.
 Tests: `tests/test_editor_search_action.py`
 
-### 4. `action=upload` — file upload (MEDIUM)
-Protocol sends `action=upload`, `uploadField`, and the file binary.
-Server must return `{"upload": {"id": "..."}, "files": {...}}`.
-Requires a storage backend decision (GridFS, filesystem, etc.).
-Consider accepting a pluggable storage adapter.
+### 4. `action=upload` — file upload (MEDIUM) ✅ DONE
+`StorageAdapter` base class added to `editor.py`; subclass and implement `store(field, filename, content_type, data) -> str`.
+Optional `files_for_field(field)` method on the adapter populates the `files` dict in the response.
+`Editor.__init__` accepts `storage_adapter=` kwarg; `upload()` method dispatches the action and returns
+`{"upload": {"id": "..."}, "files": {...}}`. Without an adapter, returns `{"error": "..."}` gracefully.
+Tests: `tests/test_editor_upload.py`
 
 ### 5. `options` in DataTables read response (LOW)
 Editor can populate select/radio/checkbox fields from an `options` dict

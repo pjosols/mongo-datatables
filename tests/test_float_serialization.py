@@ -49,12 +49,10 @@ class TestFloatSerialization:
         assert d["stats"]["avg"] is None
         assert d["stats"]["count"] == 5
 
-    def test_nan_in_list_unchanged(self):
-        """List items that are plain floats are not currently processed
-        (only ObjectId and datetime in lists are handled). Documents current behavior."""
+    def test_nan_in_list_converted_to_none(self):
         dt = _dt()
         d = {"values": [float("nan"), float("inf"), 1.5]}
         dt._format_result_values(d)
-        assert math.isnan(d["values"][0])
-        assert math.isinf(d["values"][1])
+        assert d["values"][0] is None
+        assert d["values"][1] is None
         assert d["values"][2] == 1.5

@@ -4,6 +4,95 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## v1.32.0 — FEATURE: Editor `action=search` (autocomplete/tags lookup) (2026-03-15)
+
+**Type:** Feature  
+**Iteration:** 2 of 12
+
+### Problem
+The DataTables Editor `autocomplete` and `tags` field types send `action=search` requests to the server for dynamic option lookup. The `Editor` class had no handler for this action — it returned `{"error": "Unsupported action: search"}`, breaking any Editor form that used these field types with server-side Ajax.
+
+### Changes
+- `editor.py`: added `import re`
+- `editor.py`: added `search()` method (~15 lines) after `remove()`:
+  - Reads `field`, `search`, `values` from `request_args`
+  - Maps UI field name → DB field name via `field_mapper`
+  - `search=<term>` mode: `{db_field: {"$regex": re.escape(term), "$options": "i"}}` (case-insensitive prefix match)
+  - `values=[...]` mode: `{db_field: {"$in": values}}` (exact lookup)
+  - Neither present: returns `{"data": []}` immediately
+  - Queries with `.find(query, {db_field: 1}).limit(100)`, deduplicates by value
+  - Returns `{"data": [{"label": str_val, "value": str_val}, ...]}`
+- `editor.py`: registered `"search": self.search` in `process()` actions dict (bypasses validators — read-only)
+- `EDITOR_GAPS.md`: item #3 marked ✅ DONE
+
+### Tests
+- `tests/test_editor_search_action.py`: 7 new tests (search by term, search by values, unknown field, empty term, deduplication, no params, registered in process)
+- **706 passed** (was 699), 59 subtests passed
+
+### Backward Compatibility
+Fully backward compatible. Previously `action=search` returned `{"error": "Unsupported action: search"}`. Now it returns the correct protocol response. No existing behavior changed.
+
+---
+
+## v1.31.1 — Quality: Narrow exception handling in `_sb_number` and `_sb_date` (2026-03-15)
+
+**Type:** Quality / Code Correctness  
+**Iteration:** 9 of 10
+
+### Problem
+`_sb_number` and `_sb_date` used bare `except Exception: pass` to handle value-conversion failures. This silently swallowed ALL exceptions — including programming errors like `AttributeError`, `NameError`, or unexpected `PyMongoError` — returning `{}` and making the SearchBuilder filter a no-op. Only `ValueError`, `TypeError`, and `FieldMappingError` (the custom exception raised by `TypeConverter.to_number` and `DateHandler.parse_iso_date`) are expected conversion failures.
+
+### Changes
+- `datatables.py`: added `from mongo_datatables.exceptions import FieldMappingError` import
+- `_sb_number`: `except Exception:` → `except (ValueError, TypeError, FieldMappingError):`
+- `_sb_date`: `except Exception:` → `except (ValueError, TypeError, FieldMappingError):`
+
+### Tests
+- `tests/test_sb_exception_narrowing.py`: 8 new tests (invalid number returns empty, invalid number between returns empty, valid number works, valid number gt works, invalid date returns empty, invalid date between returns empty, valid date works, valid date gt works)
+- **674 passed** (was 666), 59 subtests passed
+
+### Backward Compatibility
+Fully backward compatible. The only behavioral change is that unexpected exceptions (not `ValueError`/`TypeError`/`FieldMappingError`) now propagate instead of being silently swallowed — which is the correct behavior.
+
+---
+
+## v1.30.2 — BUG FIX: Type-aware `null`/`!null` in SearchBuilder (2026-03-15)
+
+### Problem
+`_sb_criterion` used `{"$in": [None, "", False]}` for `null` and `{"$nin": [None, "", False]}` for `!null` regardless of column type. For `num`, `num-fmt`, `html-num`, `html-num-fmt`, `date`, `moment`, and `luxon` types, `""` and `False` are not valid null representations — a numeric field containing `""` or `False` is a data error, not a null value. The query was semantically incorrect for these types.
+
+### Changes
+- `datatables.py` — `_sb_criterion`: replaced the two unconditional null/!null returns with type-aware dispatch:
+  - num/date types: `null` → `{field: None}`, `!null` → `{field: {"$ne": None}}`
+  - string/html types: `null` → `{"$in": [None, ""]}`, `!null` → `{"$nin": [None, ""]}`
+  - Also removed `False` from string null checks (a boolean `False` is not a null string)
+
+### Tests
+- Replaced 3 stale null tests with 8 type-specific tests in `tests/test_search_builder.py`
+- **652 passed** (was 647), 59 subtests passed
+
+---
+
+## v1.30.1 — bson.Regex Serialization (2026-03-15)
+
+### Problem
+`bson.Regex` values (used to store regex patterns in MongoDB documents) passed through `_format_result_values` unhandled, causing `TypeError: Object of type Regex is not JSON serializable` at response time. This is the same class of bug as Decimal128 (v1.29.5) and Binary (v1.29.6).
+
+### Changes
+- `datatables.py`: added `Regex` to `from bson import ...` import
+- `_format_result_values`: added `Regex → '/pattern/flags'` string serialization in both the top-level field branch and the list-items branch. Flags encoded as standard regex flag characters (`i`, `m`, `s`, `x`).
+- `tests/test_regex_serialization.py`: 7 new tests (regex with flags, regex without flags, multiple flags, regex in list, JSON serializable top-level, non-regex fields unaffected, regex in list JSON serializable)
+
+### Backward Compatibility
+Fully backward compatible — only adds handling for a previously-unhandled BSON type.
+
+### Test Results
+- New tests: 7/7 passed
+- Full suite: 647 passed (was 640)
+- Version: 1.30.1
+
+---
+
 ## v1.29.6 — bson.Binary / UUID Serialization (2026-03-15)
 
 ### Problem
@@ -1277,3 +1366,96 @@ Editor.db property hardcoded `self.mongo.db` (Flask-PyMongo only). Passing a pla
 ### Tests
 - Added `tests/test_regression_v1_30_0.py` with 9 targeted regression tests
 - **640 passed** (was 631), 59 subtests passed
+
+## v1.30.2 → v1.31.0 (Iteration 8, Session 2, 2026-03-15)
+
+**Type:** Feature
+**Focus:** `search[caseInsensitive]` support
+
+### Problem
+All regex searches unconditionally used `"$options": "i"` (case-insensitive). There was no way
+to opt into case-sensitive search, even though DataTables exposes `search.caseInsensitive` and
+DataTables defaults to case-insensitive (so the default behavior was correct, but the flag was
+silently ignored).
+
+### Solution
+- Added `case_insensitive: bool = True` parameter to `build_global_search`, `build_column_search`,
+  and `build_column_specific_search` in `query_builder.py`.
+- All regex `$options` now use `"i" if case_insensitive else ""`.
+- `build_column_search` also reads per-column `columns[i][search][caseInsensitive]` to allow
+  column-level overrides (coerced from string/bool/int).
+- `datatables.py` reads `search[caseInsensitive]` from the request and passes it to all three
+  query builder methods.
+- Default is `True` — fully backward compatible.
+
+### Tests
+14 new tests in `tests/test_case_insensitive.py`. 666 total passing.
+
+## v1.31.2 — DataField empty-name validation
+
+**Date:** 2026-03-15  
+**Type:** Quality / Input Validation  
+**Tests:** 684 passed (10 new, +10 from 674 baseline)
+
+### Problem
+`DataField("", "string")` and `DataField("   ", "string")` silently created fields with empty or whitespace-only names, which would produce broken MongoDB queries (`{"": ...}`) at runtime with no clear error.
+
+### Fix
+Added a guard as the first statement in `DataField.__init__`:
+```python
+if not name or not name.strip():
+    raise ValueError("DataField name must be a non-empty string")
+```
+Also normalized the existing invalid-type error message to use consistent formatting (`Invalid data_type '...'`).
+
+### Tests Added
+New file `tests/test_datafield.py` — 10 tests covering:
+- Valid construction (name, type, alias defaulting, explicit alias)
+- All 8 valid type strings (case-insensitive)
+- `ValueError` on invalid type
+- `ValueError` on empty name
+- `ValueError` on whitespace-only name
+- `__repr__` with and without alias
+
+### Files Changed
+- `mongo_datatables/datatables.py` — 2-line guard added to `DataField.__init__`
+- `tests/test_datafield.py` — new file, 10 tests
+
+---
+
+## v1.32.1 — 2026-03-15
+
+**Type:** Quality / Bug Fix  
+**Focus:** NaN/Inf float sanitization inside lists
+
+### Problem
+`_format_result_values` correctly converted scalar `NaN`/`Inf` floats to `None`, but skipped the same check for floats inside lists. Any MongoDB document with a list containing a non-finite float caused `json.dumps()` to raise `ValueError`, crashing the response.
+
+### Fix
+Added one `elif` clause to the list-item branch in `_format_result_values`:
+```python
+elif isinstance(item, float) and not math.isfinite(item):
+    val[i] = None
+```
+
+### Test Changes
+- Renamed `test_nan_in_list_unchanged` → `test_nan_in_list_converted_to_none`
+- Updated assertions to verify `None` is returned for NaN and Inf list items
+
+### Results
+- 706 tests passing (no regressions)
+- Backward compatible: `None` is the same sentinel already used for scalar NaN/Inf
+- Eliminates asymmetry between scalar and list float handling
+
+## v1.33.0 — Editor action=upload (Gap #4)
+
+**Date:** 2026-03-15
+**Type:** EDITOR protocol gap
+**Tests:** 716 passing (+10 new in test_editor_upload.py)
+
+### Changes
+- `editor.py`: Added `StorageAdapter` base class with `store(field, filename, content_type, data) -> str` and `retrieve(file_id) -> bytes` protocol methods
+- `editor.py`: `Editor.__init__` accepts optional `storage_adapter=` kwarg
+- `editor.py`: `Editor.upload()` method handles `action=upload`, calls `adapter.store()`, optionally calls `adapter.files_for_field()` for the `files` response dict
+- `editor.py`: `process()` dispatches `action=upload` to `upload()`; missing adapter or field returns `{"error": "..."}` gracefully
+- `EDITOR_GAPS.md`: item #4 marked ✅ DONE
