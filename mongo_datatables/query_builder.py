@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from mongo_datatables.exceptions import QueryBuildError
+from mongo_datatables.exceptions import QueryBuildError, FieldMappingError
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper
 
 logger = logging.getLogger(__name__)
@@ -64,16 +64,45 @@ class MongoQueryBuilder:
                 column_name = column["data"]
                 field_type = self.field_mapper.get_field_type(column_name)
 
+                db_field = self.field_mapper.get_db_field(column_name)
                 if field_type == "number":
-                    try:
-                        numeric_value = TypeConverter.to_number(search_value)
-                        conditions.append({column_name: numeric_value})
-                    except Exception:
-                        pass
+                    if '|' in search_value:
+                        parts = search_value.split('|', 1)
+                        range_cond: Dict[str, Any] = {}
+                        try:
+                            if parts[0].strip():
+                                range_cond['$gte'] = TypeConverter.to_number(parts[0].strip())
+                            if parts[1].strip():
+                                range_cond['$lte'] = TypeConverter.to_number(parts[1].strip())
+                        except (ValueError, TypeError, FieldMappingError):
+                            pass
+                        if range_cond:
+                            conditions.append({db_field: range_cond})
+                    else:
+                        try:
+                            numeric_value = TypeConverter.to_number(search_value)
+                            conditions.append({db_field: numeric_value})
+                        except Exception:
+                            pass
                 elif field_type == "date":
-                    conditions.append(
-                        {column_name: {"$regex": search_value, "$options": "i"}}
-                    )
+                    if '|' in search_value:
+                        parts = search_value.split('|', 1)
+                        range_cond = {}
+                        try:
+                            if parts[0].strip():
+                                date_range = DateHandler.get_date_range_for_comparison(parts[0].strip(), '>=')
+                                range_cond['$gte'] = date_range.get('$gte')
+                            if parts[1].strip():
+                                date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
+                                range_cond['$lte'] = date_range.get('$lt')
+                        except Exception:
+                            pass
+                        if range_cond:
+                            conditions.append({db_field: range_cond})
+                    else:
+                        cond = self._build_date_condition(db_field, search_value, '=')
+                        if cond:
+                            conditions.append(cond)
                 else:
                     regex_flag = column_search.get("regex", False)
                     pattern = search_value if regex_flag else re.escape(search_value)
