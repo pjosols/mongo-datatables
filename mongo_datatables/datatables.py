@@ -7,6 +7,7 @@ import uuid
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
 from bson import Binary, Decimal128, ObjectId, Regex
+from bson.errors import InvalidId as ObjectIdError
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
@@ -418,12 +419,12 @@ class DataTables:
                 elif field_type == "objectid":
                     try:
                         converted_values.append(ObjectId(value))
-                    except Exception:
+                    except (ObjectIdError, ValueError):
                         converted_values.append(value)
                 elif field_type == "date":
                     try:
                         converted_values.append(DateHandler.parse_iso_date(value.split('T')[0]))
-                    except Exception:
+                    except FieldMappingError:
                         converted_values.append(value)
                 else:
                     converted_values.append(value)
