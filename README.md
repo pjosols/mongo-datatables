@@ -39,6 +39,58 @@ def get_data(collection):
     return jsonify(results)
 ```
 
+## FixedColumns Extension Support
+
+mongo-datatables supports the DataTables FixedColumns extension, which allows you to fix columns on the left and/or right side of the table. This is particularly useful for tables with many columns where you want to keep key columns (like ID or actions) always visible.
+
+### Usage
+
+The FixedColumns configuration is automatically parsed from the DataTables request and included in the response:
+
+```python
+# Client-side DataTables configuration
+$('#example').DataTable({
+    processing: true,
+    serverSide: true,
+    ajax: '/datatables_endpoint',
+    columns: [
+        { data: 'id', title: 'ID' },
+        { data: 'name', title: 'Name' },
+        { data: 'email', title: 'Email' },
+        { data: 'department', title: 'Department' },
+        { data: 'actions', title: 'Actions' }
+    ],
+    fixedColumns: {
+        left: 2,    // Fix first 2 columns (ID, Name)
+        right: 1    // Fix last column (Actions)
+    }
+});
+```
+
+### Server Response
+
+When FixedColumns is configured, the server response automatically includes the configuration:
+
+```json
+{
+    "draw": 1,
+    "recordsTotal": 1000,
+    "recordsFiltered": 1000,
+    "data": [...],
+    "fixedColumns": {
+        "left": 2,
+        "right": 1
+    }
+}
+```
+
+### Features
+
+- **Seamless Integration**: Works with existing server-side processing
+- **Backward Compatible**: No changes needed for tables without FixedColumns
+- **Automatic Configuration**: Parses and returns FixedColumns settings
+- **CSS-Based**: Uses modern CSS `position: sticky` for optimal performance
+
 ## Documentation
 
 For comprehensive documentation, visit [mongo-datatables.readthedocs.io](https://mongo-datatables.readthedocs.io/)
