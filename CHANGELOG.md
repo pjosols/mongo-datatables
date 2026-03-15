@@ -2,9 +2,17 @@
 
 All notable changes to mongo-datatables are documented here.
 
+## [1.21.0] - 2026-03-14
+### Added
+- `row_id` parameter to `DataTables.__init__()`: specify a custom field to use as `DT_RowId` instead of MongoDB `_id`. The field stays in the row data and is always projected. Default `None` preserves existing behavior.
+
 ## [1.20.1] - 2026-03-14
 ### Fixed
 - `columns[i][searchable]` string coercion: DataTables sends `"true"`/`"false"` as strings from HTTP form data; `column.get("searchable", False)` treated `"false"` as truthy. Fixed in `searchable_columns` property, `get_searchpanes_options`, and `MongoQueryBuilder.build_column_search` using the same membership-test pattern already applied to the `regex` flag.
+
+## [1.20.2] - 2026-03-14
+### Fixed
+- `orderable` string/bool coercion in `get_sort_specification()`: columns with `orderable: False` (bool) were incorrectly included in sort specs. Now uses `not in (False, "false", "False", 0)` consistent with the `searchable` fix (v1.20.1).
 
 ## [1.20.2] - 2026-03-14
 ### Removed

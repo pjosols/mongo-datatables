@@ -8,6 +8,12 @@ from mongo_datatables import DataTables
 class TestCountOptimization:
     """Test optimized count operations for performance improvements."""
 
+    def setup_method(self):
+        """Set up shared mock objects for tests that need them."""
+        self.mock_collection = Mock()
+        self.mock_collection.list_indexes.return_value = []
+        self.mock_db = {"test_collection": self.mock_collection}
+
     def test_count_total_uses_estimated_for_large_collections(self):
         """Test that count_total uses estimated_document_count for large collections."""
         # Mock collection with large estimated count
@@ -106,6 +112,38 @@ class TestCountOptimization:
         # Should return 0 on errors
         assert dt.count_total() == 0
         assert dt.count_filtered() == 0
+
+    def test_count_total_with_custom_filter_large_collection(self):
+        """count_total must use custom_filter even when collection is large (>=100k)."""
+        self.mock_collection.estimated_document_count.return_value = 500_000
+        self.mock_collection.count_documents.return_value = 1_200
+        dt = DataTables(
+            self.mock_db, "test_collection",
+            {"draw": "1", "start": "0", "length": "10", "search[value]": "",
+             "columns[0][data]": "name", "columns[0][searchable]": "true",
+             "columns[0][orderable]": "true", "order[0][column]": "0",
+             "order[0][dir]": "asc"},
+            status="active",
+        )
+        result = dt.count_total()
+        self.mock_collection.count_documents.assert_called_once_with({"status": "active"})
+        assert result == 1_200
+
+    def test_count_total_with_custom_filter_small_collection(self):
+        """count_total must use custom_filter for small collections too."""
+        self.mock_collection.estimated_document_count.return_value = 50
+        self.mock_collection.count_documents.return_value = 30
+        dt = DataTables(
+            self.mock_db, "test_collection",
+            {"draw": "1", "start": "0", "length": "10", "search[value]": "",
+             "columns[0][data]": "name", "columns[0][searchable]": "true",
+             "columns[0][orderable]": "true", "order[0][column]": "0",
+             "order[0][dir]": "asc"},
+            role="admin",
+        )
+        result = dt.count_total()
+        self.mock_collection.count_documents.assert_called_once_with({"role": "admin"})
+        assert result == 30
 
 
 def test_count_total_no_int_conversion_needed():

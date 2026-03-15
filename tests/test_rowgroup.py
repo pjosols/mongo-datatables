@@ -11,7 +11,7 @@ class TestRowGroupExtension(BaseDataTablesTest):
     """Test RowGroup extension functionality."""
 
     def test_rowgroup_config_parsing(self):
-        """Test RowGroup configuration parsing."""
+        """Test RowGroup configuration parsing — only dataSrc is extracted."""
         request_args = {
             "draw": "1",
             "start": "0",
@@ -40,8 +40,9 @@ class TestRowGroupExtension(BaseDataTablesTest):
         config = dt._parse_rowgroup_config()
         assert config is not None
         assert config["dataSrc"] == "category"
-        assert config["startRender"] is True
-        assert config["endRender"] is True
+        # startRender/endRender are client-side concerns; not parsed server-side
+        assert "startRender" not in config
+        assert "endRender" not in config
 
     def test_rowgroup_with_numeric_datasrc(self):
         """Test RowGroup with numeric dataSrc (column index)."""
@@ -181,3 +182,13 @@ class TestRowGroupExtension(BaseDataTablesTest):
         
         response = dt.get_rows()
         assert "rowGroup" not in response
+
+    def test_rowgroup_config_no_datasrc_returns_none(self):
+        """Test that rowGroup config without dataSrc returns None."""
+        request_args = {
+            "draw": "1", "start": "0", "length": "10",
+            "rowGroup": {"startRender": True},
+            "columns": [{"data": "name", "searchable": "true"}]
+        }
+        dt = DataTables(self.mongo, "test_collection", request_args)
+        assert dt._parse_rowgroup_config() is None

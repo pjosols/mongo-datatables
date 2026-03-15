@@ -4,6 +4,51 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## Iteration 4 (v1.21.1) — 2026-03-14 — QUALITY: Input Validation
+
+**Change:** Added defensive input validation for `start`, `limit`, and `draw` request parameters.
+
+**Problem:** `int(request_args.get(...))` raised unhandled `ValueError` on non-numeric input (e.g. malformed/adversarial requests), crashing the endpoint. Negative `start` values would also cause a MongoDB error.
+
+**Fix:**
+- `start` property: try/except with `max(0, ...)` clamp — invalid/negative input returns 0
+- `limit` property: try/except — invalid input returns 10 (default page size)
+- `draw` in `get_rows`: inline isdigit guard — invalid input returns 1
+
+**Tests:** Added `tests/test_input_validation.py` with 13 tests covering valid, invalid string, negative, None, and missing values for all three parameters.
+
+**Result:** 467 tests passing (0 failures). Backward compatible — valid inputs unchanged.
+
+---
+
+## Iteration 3 (v1.20.2 → v1.21.0) — 2026-03-14
+**Type:** Feature
+**Focus:** Custom `row_id` field for `DT_RowId`
+
+### Problem
+`_process_cursor` always used MongoDB `_id` as `DT_RowId`. Users with natural keys (e.g., `employee_id`, `sku`, `order_number`) could not use those fields as the DataTables row identifier, breaking row selection and Editor integration for collections where `_id` is not the meaningful key.
+
+### Solution
+Added `row_id: Optional[str] = None` parameter to `DataTables.__init__()`. When set:
+- The specified field's value is used as `DT_RowId` in each result row
+- The field is NOT removed from the row data (unlike `_id` which is popped in default mode)
+- The field is always included in the MongoDB projection even if absent from the `columns` list
+- Default behavior (`row_id=None`) is unchanged: `_id` is popped and used as `DT_RowId`
+
+### Changes
+- `mongo_datatables/datatables.py`: `row_id` param in `__init__`, updated `_process_cursor`, updated `projection`
+- `tests/test_row_id.py`: 8 new tests
+- `setup.py`: version bump 1.20.2 → 1.21.0
+
+### Test Results
+- 8 new tests in `tests/test_row_id.py`
+- Full suite: 454 passed, 59 subtests — zero failures
+
+### Backward Compatibility
+Fully backward compatible. `row_id` defaults to `None`, preserving existing `_id`-based behavior.
+
+---
+
 ## Iteration 10 — v1.20.1 → v1.20.2 (Quality)
 **Date:** 2026-03-14
 **Type:** Quality / Dead Code Removal
@@ -515,3 +560,11 @@ column.get("searchable") in (True, "true", "True", 1)
 ### Test Results
 - 441 tests passing (12 new tests added)
 - 0 regressions
+
+## Iteration 2 (Enhancement) — 2026-03-14
+**Type:** Bug fix / coercion consistency  
+**Version:** 1.20.1 → 1.20.2  
+**Change:** Fixed `orderable` string/bool coercion in `get_sort_specification()`  
+**Details:** `column.get("orderable", "true") != "false"` failed when `orderable` was the Python boolean `False` (since `False != "false"` evaluates to `True`). Changed to `column.get("orderable") not in (False, "false", "False", 0)`, consistent with the `searchable` fix from Iter 17.  
+**Tests added:** `tests/test_orderable_coercion.py` (5 tests)  
+**Test results:** 446 passed, 59 subtests passed  
