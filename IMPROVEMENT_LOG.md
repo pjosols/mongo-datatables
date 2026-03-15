@@ -1050,3 +1050,29 @@ Added `search_smart` parameter to `build_global_search()` in `query_builder.py`.
 - 583 tests passing (8 new tests added)
 - Backward compatible: single-term, quoted-phrase, and text-index paths unchanged
 - `smart=false` preserves legacy flat-$or behavior
+
+---
+
+## v1.29.0 — Enhancement: Editor multi-pymongo-type support
+
+**Date:** 2026-03-15
+**Type:** Enhancement / Bug Fix
+**Iteration:** 2 of 10
+
+### Problem
+Editor.db property hardcoded `self.mongo.db` (Flask-PyMongo only). Passing a plain `pymongo.MongoClient` or `pymongo.database.Database` caused `AttributeError`. DataTables already handled all types via `_get_collection()` but Editor did not.
+
+### Solution
+- Added `_resolve_collection(pymongo_object, collection_name)` static method to Editor, mirroring DataTables._get_collection logic
+- Collection resolved at `__init__` time and stored as `self._collection`
+- `collection` property returns `self._collection`
+- `db` property updated to resolve for all types (backward compatible)
+- Supports: Flask-PyMongo (`obj.db`), MongoClient (`obj.get_database()`), raw Database (`isinstance`), dict-style fallback
+
+### Tests
+- Added `tests/test_editor_pymongo_types.py` with 7 new tests
+- Full suite: 603 passed (was 596)
+
+### Compatibility
+- Fully backward compatible — Flask-PyMongo usage unchanged
+- No API changes
