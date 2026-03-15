@@ -404,6 +404,11 @@ class DataTables:
                         converted_values.append(ObjectId(value))
                     except Exception:
                         converted_values.append(value)
+                elif field_type == "date":
+                    try:
+                        converted_values.append(DateHandler.parse_iso_date(value.split('T')[0]))
+                    except Exception:
+                        converted_values.append(value)
                 else:
                     converted_values.append(value)
             
