@@ -117,3 +117,106 @@ This log tracks iterative improvements made to the mongo-datatables library.
 - Single point of maintenance for cursor→dict conversion logic
 
 Iteration 6 (v1.15.1→1.16.0): Range filtering — pipe-delimited min|max syntax in column search values for number and date type columns. Also fixed date column search to use date-aware parsing instead of regex. 12 tests added.
+
+**Iteration 7 — 2026-03-14** (v1.16.0 → v1.16.1)
+Bug Fix: `build_column_search` text branch used `column_name` (UI alias) instead of `db_field` (MongoDB path) as the regex condition key. One-line fix on the `else` branch to match the already-correct number/date branches. 4 tests added. 288 passed.
+
+## Iteration 8 — 2026-03-14
+
+**Type:** Feature  
+**Version:** 1.16.1 → 1.17.0  
+**Focus:** SearchBuilder server-side support
+
+### Feature: DataTables SearchBuilder Integration
+
+**Problem:** The DataTables SearchBuilder extension sends a nested `searchBuilder` parameter when `serverSide: true` is enabled, containing a typed criteria tree with AND/OR logic. This was silently ignored — users could not use the SearchBuilder UI for server-side filtered tables.
+
+**Implementation:** Added four methods to `DataTables` in `datatables.py`:
+- `_parse_search_builder()` — entry point; reads `request_args["searchBuilder"]`
+- `_sb_group()` — recursively converts a criteria group to `$and`/`$or`
+- `_sb_criterion()` — dispatches a leaf criterion by type (num, date, string)
+- `_sb_number()`, `_sb_date()`, `_sb_string()` — type-specific MongoDB condition builders
+
+Integrated into the `filter` property so SearchBuilder conditions compose correctly with custom filters, SearchPanes, global search, and column search.
+
+**Conditions supported:**
+- String/html: `=`, `!=`, `contains`, `!contains`, `starts`, `!starts`, `ends`, `!ends`, `null`, `!null`
+- Number: `=`, `!=`, `<`, `<=`, `>`, `>=`, `between`, `!between`, `null`, `!null`
+- Date: `=`, `!=`, `<`, `>`, `between`, `!between`, `null`, `!null`
+- Nested groups with AND/OR logic (recursive)
+
+**Tests added:** `tests/test_search_builder.py` — 35 new tests covering all condition types, logic operators, nesting, and filter integration.
+
+**Test results:** 318 passed, 59 subtests passed, 0 failed
+
+**Backward compatibility:** Fully maintained. The `searchBuilder` key is only read when present; all existing behavior is unchanged.
+
+## Iteration 9 — Performance: Cache `filter` Property (v1.17.0 → v1.17.1)
+
+**Date:** 2026-03-14  
+**Type:** Quality / Performance  
+**Version:** 1.17.0 → 1.17.1
+
+### Problem
+The `filter` property recomputed 6 sub-conditions on every access. With 4 callers each doing `if self.filter: ... self.filter`, a single request triggered up to 8 full recomputations of `_parse_search_builder()`, `_parse_searchpanes_filters()`, `global_search_condition`, `column_search_conditions`, and `column_specific_search_condition`.
+
+### Solution
+Added `_filter_cache = None` in `__init__` alongside existing caches (`_results`, `_recordsTotal`, `_recordsFiltered`). Extracted filter computation into `_build_filter()` method. The `filter` property now returns the cached result on repeated access.
+
+### Changes
+- `datatables.py`: Added `self._filter_cache = None` in `__init__`, added `_build_filter()` method, `filter` property now caches via `_filter_cache`
+- 2 new tests for cache behavior (same-object identity, None-before-access)
+
+### Results
+- 330 tests passing (328 existing + 2 new)
+- Zero behavior change — pure performance improvement
+- Consistent with existing caching pattern (`_results`, `_recordsTotal`, `_recordsFiltered`)
+
+## Iteration 8 (v1.17.0 → v1.17.1) — 2026-03-14
+**Type:** Feature
+**Feature:** ColReorder `order[i][name]` support in `get_sort_specification`
+
+**Problem:** DataTables ColReorder extension sends `order[i][name]` (column name string) instead of relying solely on `order[i][column]` (integer index) when columns are reordered client-side. The previous implementation only used the integer index, causing incorrect sort behavior after column reordering.
+
+**Solution:** In `get_sort_specification`, when `order[i][name]` is non-empty, first attempt to resolve the column by matching against `column["name"]` or `column["data"]`. Fall back to index-based lookup only when name lookup yields no match or name is absent/empty.
+
+**Files changed:**
+- `mongo_datatables/datatables.py` — `get_sort_specification`: added name-based column resolution with index fallback
+- `tests/test_colreorder.py` — 10 new tests
+
+**Tests:** 10 added in `test_colreorder.py`. 328 passed (up from 318).
+
+## Iteration 10 — Code Quality Cleanup (v1.17.2)
+
+**Type:** Quality
+**Date:** 2026-03-14
+**Version:** 1.17.1 → 1.17.2
+
+### Changes
+- `_sb_date()`: Replaced `__import__('datetime').timedelta(days=1)` (×2) with `timedelta(days=1)` — module-level import already present; `__import__` inline is an anti-pattern
+- `_sb_number()` / `_sb_date()`: Removed redundant local `from mongo_datatables.utils import TypeConverter/DateHandler` — already imported at module level
+- `_check_text_index()`: Collapsed `indexes = list(...); any(... for idx in indexes)` into `any(... for idx in self.collection.list_indexes())` — avoids unnecessary list materialization
+- `count_filtered()`: Changed `except (PyMongoError, Exception)` → `except Exception` — `PyMongoError` is a subclass of `Exception`; the tuple was redundant
+
+### Tests
+330 passed, 59 subtests, 0 failures (0.48s) — no regressions
+
+### Notes
+Pure code quality fixes. Zero behavior change. Fully backward compatible.
+
+## Iteration 11 — v1.17.2 (2026-03-14)
+
+**Type:** Bug Fix  
+**Focus:** Projection alias resolution
+
+### Problem
+The `projection` property used `column["data"]` (UI alias) directly as MongoDB projection keys. When a `DataField` had an alias differing from its db field name, MongoDB silently omitted those fields from results.
+
+### Fix
+One-line change in `projection` property: `projection[self.field_mapper.get_db_field(column["data"])] = 1`
+
+### Tests
+3 new tests in `test_datatables_query_pipeline.py` covering aliased, non-aliased, and mixed projection scenarios.
+
+### Result
+333 tests passing. Backward compatible — no alias means `get_db_field` returns the original name unchanged.

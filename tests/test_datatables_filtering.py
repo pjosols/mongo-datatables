@@ -107,3 +107,17 @@ class TestFiltering(BaseDataTablesTest):
             self.assertIn('$and', result)
             has_nested_field = any('address.city' in str(cond) for cond in result['$and'])
             self.assertTrue(has_nested_field)
+
+    def test_filter_cache_returns_same_object(self):
+        """filter property returns cached result on repeated access."""
+        datatables = DataTables(self.mongo, 'users', self.request_args)
+        first = datatables.filter
+        second = datatables.filter
+        assert first is second  # same object, not recomputed
+
+    def test_filter_cache_is_none_before_access(self):
+        """_filter_cache starts as None before filter is accessed."""
+        datatables = DataTables(self.mongo, 'users', self.request_args)
+        assert datatables._filter_cache is None
+        _ = datatables.filter
+        assert datatables._filter_cache is not None
