@@ -76,6 +76,24 @@
 
 ---
 
-## What's Left
+## Session 4 — 2026-03-15
 
-- **Phase 4:** Remove 2 `pass` stub tests, deduplicate imports
+### Phase 4: Cleanup ✅
+
+**What was done:**
+- Removed 2 `pass` stub tests: `test_filter_with_id_conversion`, `test_results_with_date_conversion`
+- Collapsed 32-line duplicate import block to 19 clean lines (kept `import sys` which is used at line 2198)
+- Commit: `2383391`
+
+**Test results:**
+- `test_datatables_unit.py` + `test_search_unit.py`: 419 passed (was 421 — exactly -2 stubs), 23 subtests, 0 failures
+
+---
+
+## All Phases Complete ✅
+
+All 4 phases from TEST_STRATEGY.md are done:
+- Phase 1: `_get_collection` bug fixed (TDD)
+- Phase 2: 20 new unit tests for `_build_filter`, `_sb_group`, `_get_rowgroup_data`
+- Phase 3: 15 integration tests in `tests/integration/`
+- Phase 4: Removed stubs, deduplicated imports
