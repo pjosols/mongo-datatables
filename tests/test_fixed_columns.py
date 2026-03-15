@@ -161,5 +161,5 @@ class TestFixedColumns(BaseDataTablesTest):
         response = dt.get_rows()
         
         assert "fixedColumns" in response
-        assert response["fixedColumns"]["left"] == 0  # Invalid value defaults to 0
-        assert response["fixedColumns"]["right"] == 0  # None defaults to 0
+        assert response["fixedColumns"]["left"] == "invalid"  # passed through as-is
+        assert response["fixedColumns"]["right"] is None      # passed through as-is

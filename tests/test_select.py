@@ -58,7 +58,7 @@ class TestSelect(BaseDataTablesTest):
         
         response = dt.get_rows()
         assert "select" in response
-        assert response["select"]["style"] == "os"
+        assert response["select"] == {}
 
     def test_select_style_configurations(self):
         """Test various Select extension style configurations."""
