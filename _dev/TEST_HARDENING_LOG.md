@@ -97,3 +97,22 @@ All 4 phases from TEST_STRATEGY.md are done:
 - Phase 2: 20 new unit tests for `_build_filter`, `_sb_group`, `_get_rowgroup_data`
 - Phase 3: 15 integration tests in `tests/integration/`
 - Phase 4: Removed stubs, deduplicated imports
+
+---
+
+## Session 5 — 2026-03-15
+
+### Housekeeping: commit untracked files ✅
+
+**What was done:**
+- Discovered 8 `tests/unit/` files were on disk but never staged (created in prior sessions but not committed)
+- Staged and committed all 8 files: `test_column_search_unit.py`, `test_editor_unit.py`, `test_extensions_unit.py`, `test_search_builder_unit.py`, `test_search_unit.py`, `test_searchpanes_unit.py`, `test_serialization_unit.py`, `test_sort_unit.py`
+- Also committed deletion of 88 old flat `tests/test_*.py` files (already gone from disk, just unrecorded in git)
+- Commit: `57be019`
+
+**Final test counts (all passing):**
+- Batch 1 (`test_datatables_unit` + `test_search_unit`): 419 passed, 23 subtests
+- Batch 2 (`test_editor_unit` + `test_search_builder_unit`): 235 passed
+- Batch 3 (remaining 5 unit files): 183 passed
+- Integration: 15 passed
+- **Total: 852 tests, 0 failures**
