@@ -28,13 +28,16 @@ def test_field_mapper_called_once_per_column_not_per_term():
 
 
 def test_global_search_multi_term_produces_correct_or_conditions():
-    """Multiple terms across multiple columns produce the right $or conditions."""
+    """Multiple terms with smart=True produce $and of per-term $or conditions."""
     qb = _make_qb(["name", "city"])
     result = qb.build_global_search(["alice", "bob"], ["name", "city"])
 
-    assert "$or" in result
-    # 2 terms × 2 columns = 4 conditions
-    assert len(result["$or"]) == 4
+    assert "$and" in result
+    # 2 terms → 2 entries in $and, each a $or over 2 columns
+    assert len(result["$and"]) == 2
+    for term_cond in result["$and"]:
+        assert "$or" in term_cond
+        assert len(term_cond["$or"]) == 2
 
 
 def test_global_search_quoted_phrase_word_boundary():

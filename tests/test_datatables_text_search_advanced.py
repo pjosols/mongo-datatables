@@ -137,7 +137,7 @@ class TestDataTablesTextSearchAdvanced(BaseDataTablesTest):
             condition = datatables.global_search_condition
 
             # Verify the condition uses regex instead of text search
-            self.assertIn('$or', condition)
+            self.assertIn('$and', condition)
             self.assertNotIn('$text', condition)
 
 

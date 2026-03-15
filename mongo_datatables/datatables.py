@@ -5,7 +5,7 @@ import math
 import re
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
-from bson.objectid import ObjectId
+from bson import Decimal128, ObjectId
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
@@ -146,6 +146,7 @@ class DataTables:
         self._recordsTotal = None
         self._recordsFiltered = None
         self._filter_cache = None
+        self._search_terms_cache = None
         self._has_text_index = None
 
         self._check_text_index()
@@ -239,7 +240,9 @@ class DataTables:
         Returns:
             List of search terms with quoted phrases preserved as single terms
         """
-        return SearchTermParser.parse(self.search_value)
+        if self._search_terms_cache is None:
+            self._search_terms_cache = SearchTermParser.parse(self.search_value)
+        return self._search_terms_cache
 
     @property
     def search_terms_without_a_colon(self) -> List[str]:
@@ -259,7 +262,7 @@ class DataTables:
         Returns:
             List of search terms with exactly one colon
         """
-        return [term for term in self.search_terms if term.count(":") == 1]
+        return [term for term in self.search_terms if ":" in term]
 
     @property
     def column_search_conditions(self) -> Dict[str, Any]:
@@ -281,12 +284,13 @@ class DataTables:
         Returns:
             MongoDB query condition for global search
         """
-        search_terms = self.search_terms_without_a_colon
+        search = self.request_args.get("search", {})
         return self.query_builder.build_global_search(
-            search_terms,
+            self.search_terms_without_a_colon,
             self.searchable_columns,
             original_search=self.search_value,
-            search_regex=self.request_args.get("search", {}).get("regex", False) in (True, "true", "True", 1)
+            search_regex=search.get("regex", False) in (True, "true", "True", 1),
+            search_smart=search.get("smart", True) not in (False, "false", "False", 0),
         )
 
     @property
@@ -349,8 +353,10 @@ class DataTables:
 
         options = {}
         for col_name, _ in eligible:
-            total_map = {r["_id"]: r["count"] for r in total_result.get(col_name, [])}
-            count_map = {r["_id"]: r["count"] for r in count_result.get(col_name, [])}
+            def _hashable(v):
+                return str(v.to_decimal()) if isinstance(v, Decimal128) else v
+            total_map = {_hashable(r["_id"]): r["count"] for r in total_result.get(col_name, [])}
+            count_map = {_hashable(r["_id"]): r["count"] for r in count_result.get(col_name, [])}
             column_options = []
             for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
                 if isinstance(raw_value, ObjectId):
@@ -401,6 +407,11 @@ class DataTables:
                 elif field_type == "objectid":
                     try:
                         converted_values.append(ObjectId(value))
+                    except Exception:
+                        converted_values.append(value)
+                elif field_type == "date":
+                    try:
+                        converted_values.append(DateHandler.parse_iso_date(value.split('T')[0]))
                     except Exception:
                         converted_values.append(value)
                 else:
@@ -530,7 +541,7 @@ class DataTables:
         if condition == "!null":
             return {db_field: {"$nin": [None, "", False]}}
 
-        if sb_type in ("num", "num-fmt"):
+        if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt"):
             return self._sb_number(db_field, condition, v0, v1)
         if sb_type in ("date", "moment", "luxon"):
             return self._sb_date(db_field, condition, v0, v1)
@@ -557,7 +568,7 @@ class DataTables:
     def _sb_date(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
         """Build a MongoDB condition for a date SearchBuilder criterion."""
         def _d(v):
-            return DateHandler.parse_iso_date(v)
+            return DateHandler.parse_iso_date(v.split('T')[0])
         try:
             if condition == "=":
                 d = _d(v0)
@@ -581,13 +592,13 @@ class DataTables:
             return {}
         s = re.escape(v0)
         if condition == "=":        return {field: {"$regex": f"^{s}$", "$options": "i"}}
-        if condition == "!=":       return {field: {"$not": re.compile(f"^{s}$", re.IGNORECASE)}}
+        if condition == "!=":       return {field: {"$not": {"$regex": f"^{s}$", "$options": "i"}}}
         if condition == "contains":  return {field: {"$regex": s, "$options": "i"}}
-        if condition == "!contains": return {field: {"$not": re.compile(s, re.IGNORECASE)}}
+        if condition == "!contains": return {field: {"$not": {"$regex": s, "$options": "i"}}}
         if condition == "starts":    return {field: {"$regex": f"^{s}", "$options": "i"}}
-        if condition == "!starts":   return {field: {"$not": re.compile(f"^{s}", re.IGNORECASE)}}
+        if condition == "!starts":   return {field: {"$not": {"$regex": f"^{s}", "$options": "i"}}}
         if condition == "ends":      return {field: {"$regex": f"{s}$", "$options": "i"}}
-        if condition == "!ends":     return {field: {"$not": re.compile(f"{s}$", re.IGNORECASE)}}
+        if condition == "!ends":     return {field: {"$not": {"$regex": f"{s}$", "$options": "i"}}}
         return {}
 
     @property
@@ -776,12 +787,16 @@ class DataTables:
                         val[i] = str(item)
                     elif hasattr(item, 'isoformat'):
                         val[i] = item.isoformat()
+                    elif isinstance(item, Decimal128):
+                        val[i] = float(item.to_decimal())
             elif isinstance(val, ObjectId):
                 result_dict[key] = str(val)
             elif hasattr(val, 'isoformat'):
                 result_dict[key] = val.isoformat()
             elif isinstance(val, float) and not math.isfinite(val):
                 result_dict[key] = None
+            elif isinstance(val, Decimal128):
+                result_dict[key] = float(val.to_decimal())
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
         """Convert aggregation cursor to DataTables-formatted list."""

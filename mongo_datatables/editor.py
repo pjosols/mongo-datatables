@@ -74,15 +74,43 @@ class Editor:
         self.doc_id = doc_id or ""
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
+        self._collection = self._resolve_collection(pymongo_object, collection_name)
+
+    @staticmethod
+    def _resolve_collection(pymongo_object: Any, collection_name: str) -> Collection:
+        """Resolve a MongoDB collection from various pymongo object types.
+
+        Args:
+            pymongo_object: Flask-PyMongo instance, MongoClient, Database, or dict-like object
+            collection_name: Name of the collection to resolve
+
+        Returns:
+            The resolved PyMongo collection instance
+        """
+        if hasattr(pymongo_object, "db"):
+            db = pymongo_object.db
+        elif hasattr(pymongo_object, "get_database"):
+            db = pymongo_object.get_database()
+        elif isinstance(pymongo_object, Database):
+            db = pymongo_object
+        else:
+            return pymongo_object[collection_name]
+        return db[collection_name]
 
     @property
-    def db(self) -> Database:
+    def db(self) -> Optional[Database]:
         """Get the MongoDB database instance.
 
         Returns:
-            The PyMongo database instance
+            The PyMongo database instance, or None if not resolvable
         """
-        return self.mongo.db
+        if hasattr(self.mongo, "db"):
+            return self.mongo.db
+        elif hasattr(self.mongo, "get_database"):
+            return self.mongo.get_database()
+        elif isinstance(self.mongo, Database):
+            return self.mongo
+        return None
 
     @property
     def collection(self) -> Collection:
@@ -91,7 +119,7 @@ class Editor:
         Returns:
             The PyMongo collection instance
         """
-        return self.db[self.collection_name]
+        return self._collection
         
     def map_ui_field_to_db_field(self, field_name: str) -> str:
         """Map a UI field name to its corresponding database field name.
