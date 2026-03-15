@@ -123,7 +123,8 @@ class MongoQueryBuilder:
         search_terms: List[str],
         searchable_columns: List[str],
         original_search: str = "",
-        search_regex: bool = False
+        search_regex: bool = False,
+        search_smart: bool = True,
     ) -> Dict[str, Any]:
         """Build global search conditions.
 
@@ -180,22 +181,35 @@ class MongoQueryBuilder:
             if ft != "date":
                 col_meta.append((self.field_mapper.get_db_field(c), ft))
 
+        if search_smart and len(search_terms) > 1:
+            per_term = []
+            for term in search_terms:
+                term_conds = []
+                for db_field, field_type in col_meta:
+                    if field_type == "number":
+                        try:
+                            term_conds.append({db_field: TypeConverter.to_number(term)})
+                        except Exception:
+                            pass
+                    else:
+                        pattern = term if search_regex else re.escape(term)
+                        term_conds.append({db_field: {"$regex": pattern, "$options": "i"}})
+                if term_conds:
+                    per_term.append({"$or": term_conds} if len(term_conds) > 1 else term_conds[0])
+            return {"$and": per_term} if per_term else {}
+
         or_conditions = []
         for term in search_terms:
             for db_field, field_type in col_meta:
                 if field_type == "number":
                     try:
-                        numeric_value = TypeConverter.to_number(term)
-                        or_conditions.append({db_field: numeric_value})
+                        or_conditions.append({db_field: TypeConverter.to_number(term)})
                     except Exception:
                         pass
                 else:
                     pattern = term if search_regex else re.escape(term)
                     or_conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
-
-        if or_conditions:
-            return {"$or": or_conditions}
-        return {}
+        return {"$or": or_conditions} if or_conditions else {}
 
     def build_column_specific_search(
         self,
@@ -308,7 +322,7 @@ class MongoQueryBuilder:
                         pass
                 elif stype == "date":
                     try:
-                        parsed = DateHandler.parse_iso_date(value)
+                        parsed = DateHandler.parse_iso_date(value.split('T')[0])
                         next_day = DateHandler.get_next_day(parsed)
                         if logic == "equal":
                             conditions.append({db_field: {"$gte": parsed, "$lt": next_day}})
@@ -325,11 +339,11 @@ class MongoQueryBuilder:
                     if logic == "contains":
                         conditions.append({db_field: {"$regex": escaped, "$options": "i"}})
                     elif logic == "notContains":
-                        conditions.append({db_field: {"$not": re.compile(escaped, re.IGNORECASE)}})
+                        conditions.append({db_field: {"$not": {"$regex": escaped, "$options": "i"}}})
                     elif logic == "equal":
                         conditions.append({db_field: {"$regex": f"^{escaped}$", "$options": "i"}})
                     elif logic == "notEqual":
-                        conditions.append({db_field: {"$not": re.compile(f"^{escaped}$", re.IGNORECASE)}})
+                        conditions.append({db_field: {"$not": {"$regex": f"^{escaped}$", "$options": "i"}}})
                     elif logic == "starts":
                         conditions.append({db_field: {"$regex": f"^{escaped}", "$options": "i"}})
                     elif logic == "ends":
