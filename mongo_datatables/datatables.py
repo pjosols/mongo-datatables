@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple, Set
@@ -673,8 +674,8 @@ class DataTables:
                 result_dict[key] = str(val)
             elif hasattr(val, 'isoformat'):
                 result_dict[key] = val.isoformat()
-            elif isinstance(val, float):
-                result_dict[key] = val
+            elif isinstance(val, float) and not math.isfinite(val):
+                result_dict[key] = None
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
         """Convert aggregation cursor to DataTables-formatted list."""
