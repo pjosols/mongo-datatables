@@ -173,23 +173,25 @@ class MongoQueryBuilder:
             text_search_query = " ".join(search_terms)
             return {"$text": {"$search": text_search_query}}
 
+        # Pre-compute per-column metadata once (not once per search term)
+        col_meta = []
+        for c in searchable_columns:
+            ft = self.field_mapper.get_field_type(c)
+            if ft != "date":
+                col_meta.append((self.field_mapper.get_db_field(c), ft))
+
         or_conditions = []
         for term in search_terms:
-            for column in searchable_columns:
-                field_type = self.field_mapper.get_field_type(column)
-
-                if field_type == "date":
-                    continue
-
+            for db_field, field_type in col_meta:
                 if field_type == "number":
                     try:
                         numeric_value = TypeConverter.to_number(term)
-                        or_conditions.append({self.field_mapper.get_db_field(column): numeric_value})
+                        or_conditions.append({db_field: numeric_value})
                     except Exception:
                         pass
                 else:
                     pattern = term if search_regex else re.escape(term)
-                    or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i"}})
+                    or_conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
 
         if or_conditions:
             return {"$or": or_conditions}

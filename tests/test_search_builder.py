@@ -125,9 +125,18 @@ class TestSearchBuilderNumber:
         assert result == {"age": {"$gte": 20.0, "$lte": 40.0}}
 
     def test_not_between(self):
-        dt = _dt({"criteria": [{"condition": "!between", "origData": "age", "type": "num", "value": ["20", "40"]}], "logic": "AND"})
-        result = dt._parse_search_builder()
-        assert result == {"age": {"$not": {"$gte": 20.0, "$lte": 40.0}}}
+        dt = _dt({"criteria": [{"origData": "age", "condition": "!between", "type": "num", "value": ["20", "30"]}], "logic": "AND"})
+        result = dt.filter
+        assert result == {"$or": [{"age": {"$lt": 20}}, {"age": {"$gt": 30}}]}
+
+    def test_not_between_date(self):
+        from datetime import datetime
+        dt = _dt({"criteria": [{"origData": "created", "condition": "!between", "type": "date", "value": ["2024-01-01", "2024-12-31"]}], "logic": "AND"})
+        result = dt.filter
+        assert "$or" in result
+        assert len(result["$or"]) == 2
+        assert "$lt" in result["$or"][0].get("created", {})
+        assert "$gt" in result["$or"][1].get("created", {})
 
 
 class TestSearchBuilderNullConditions:
