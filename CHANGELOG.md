@@ -1,3 +1,8 @@
+## [1.34.0] - 2026-03-15
+
+### Added
+- `Editor.__init__` now accepts `options=` kwarg (plain dict or zero-arg callable). When set, `process()` includes an `options` key in every response, enabling server-driven population of select/radio/checkbox field options per the DataTables Editor protocol.
+
 ## [1.32.0] - 2026-03-15
 
 ### Added

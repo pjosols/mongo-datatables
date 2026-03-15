@@ -1459,3 +1459,16 @@ elif isinstance(item, float) and not math.isfinite(item):
 - `editor.py`: `Editor.upload()` method handles `action=upload`, calls `adapter.store()`, optionally calls `adapter.files_for_field()` for the `files` response dict
 - `editor.py`: `process()` dispatches `action=upload` to `upload()`; missing adapter or field returns `{"error": "..."}` gracefully
 - `EDITOR_GAPS.md`: item #4 marked ✅ DONE
+
+## Iteration 5 — v1.34.0 — 2026-03-15
+
+**Feature:** Editor `options` response field (Gap #5)
+
+**What:** Added `options` kwarg to `Editor.__init__`. Accepts a plain dict or zero-arg callable returning `{field_name: [{label, value}]}`. Included in all `process()` responses when set.
+
+**Why:** Completes DataTables Editor protocol Gap #5. Enables server-driven population of select/radio/checkbox field options without a separate Ajax call.
+
+**Changes:**
+- `editor.py`: `options` param in `__init__`, `_resolve_options()` method, `process()` injects options
+- `tests/test_editor_options.py`: 6 new tests
+- Version bumped to v1.34.0

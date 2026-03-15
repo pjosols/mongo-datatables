@@ -76,7 +76,8 @@ class Editor:
         doc_id: Optional[str] = None,
         data_fields: Optional[List[DataField]] = None,
         validators: Optional[Dict[str, Any]] = None,
-        storage_adapter: Optional["StorageAdapter"] = None
+        storage_adapter: Optional["StorageAdapter"] = None,
+        options=None,
     ) -> None:
         """Initialize the Editor processor.
 
@@ -97,7 +98,13 @@ class Editor:
         self.field_mapper = FieldMapper(self.data_fields)
         self.validators = validators or {}
         self.storage_adapter = storage_adapter
+        self._options = options
         self._collection = self._resolve_collection(pymongo_object, collection_name)
+
+    def _resolve_options(self):
+        if self._options is None:
+            return None
+        return self._options() if callable(self._options) else self._options
 
     @staticmethod
     def _resolve_collection(pymongo_object: Any, collection_name: str) -> Collection:
@@ -526,7 +533,11 @@ class Editor:
                 return {"fieldErrors": field_errors}
 
         try:
-            return actions[self.action]()
+            response = actions[self.action]()
+            opts = self._resolve_options()
+            if opts is not None:
+                response["options"] = opts
+            return response
         except (InvalidDataError, FieldMappingError) as e:
             return {"error": str(e)}
         except DatabaseOperationError as e:

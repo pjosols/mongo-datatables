@@ -41,11 +41,11 @@ Optional `files_for_field(field)` method on the adapter populates the `files` di
 `{"upload": {"id": "..."}, "files": {...}}`. Without an adapter, returns `{"error": "..."}` gracefully.
 Tests: `tests/test_editor_upload.py`
 
-### 5. `options` in DataTables read response (LOW)
+### 5. `options` in DataTables read response (LOW) ✅ DONE
 Editor can populate select/radio/checkbox fields from an `options` dict
-returned alongside `data` in the initial DataTables Ajax response.
-Add an optional `options` parameter to `DataTables.get_rows()` or a
-helper that merges options into the response.
+returned alongside `data` in any Editor response. Pass `options=` to
+`Editor.__init__` as a plain dict or zero-arg callable; `process()` merges
+it into every response when set.
 
 ### 6. `cancelled` response + pre-event hooks (LOW)
 Protocol supports `cancelled: [row_ids]` for rows the server chose not
