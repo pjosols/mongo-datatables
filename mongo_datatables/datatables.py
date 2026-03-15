@@ -259,7 +259,7 @@ class DataTables:
         Returns:
             List of search terms with exactly one colon
         """
-        return [term for term in self.search_terms if term.count(":") == 1]
+        return [term for term in self.search_terms if ":" in term]
 
     @property
     def column_search_conditions(self) -> Dict[str, Any]:
@@ -530,7 +530,7 @@ class DataTables:
         if condition == "!null":
             return {db_field: {"$nin": [None, "", False]}}
 
-        if sb_type in ("num", "num-fmt"):
+        if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt"):
             return self._sb_number(db_field, condition, v0, v1)
         if sb_type in ("date", "moment", "luxon"):
             return self._sb_date(db_field, condition, v0, v1)
