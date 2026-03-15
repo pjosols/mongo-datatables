@@ -418,6 +418,30 @@ class DataTables:
             return {"$and": conditions}
         return {}
 
+    def _parse_search_fixed(self) -> Dict[str, Any]:
+        """Parse searchFixed named searches (DataTables 2.0+) into a MongoDB filter.
+
+        Each named fixed search is ANDed with the main query. Values are treated
+        as global search terms across all searchable columns.
+        """
+        search_fixed = self.request_args.get("searchFixed", {})
+        if not isinstance(search_fixed, dict) or not search_fixed:
+            return {}
+        conditions = []
+        for value in search_fixed.values():
+            if not value:
+                continue
+            terms = SearchTermParser.parse(str(value))
+            cond = self.query_builder.build_global_search(
+                terms, self.searchable_columns, original_search=str(value),
+                search_regex=False
+            )
+            if cond:
+                conditions.append(cond)
+        if not conditions:
+            return {}
+        return {"$and": conditions} if len(conditions) > 1 else conditions[0]
+
     def _parse_search_builder(self) -> Dict[str, Any]:
         """Translate a SearchBuilder criteria tree into a MongoDB query.
 
@@ -573,6 +597,10 @@ class DataTables:
         searchpanes_filter = self._parse_searchpanes_filters()
         if searchpanes_filter:
             conditions.append(searchpanes_filter)
+
+        search_fixed_filter = self._parse_search_fixed()
+        if search_fixed_filter:
+            conditions.append(search_fixed_filter)
 
         global_search = self.global_search_condition
         if global_search:
