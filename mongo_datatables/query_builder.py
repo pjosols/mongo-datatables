@@ -94,7 +94,7 @@ class MongoQueryBuilder:
                                 range_cond['$gte'] = date_range.get('$gte')
                             if parts[1].strip():
                                 date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
-                                range_cond['$lte'] = date_range.get('$lt')
+                                range_cond['$lt'] = date_range.get('$lt')
                         except Exception:
                             pass
                         if range_cond:
@@ -224,18 +224,14 @@ class MongoQueryBuilder:
             field_type = self.field_mapper.get_field_type(db_field)
 
             operator = None
-            if value.startswith(">") and not value.startswith(">="):
-                operator = ">"
-                value = value[1:].strip()
-            elif value.startswith("<") and not value.startswith("<="):
-                operator = "<"
-                value = value[1:].strip()
-            elif value.startswith(">="):
-                operator = ">="
-                value = value[2:].strip()
+            if value.startswith(">="):
+                operator, value = ">=", value[2:].strip()
             elif value.startswith("<="):
-                operator = "<="
-                value = value[2:].strip()
+                operator, value = "<=", value[2:].strip()
+            elif value.startswith(">"):
+                operator, value = ">", value[1:].strip()
+            elif value.startswith("<"):
+                operator, value = "<", value[1:].strip()
             elif value.startswith("="):
                 operator = "="
                 value = value[1:].strip()
@@ -287,7 +283,7 @@ class MongoQueryBuilder:
             else:
                 return {field: numeric_value}
         except Exception:
-            return {field: {"$regex": re.escape(value), "$options": "i"}}
+            return None
 
     def _build_date_condition(
         self,

@@ -92,12 +92,12 @@ class TestDateRangeFilter(unittest.TestCase):
         result = self._run("2024-01-01|2024-12-31")
         cond = result["$and"][0]["created_at"]
         self.assertIn("$gte", cond)
-        self.assertIn("$lte", cond)
+        self.assertIn("$lt", cond)
         self.assertIsInstance(cond["$gte"], datetime)
-        self.assertIsInstance(cond["$lte"], datetime)
+        self.assertIsInstance(cond["$lt"], datetime)
         self.assertEqual(cond["$gte"], datetime(2024, 1, 1))
-        # $lte from get_date_range_for_comparison('2024-12-31', '<=') → $lt next_day
-        self.assertEqual(cond["$lte"], datetime(2025, 1, 1))
+        # $lt from get_date_range_for_comparison('2024-12-31', '<=') → $lt next_day
+        self.assertEqual(cond["$lt"], datetime(2025, 1, 1))
 
     def test_lower_bound_only(self):
         result = self._run("2024-06-01|")
@@ -109,7 +109,7 @@ class TestDateRangeFilter(unittest.TestCase):
     def test_upper_bound_only(self):
         result = self._run("|2024-06-30")
         cond = result["$and"][0]["created_at"]
-        self.assertIn("$lte", cond)
+        self.assertIn("$lt", cond)
         self.assertNotIn("$gte", cond)
 
     def test_non_range_uses_date_condition_not_regex(self):
