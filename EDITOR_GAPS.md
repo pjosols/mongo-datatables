@@ -61,7 +61,9 @@ Applied in `_format_response_document` after `DT_RowId` is set, using the same c
 pattern as the DataTables class. Absent by default — keys only appear in responses when configured.
 Tests: `tests/test_editor_row_metadata.py` (11 tests)
 
-### 8. `files` in DataTables read response (LOW)
-Depends on upload support (#4). Once uploads exist, include file
-metadata in the initial DataTables read response so Editor can resolve
-file references on page load.
+### 8. `files` in create/edit responses (LOW) ✅ DONE
+Depends on upload support (#4). Pass `file_fields=["fieldName", ...]` to `Editor.__init__`
+along with a `storage_adapter` that implements `files_for_field(field) -> dict`.
+`create()` and `edit()` will include `{"files": {"fieldName": {"id": {...metadata}}}}` in
+their responses so the Editor client can resolve file references immediately after write.
+Tests: `tests/test_editor_upload.py::TestEditorFilesInResponse`
