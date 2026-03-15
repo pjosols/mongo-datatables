@@ -4,6 +4,36 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## v1.36.1 — Quality: Narrow `except Exception` in `query_builder.py` (2026-03-15)
+
+**Type:** Quality / Code Correctness
+**Iteration:** 9 of 12
+
+### Problem
+`query_builder.py` had 9 broad `except Exception:` clauses silently swallowing all exceptions in search-condition builders. These wrapped calls to `TypeConverter.to_number()` and `DateHandler` methods, which only raise `ValueError`, `TypeError`, or `FieldMappingError` on bad input. A programming error (e.g. unexpected `AttributeError`, `NameError`, or `RuntimeError`) would be silently discarded, producing wrong/empty query results with no diagnostic trail.
+
+This is the direct continuation of the same fix applied in v1.31.1 to `datatables.py` (`_sb_number` and `_sb_date`).
+
+### Changes
+- `query_builder.py`: replaced all 9 `except Exception:` with `except (ValueError, TypeError, FieldMappingError):` across:
+  - `build_column_search` (lines 90, 103) — number value and date range branches
+  - `build_global_search` (lines 203, 218) — smart multi-term and OR search number branches
+  - `_build_column_control_condition` (lines 300, 333, 347) — list_data number, num stype, date stype
+  - `_build_number_condition` (line 397)
+  - `_build_date_condition` (line 422)
+
+### Tests
+- `tests/test_qb_exception_narrowing.py`: 9 new tests verifying:
+  - Expected exceptions (invalid number/date input) are caught silently → empty result
+  - Unexpected exceptions (`RuntimeError`) propagate instead of being swallowed
+  - Covers `build_column_search`, `_build_number_condition`, `_build_date_condition`, `_build_column_control_condition`
+- **769 passed** (was 760), 59 subtests passed
+
+### Backward Compatibility
+Fully backward compatible. The only behavioral change is that unexpected exceptions (not `ValueError`/`TypeError`/`FieldMappingError`) now propagate instead of being silently swallowed — which is the correct behavior.
+
+---
+
 ## v1.36.0 — FEATURE: DT_RowClass/DT_RowData/DT_RowAttr in Editor responses (2026-03-15)
 
 **Type:** Feature
@@ -1546,3 +1576,44 @@ The DataTables Editor server protocol supports a `cancelled` array in responses,
 - `test_hooks_stored_correctly`
 
 Total tests: 749 passed, 59 subtests (was 722+59).
+
+## Iteration 10 of 12 — 2026-03-15 — v1.37.0
+
+**Type:** EDITOR PROTOCOL GAP  
+**Gap:** #8 — `files` in create/edit responses  
+**Version:** v1.37.0
+
+### Change
+Added `file_fields` parameter to `Editor.__init__` and `_collect_files()` helper method. When a `StorageAdapter` with `files_for_field()` is configured and `file_fields` lists the upload field names, `create()` and `edit()` now include a `files` key in their responses. This lets the DataTables Editor client resolve file references immediately after write operations, matching the Editor server protocol.
+
+### Implementation
+- `file_fields=None` kwarg added to `Editor.__init__` (stored as `self.file_fields = file_fields or []`)
+- `_collect_files()` helper: iterates `self.file_fields`, calls `adapter.files_for_field(field)`, returns populated dict or `None`
+- `create()` and `edit()` both call `_collect_files()` and include `"files"` in response when non-None
+- No changes to `datatables.py` or `query_builder.py`
+
+### Tests
+- 7 new tests in `TestEditorFilesInResponse` class in `tests/test_editor_upload.py`
+- Covers: create/edit with files, missing adapter, missing file_fields, adapter without files_for_field, empty files, multiple fields
+- Total tests: 776 (all passing)
+
+### Quality
+- Backward compatible: `file_fields` defaults to `[]`, no behavior change without it
+- Minimal implementation: ~15 lines added to editor.py
+- All 776 tests pass
+
+## Iteration 11 — v1.38.0 (2026-03-15)
+
+### Feature: Per-column `columns[i][search][smart]` AND semantics
+
+**Gap identified:** Global search supported `search[smart]` AND semantics (each word must match at least one searchable column) but per-column search had no equivalent — multi-word column search values were always treated as a single literal phrase.
+
+**Implementation:** In `MongoQueryBuilder.build_column_search()` (query_builder.py), the text-field branch now reads `columns[i][search][smart]` (defaulting to `true`). When smart is true and the search value contains multiple words and `regex` is false, each word is escaped and ANDed together as separate `$regex` conditions on the same field. When smart is false or regex is true, the original single-pattern behavior is preserved.
+
+**Bug fix:** `_parse_search_fixed` in datatables.py had `continue` and the next statement on the same line (missing newline). Fixed.
+
+**Tests:** 10 new tests in `tests/test_column_smart_search.py` covering: single-word passthrough, multi-word AND splitting, smart=false phrase mode, default smart=true, regex=true no-split, three-word AND, case-insensitive flag propagation, number field immunity, empty search no-op.
+
+**Test results:** 786 passed (776 existing + 10 new), 59 subtests passed.
+
+**Backward compatibility:** Default `smart=true` matches DataTables default behavior. Existing column searches that did not send a `smart` parameter will now split multi-word values into AND terms — this is the correct DataTables behavior and matches what global search already did. Single-word searches are unaffected.

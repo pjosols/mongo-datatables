@@ -115,8 +115,18 @@ class MongoQueryBuilder:
                         else:
                             col_ci = case_insensitive
                         regex_flag = is_truthy(column_search.get("regex"))
-                        pattern = search_value if regex_flag else re.escape(search_value)
-                        conditions.append({db_field: {"$regex": pattern, "$options": "i" if col_ci else ""}})
+                        col_smart = is_truthy(column_search.get("smart", True))
+                        opts = "i" if col_ci else ""
+                        if col_smart and not regex_flag:
+                            words = search_value.split()
+                            if len(words) > 1:
+                                and_terms = [{db_field: {"$regex": re.escape(w), "$options": opts}} for w in words]
+                                conditions.append({"$and": and_terms})
+                            else:
+                                conditions.append({db_field: {"$regex": re.escape(search_value), "$options": opts}})
+                        else:
+                            pattern = search_value if regex_flag else re.escape(search_value)
+                            conditions.append({db_field: {"$regex": pattern, "$options": opts}})
 
                 if has_cc:
                     conditions.extend(self._build_column_control_condition(db_field, field_type, cc))

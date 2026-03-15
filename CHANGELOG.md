@@ -1,3 +1,11 @@
+## [1.38.0] - 2026-03-15
+
+### Added
+- Per-column `columns[i][search][smart]` AND semantics: when `smart=true` (default) and a column search value contains multiple words, each word must independently match the column field (AND logic). Mirrors the existing global `search[smart]` behavior. When `smart=false` or `regex=true`, the original single-phrase behavior is preserved.
+
+### Fixed
+- `_parse_search_fixed`: corrected a missing newline that placed `continue` and the next statement on the same line.
+
 ## [1.34.0] - 2026-03-15
 
 ### Added
