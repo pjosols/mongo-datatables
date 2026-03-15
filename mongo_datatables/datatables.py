@@ -778,15 +778,6 @@ class DataTables:
                 # Try estimated count first for performance
                 estimated_count = self.collection.estimated_document_count()
                 
-                # Convert to int in case it's a mock object
-                try:
-                    estimated_count = int(estimated_count)
-                except (TypeError, ValueError):
-                    # If conversion fails, fall back to exact count
-                    self._recordsTotal = self.collection.count_documents({})
-                    logger.debug(f"Using exact count (fallback): {self._recordsTotal}")
-                    return self._recordsTotal
-                
                 # Use exact count for small collections or when custom filter exists
                 if estimated_count < 100000 or self.custom_filter:
                     self._recordsTotal = self.collection.count_documents({})

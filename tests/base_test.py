@@ -16,6 +16,7 @@ class BaseDataTablesTest(unittest.TestCase):
         self.mongo = MagicMock()
         self.mongo.db = MagicMock(spec=Database)
         self.collection = MagicMock(spec=Collection)
+        self.collection.estimated_document_count.return_value = 0
         self.mongo.db.__getitem__.return_value = self.collection
 
         # Sample DataTables request parameters

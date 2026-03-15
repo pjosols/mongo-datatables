@@ -13,6 +13,7 @@ class TestButtonsExtension:
         self.mock_collection = Mock()
         self.mock_collection.list_indexes.return_value = []
         self.mock_collection.count_documents.return_value = 100
+        self.mock_collection.estimated_document_count.return_value = 0
         self.mock_collection.aggregate.return_value = [
             {"_id": "1", "name": "Test 1", "value": 10},
             {"_id": "2", "name": "Test 2", "value": 20}
@@ -20,6 +21,8 @@ class TestButtonsExtension:
 
         self.mock_db = MagicMock()
         self.mock_db.__getitem__.return_value = self.mock_collection
+        self.mock_db.db = MagicMock()
+        self.mock_db.db.__getitem__.return_value = self.mock_collection
 
         self.data_fields = [
             DataField("name", "string"),
