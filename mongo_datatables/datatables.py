@@ -367,12 +367,8 @@ class DataTables:
                     count = result["count"]
                     
                     # Format value for display
-                    if isinstance(value, ObjectId):
-                        display_value = str(value)
-                    elif hasattr(value, 'isoformat'):
-                        display_value = value.isoformat()
-                    else:
-                        display_value = str(value) if value is not None else ""
+                    from mongo_datatables.utils import format_value_for_display
+                    display_value = format_value_for_display(value)
                     
                     column_options.append({
                         "label": display_value,
@@ -458,12 +454,8 @@ class DataTables:
                     count = result["count"]
                     
                     # Format value for display
-                    if isinstance(value, ObjectId):
-                        display_value = str(value)
-                    elif hasattr(value, 'isoformat'):
-                        display_value = value.isoformat()
-                    else:
-                        display_value = str(value) if value is not None else ""
+                    from mongo_datatables.utils import format_value_for_display
+                    display_value = format_value_for_display(value)
                     
                     column_options.append({
                         "label": display_value,
@@ -819,11 +811,13 @@ class DataTables:
                     if isinstance(item, dict):
                         self._format_result_values(item, f"{full_key}[{i}]")
                     elif isinstance(item, ObjectId):
-                        val[i] = str(item)
+                        from mongo_datatables.utils import format_value_for_display
+                        val[i] = format_value_for_display(item)
                     elif hasattr(item, 'isoformat'):
                         val[i] = item.isoformat()
             elif isinstance(val, ObjectId):
-                result_dict[key] = str(val)
+                from mongo_datatables.utils import format_value_for_display
+                result_dict[key] = format_value_for_display(val)
             elif hasattr(val, 'isoformat'):
                 result_dict[key] = val.isoformat()
             elif isinstance(val, float):

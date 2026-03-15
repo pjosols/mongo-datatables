@@ -10,10 +10,30 @@ import re
 import shlex
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
+from bson.objectid import ObjectId
 
 from mongo_datatables.exceptions import FieldMappingError
 
 logger = logging.getLogger(__name__)
+
+
+def format_value_for_display(value: Any) -> str:
+    """Format values for display in DataTables responses.
+    
+    Converts ObjectId to string and datetime objects to ISO format.
+    
+    Args:
+        value: Value to format
+        
+    Returns:
+        Formatted string representation
+    """
+    if isinstance(value, ObjectId):
+        return str(value)
+    elif hasattr(value, 'isoformat'):
+        return value.isoformat()
+    else:
+        return str(value) if value is not None else ""
 
 
 class TypeConverter:

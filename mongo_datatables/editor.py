@@ -19,7 +19,7 @@ Features:
 Example usage with Flask:
     ```python
     @app.route('/api/editor/<collection>', methods=['POST'])
-    def editor_endpoint(collection):
+    def editor_endpoint(collection) -> Any:
         data = request.get_json()
         doc_id = request.args.get('id', '')
         result = Editor(mongo, collection, data, doc_id).process()
@@ -154,7 +154,8 @@ class Editor:
             if isinstance(val, ObjectId):
                 response_doc[key] = str(val)
             elif isinstance(val, datetime):
-                response_doc[key] = val.isoformat()
+                from mongo_datatables.utils import format_value_for_display
+                response_doc[key] = format_value_for_display(val)
 
         return response_doc
 

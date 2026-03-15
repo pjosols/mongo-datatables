@@ -16,14 +16,14 @@ class ValidationResult:
         self.warnings: List[str] = []
         self.technical_details: List[str] = []
     
-    def add_error(self, message: str, technical_detail: str = None):
+    def add_error(self, message: str, technical_detail: str = None) -> None:
         """Add validation error."""
         self.is_valid = False
         self.errors.append(message)
         if technical_detail:
             self.technical_details.append(technical_detail)
     
-    def add_warning(self, message: str, technical_detail: str = None):
+    def add_warning(self, message: str, technical_detail: str = None) -> None:
         """Add validation warning."""
         self.warnings.append(message)
         if technical_detail:
