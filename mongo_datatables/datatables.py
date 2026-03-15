@@ -1,17 +1,15 @@
 """Server-side processing for jQuery DataTables with MongoDB."""
 
-import json
 import logging
 import math
 import re
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple, Set
+from datetime import timedelta
+from typing import Dict, List, Any, Optional
 from bson.objectid import ObjectId
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
-from mongo_datatables.exceptions import DatabaseOperationError, QueryBuildError
 from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler
 from mongo_datatables.query_builder import MongoQueryBuilder
 
@@ -105,6 +103,7 @@ class DataTables:
         row_class=None,
         row_data=None,
         row_attr=None,
+        row_id: Optional[str] = None,
         **custom_filter: Any,
     ) -> None:
         """Initialize the DataTables processor.
@@ -122,6 +121,9 @@ class DataTables:
             row_class: Static string or callable(row) -> str for DT_RowClass per-row CSS class
             row_data: Static dict or callable(row) -> dict for DT_RowData per-row data attributes
             row_attr: Static dict or callable(row) -> dict for DT_RowAttr per-row HTML attributes
+            row_id: Field name to use as DT_RowId (default: None uses MongoDB _id).
+                    When set, the specified field's value is used as DT_RowId instead of _id.
+                    The _id field is still included in the projection for internal use.
             **custom_filter: Additional filtering criteria
         """
         self.collection = self._get_collection(pymongo_object, collection_name)
@@ -133,6 +135,7 @@ class DataTables:
         self.row_class = row_class
         self.row_data = row_data
         self.row_attr = row_attr
+        self.row_id = row_id
 
         if 'data_fields' in custom_filter:
             del custom_filter['data_fields']
@@ -210,7 +213,7 @@ class DataTables:
             List of column names that are searchable
         """
         return [
-            column["data"] for column in self.columns if column.get("searchable", False)
+            column["data"] for column in self.columns if column.get("searchable") in (True, "true", "True", 1)
         ]
 
     @property
@@ -312,7 +315,7 @@ class DataTables:
         options = {}
 
         for column in self.columns:
-            if not column.get("searchable", False):
+            if column.get("searchable") not in (True, "true", "True", 1):
                 continue
 
             column_name = column.get("data")
@@ -515,7 +518,9 @@ class DataTables:
                 d = _d(v0)
                 return {"$or": [{field: {"$lt": d}}, {field: {"$gte": d + timedelta(days=1)}}]}
             if condition == "<":   return {field: {"$lt": _d(v0)}}
+            if condition == "<=":  return {field: {"$lt": _d(v0) + timedelta(days=1)}}
             if condition == ">":   return {field: {"$gt": _d(v0)}}
+            if condition == ">=":  return {field: {"$gte": _d(v0)}}
             if condition == "between":  return {field: {"$gte": _d(v0), "$lte": _d(v1)}}
             if condition == "!between": return {field: {"$not": {"$gte": _d(v0), "$lte": _d(v1)}}}
         except Exception:
@@ -615,7 +620,7 @@ class DataTables:
             if column is None:
                 continue
             ui_field_name = column.get("data")
-            if ui_field_name and column.get("orderable", "true") != "false":
+            if ui_field_name and column.get("orderable") not in (False, "false", "False", 0):
                 db_field_name = self.field_mapper.get_db_field(ui_field_name)
                 if db_field_name not in sort_spec:
                     sort_spec[db_field_name] = 1 if order_info["dir"] == "asc" else -1
@@ -659,6 +664,9 @@ class DataTables:
             if "data" in column and column["data"]:
                 projection[self.field_mapper.get_db_field(column["data"])] = 1
 
+        if self.row_id:
+            projection[self.field_mapper.get_db_field(self.row_id)] = 1
+
         return projection
 
     def _format_result_values(self, result_dict: Dict[str, Any], parent_key: str = "") -> None:
@@ -697,7 +705,9 @@ class DataTables:
         processed = []
         for result in cursor:
             d = dict(result)
-            if "_id" in d:
+            if self.row_id and self.row_id in d:
+                d["DT_RowId"] = str(d[self.row_id])
+            elif "_id" in d:
                 d["DT_RowId"] = str(d.pop("_id"))
             self._format_result_values(d)
             d = self._remap_aliases(d)
@@ -819,44 +829,29 @@ class DataTables:
         return self._recordsTotal
 
     def count_filtered(self) -> int:
-        """Count records after applying filters with optimized performance.
+        """Count records after applying filters.
 
-        Uses aggregation pipeline for complex filters to improve performance
-        on large datasets.
+        Uses aggregation pipeline with fallback to count_documents.
 
         Returns:
             Number of filtered records, or 0 if an error occurs
         """
         if self._recordsFiltered is None:
-            try:
-                if not self.filter:
-                    self._recordsFiltered = self.count_total()
-                else:
-                    # Try aggregation pipeline for better performance on large datasets
-                    try:
-                        pipeline = [
-                            {"$match": self.filter},
-                            {"$count": "total"}
-                        ]
-                        
-                        result = list(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
-                        self._recordsFiltered = result[0]["total"] if result else 0
-                        logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")
-                    except Exception as e:
-                        # Fallback to traditional count_documents
-                        logger.debug(f"Aggregation failed, using count_documents: {str(e)}")
-                        self._recordsFiltered = self.collection.count_documents(self.filter)
-                    
-            except PyMongoError as e:
-                logger.error(f"Error counting filtered records: {str(e)}", exc_info=True)
-                # Final fallback
+            if not self.filter:
+                self._recordsFiltered = self.count_total()
+            else:
                 try:
-                    if self.filter:
+                    pipeline = [{"$match": self.filter}, {"$count": "total"}]
+                    result = list(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
+                    self._recordsFiltered = result[0]["total"] if result else 0
+                    logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")
+                except Exception as e:
+                    logger.debug(f"Aggregation failed, using count_documents: {str(e)}")
+                    try:
                         self._recordsFiltered = self.collection.count_documents(self.filter)
-                    else:
-                        self._recordsFiltered = self.count_total()
-                except PyMongoError:
-                    self._recordsFiltered = 0
+                    except Exception:
+                        logger.error("count_documents also failed, returning 0", exc_info=True)
+                        self._recordsFiltered = 0
         return self._recordsFiltered
 
     def _parse_extension_config(self, key: str) -> Optional[Dict[str, Any]]:
@@ -877,31 +872,17 @@ class DataTables:
 
     def _parse_rowgroup_config(self) -> Optional[Dict[str, Any]]:
         """Parse RowGroup extension configuration from request parameters.
-        
+
         Returns:
-            Dictionary containing rowGroup configuration or None if not requested
+            ``{"dataSrc": <value>}`` if a valid dataSrc is present, else ``None``.
         """
         rowgroup_params = self.request_args.get("rowGroup")
         if not rowgroup_params:
             return None
-            
-        config = {}
-        
-        # Parse data source for grouping
-        if "dataSrc" in rowgroup_params:
-            data_src = rowgroup_params["dataSrc"]
-            if isinstance(data_src, (str, int)):
-                config["dataSrc"] = data_src
-                
-        # Parse start render function indicator
-        if "startRender" in rowgroup_params:
-            config["startRender"] = bool(rowgroup_params["startRender"])
-            
-        # Parse end render function indicator  
-        if "endRender" in rowgroup_params:
-            config["endRender"] = bool(rowgroup_params["endRender"])
-            
-        return config if config else None
+        data_src = rowgroup_params.get("dataSrc")
+        if isinstance(data_src, (str, int)):
+            return {"dataSrc": data_src}
+        return None
 
     def _get_rowgroup_data(self) -> Optional[Dict[str, Any]]:
         """Generate RowGroup aggregation data using MongoDB pipeline.
