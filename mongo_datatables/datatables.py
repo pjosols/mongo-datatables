@@ -5,7 +5,7 @@ import math
 import re
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
-from bson.objectid import ObjectId
+from bson import Decimal128, ObjectId
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
@@ -353,8 +353,10 @@ class DataTables:
 
         options = {}
         for col_name, _ in eligible:
-            total_map = {r["_id"]: r["count"] for r in total_result.get(col_name, [])}
-            count_map = {r["_id"]: r["count"] for r in count_result.get(col_name, [])}
+            def _hashable(v):
+                return str(v.to_decimal()) if isinstance(v, Decimal128) else v
+            total_map = {_hashable(r["_id"]): r["count"] for r in total_result.get(col_name, [])}
+            count_map = {_hashable(r["_id"]): r["count"] for r in count_result.get(col_name, [])}
             column_options = []
             for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
                 if isinstance(raw_value, ObjectId):
@@ -785,12 +787,16 @@ class DataTables:
                         val[i] = str(item)
                     elif hasattr(item, 'isoformat'):
                         val[i] = item.isoformat()
+                    elif isinstance(item, Decimal128):
+                        val[i] = float(item.to_decimal())
             elif isinstance(val, ObjectId):
                 result_dict[key] = str(val)
             elif hasattr(val, 'isoformat'):
                 result_dict[key] = val.isoformat()
             elif isinstance(val, float) and not math.isfinite(val):
                 result_dict[key] = None
+            elif isinstance(val, Decimal128):
+                result_dict[key] = float(val.to_decimal())
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
         """Convert aggregation cursor to DataTables-formatted list."""
