@@ -1,7 +1,107 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to mongo-datatables are documented here.
+
+## [1.20.1] - 2026-03-14
+### Fixed
+- `columns[i][searchable]` string coercion: DataTables sends `"true"`/`"false"` as strings from HTTP form data; `column.get("searchable", False)` treated `"false"` as truthy. Fixed in `searchable_columns` property, `get_searchpanes_options`, and `MongoQueryBuilder.build_column_search` using the same membership-test pattern already applied to the `regex` flag.
+
+## [1.20.2] - 2026-03-14
+### Removed
+- Dead `except PyMongoError` block in `count_filtered()` that was unreachable (inner `except Exception` caught first); collapsed to flat 3-level fallback
+- Unused `startRender`/`endRender` keys from `_parse_rowgroup_config()` (server never used them); method reduced from 20 to 6 lines
+
+## [1.20.0] - 2026-03-14
+### Added
+- SearchBuilder date `<=` and `>=` operator support in `_sb_date()`
+
+## [1.19.3] - 2026-03-14
+### Changed
+- Replaced 4 near-identical extension config parsers (`_parse_fixedcolumns_config`, `_parse_searchpanes_config`, `_parse_searchbuilder_config`, `_parse_rowgroup_config`) with single `_parse_extension_config(key)` helper; net -102 lines
+
+## [1.19.2] - 2026-03-14
+### Fixed
+- `re.escape()` missing in colon-syntax `$regex` paths in `build_column_specific_search` and fallback branches of `_build_number_condition`/`_build_date_condition`
+
+## [1.19.1] - 2026-03-14
+### Added
+- `DT_RowClass`, `DT_RowData`, `DT_RowAttr` per-row metadata support via optional constructor params (accepts static value or callable)
+
+### Fixed
+- `search[regex]` string coercion: `bool("false") == True` bug fixed; now checks membership in `(True, "true", "True", 1)`
+
+## [1.19.0] - 2026-03-14
+### Added
+- `columns[i][name]` support in column search (alongside existing `columns[i][data]` lookup)
+
+### Fixed
+- NaN/Inf float values in query results now serialized as `None` to prevent JSON serialization errors
+
+## [1.18.2] - 2026-03-14
+### Fixed
+- `$limit` stage now omitted from aggregation pipeline when `length <= 0` (DataTables "Show All" sends `length: -1`), preventing MongoDB error from `$limit: -1`
+
+## [1.18.1] - 2026-03-14
+### Fixed
+- `count_total()` now passes `custom_filter` to `count_documents()` instead of empty `{}`
+- `_sb_string()` negation conditions (`!=`, `!contains`, `!starts`, `!ends`) now use pure-dict `{"$not": {"$regex": ..., "$options": "i"}}` form instead of `re.compile()` objects, ensuring BSON serializability
+
+## [1.18.0] - 2026-03-14
+### Added
+- SearchPanes `total` + `count` dual-count for full server-side protocol compliance
+- `_remap_aliases()` helper to remap DB field names back to UI aliases in query results
+
+## [1.17.4] - 2026-03-14
+### Changed
+- Removed dead inner `try/except` from `count_total()` that existed only for mock handling
+
+## [1.17.3] - 2026-03-14
+### Fixed
+- `_sb_string()` negation conditions (`!=`, `!contains`, `!starts`, `!ends`) now use
+  `re.compile(..., re.IGNORECASE)` instead of invalid `{"$not": {"$regex": ..., "$options": "i"}}`
+  syntax that MongoDB rejects
+- `build_global_search()` quoted-phrase and unquoted non-text-index paths now resolve
+  column aliases to DB field names via `field_mapper.get_db_field()`, fixing queries
+  that silently matched nothing when DataField aliases differed from MongoDB field names
 
 ## [1.17.2] - 2026-03-14
 ### Fixed
-- `projection` property now resolves UI column aliases to actual MongoDB field names via `field_mapper.get_db_field()`. Previously, aliased DataFields (e.g. `DataField('author.fullName', 'string', alias='Author')`) caused MongoDB to silently omit those fields from query results.
+- `projection` property now resolves UI column aliases to actual MongoDB field names via
+  `field_mapper.get_db_field()`. Previously, aliased DataFields caused MongoDB to silently
+  omit those fields from query results.
+
+## [1.17.1] - 2026-03-14
+### Added
+- ColReorder `order[i][name]` support in `get_sort_specification()` for name-based column ordering
+
+### Changed
+- `filter` property now cached via `_filter_cache` to avoid recomputation on repeated access
+
+## [1.17.0] - 2026-03-14
+### Added
+- SearchBuilder server-side support: full nested AND/OR criteria tree with string, number, and date conditions
+
+## [1.16.1] - 2026-03-14
+### Fixed
+- `build_column_search()` text branch used UI alias instead of `db_field` as MongoDB regex key
+
+## [1.16.0] - 2026-03-14
+### Added
+- Range filtering: pipe-delimited `min|max` syntax for number and date column searches
+
+## [1.15.1] - 2026-03-14
+### Performance
+- Skip `list_indexes()` DB call when `use_text_index=False`
+
+## [1.15.0] - 2026-03-14
+### Added
+- Multi-column sort: `get_sort_specification()` iterates full `order` array and respects `orderable` flag
+
+## [1.14.1] - 2026-03-14
+### Fixed
+- Dead `clean_term` variable removed
+- `\b` anchor corruption in quoted-phrase regex search fixed
+
+## [1.14.0] - 2026-03-14
+### Added
+- Regex search flag support: `search[regex]` and `columns[i][search][regex]` now respected; applies `re.escape()` for literal search, raw pattern for regex mode
