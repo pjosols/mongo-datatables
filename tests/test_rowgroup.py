@@ -75,10 +75,10 @@ class TestRowGroupExtension(BaseDataTablesTest):
 
     def test_rowgroup_data_generation(self):
         """Test RowGroup data generation with aggregation."""
-        # Mock aggregation results
+        # Mock aggregation results — only _id and count are used
         mock_groups = [
-            {"_id": "A", "count": 2, "value_sum": 30, "value_avg": 15},
-            {"_id": "B", "count": 2, "value_sum": 40, "value_avg": 20}
+            {"_id": "A", "count": 2},
+            {"_id": "B", "count": 2}
         ]
         self.collection.aggregate.return_value = mock_groups
         
@@ -182,6 +182,25 @@ class TestRowGroupExtension(BaseDataTablesTest):
         
         response = dt.get_rows()
         assert "rowGroup" not in response
+
+    def test_rowgroup_no_numeric_summaries(self):
+        """Verify group_data contains no _sum or _avg keys (dead code removed)."""
+        self.collection.aggregate.return_value = [
+            {"_id": "A", "count": 3},
+            {"_id": "B", "count": 1}
+        ]
+        request_args = {
+            "draw": "1", "start": "0", "length": "10",
+            "rowGroup": {"dataSrc": "category"},
+            "columns": [{"data": "category", "searchable": "true"}]
+        }
+        dt = DataTables(
+            self.mongo, "test_collection", request_args,
+            data_fields=[DataField("category", "string"), DataField("value", "number")]
+        )
+        result = dt._get_rowgroup_data()
+        for group_values in result["groups"].values():
+            assert not any(k.endswith("_sum") or k.endswith("_avg") for k in group_values)
 
     def test_rowgroup_config_no_datasrc_returns_none(self):
         """Test that rowGroup config without dataSrc returns None."""
