@@ -4,6 +4,75 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## v1.28.2 — 2026-03-15 — BUG FIX: ColumnControl date search with ISO datetime strings
+
+**Type:** Bug Fix  
+**Iteration:** 1 of 10
+
+### Problem
+`_build_column_control_condition` in `query_builder.py` called `DateHandler.parse_iso_date(value)` for `stype == "date"` conditions. `parse_iso_date` only accepts `YYYY-MM-DD` format. The DataTables ColumnControl extension sends full ISO datetime strings (e.g. `2024-01-15T00:00:00.000Z`) as the search value. When such a value was received, `parse_iso_date` raised `FieldMappingError`, caught by the outer `except Exception: pass`, silently producing no filter condition — the column filter appeared to work in the UI but had no effect on results.
+
+### Fix
+One-character change: `DateHandler.parse_iso_date(value)` → `DateHandler.parse_iso_date(value.split('T')[0])`
+
+`value.split('T')[0]` extracts the date portion from any ISO string:
+- `"2024-01-15"` → `"2024-01-15"` (unchanged)
+- `"2024-01-15T00:00:00.000Z"` → `"2024-01-15"` (date extracted)
+
+### Tests Added
+3 new tests in `tests/test_column_control.py` (`TestColumnControlDate`):
+- `test_equal_iso_datetime_string` — ISO datetime value with `equal` logic produces day-range condition
+- `test_greater_iso_datetime_string` — ISO datetime value with `greater` logic produces `$gt` condition  
+- `test_less_iso_datetime_string` — ISO datetime value with `less` logic produces `$lt` condition
+
+### Test Results
+- 3 new tests added, all passing
+- Full suite: 596 passed (was 593), 0 regressions
+
+### Backward Compatibility
+Fully backward compatible. `YYYY-MM-DD` values are unchanged (split on `T` returns the original string as `[0]`). Only ISO datetime strings (previously silently broken) now work correctly.
+
+---
+
+## v1.28.1 — 2026-03-15 — BUG FIX: BSON-serializable `$not` in `_build_column_control_condition`
+
+**Type:** Quality / Bug Fix
+**Iteration:** 4 of 10
+
+### What changed
+
+Fixed `_build_column_control_condition` in `query_builder.py`: the `notContains` and `notEqual` string logic branches used `re.compile()` objects as the value of `$not`, making the resulting query dicts non-BSON/JSON-serializable.
+
+**Before:**
+```python
+elif logic == "notContains":
+    conditions.append({db_field: {"$not": re.compile(escaped, re.IGNORECASE)}})
+elif logic == "notEqual":
+    conditions.append({db_field: {"$not": re.compile(f"^{escaped}$", re.IGNORECASE)}})
+```
+
+**After:**
+```python
+elif logic == "notContains":
+    conditions.append({db_field: {"$not": {"$regex": escaped, "$options": "i"}}})
+elif logic == "notEqual":
+    conditions.append({db_field: {"$not": {"$regex": f"^{escaped}$", "$options": "i"}}})
+```
+
+This is the same class of bug fixed in `_sb_string` in v1.18.1. `re.compile()` objects cannot be serialized to BSON, causing failures when these conditions appear in aggregation pipelines (e.g. SearchPanes, count_filtered). The pure-dict `{"$not": {"$regex": ..., "$options": "i"}}` form is fully BSON-serializable and consistent with the rest of the codebase.
+
+### Test results
+- 10 new tests in `tests/test_column_control_not_bson.py`
+- Updated 2 existing tests in `tests/test_column_control.py` (were asserting old buggy behavior)
+- Full suite: 593 passed (was 583), 0 regressions
+
+### Why this fix
+- `re.compile()` in `$not` is not BSON-serializable — fails silently or raises in aggregation pipelines
+- Consistent with the identical fix applied to `_sb_string` in v1.18.1
+- Pure-dict form works correctly in both `find()` and `aggregate()` contexts
+
+---
+
 ## v1.27.5 — 2026-03-15 — BUG FIX: Multi-colon search terms + html-num SearchBuilder types
 
 **Type:** Bug Fix (2 fixes)
