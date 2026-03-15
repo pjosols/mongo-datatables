@@ -182,14 +182,14 @@ class TestTextSearch(unittest.TestCase):
 
     def test_text_index_search(self):
         with patch.object(DataTables, "has_text_index", return_value=True):
-            dt = DataTables(self.mongo, "users", _base_request("John"))
+            dt = DataTables(self.mongo, "users", _base_request("John"), use_text_index=True)
             cond = dt.global_search_condition
         self.assertIn("$text", cond)
         self.assertEqual(cond["$text"]["$search"], "John")
 
     def test_text_index_quoted_phrase(self):
         with patch.object(DataTables, "has_text_index", return_value=True):
-            dt = DataTables(self.mongo, "users", _base_request('"John Doe"'))
+            dt = DataTables(self.mongo, "users", _base_request('"John Doe"'), use_text_index=True)
             cond = dt.global_search_condition
         self.assertIn("$text", cond)
         self.assertEqual(cond["$text"]["$search"], '"John Doe"')

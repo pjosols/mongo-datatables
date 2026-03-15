@@ -393,7 +393,7 @@ class TestFiltering(BaseDataTablesTest):
 
         # Test with text index
         with patch.object(DataTables, 'has_text_index', return_value=True):
-            datatables = DataTables(self.mongo, 'users', self.request_args)
+            datatables = DataTables(self.mongo, 'users', self.request_args, use_text_index=True)
             result = datatables.filter
             # Should include text search condition
             self.assertIn('$text', result)
@@ -416,7 +416,7 @@ class TestFiltering(BaseDataTablesTest):
 
         # Test with text index
         with patch.object(DataTables, 'has_text_index', return_value=True):
-            datatables = DataTables(self.mongo, 'users', self.request_args, **custom_filter)
+            datatables = DataTables(self.mongo, 'users', self.request_args, use_text_index=True, **custom_filter)
             result = datatables.filter
 
             # The structure of the filter with text search is different in the new implementation
