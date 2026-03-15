@@ -4,6 +4,34 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## Iteration 4 — 2026-03-14
+
+**Type:** Quality  
+**Version:** 1.15.0 → 1.15.1  
+**Focus:** Performance — eliminate unnecessary DB round-trip on init
+
+### Problem
+`_check_text_index()` always called `list(self.collection.list_indexes())` during `__init__`, even when `use_text_index=False`. Every DataTables instantiation incurred an extra MongoDB network call that served no purpose in that code path.
+
+### Change
+`mongo_datatables/datatables.py` — `_check_text_index()`:
+- Added early return when `use_text_index=False`, setting `_has_text_index = False` directly
+- Simplified the detection to `any(...)` (single-pass, no intermediate list)
+
+### Tests Added (4 new)
+`tests/test_datatables_initialization.py`:
+- `test_use_text_index_false_skips_list_indexes` — verifies `list_indexes` not called when disabled
+- `test_use_text_index_true_calls_list_indexes` — verifies `list_indexes` IS called when enabled
+- `test_has_text_index_true_when_index_present` — correct detection of text index
+- `test_has_text_index_false_when_no_index` — correct detection when absent
+
+### Results
+- 272 tests passed (was 268)
+- No regressions
+- API fully backward compatible (`use_text_index` default remains `True`)
+
+---
+
 ## Iteration 1 — 2026-03-14
 
 **Type:** Feature  
@@ -59,3 +87,33 @@ This log tracks iterative improvements made to the mongo-datatables library.
 - `_id` tiebreaker still appended unless `_id` is already in the sort spec
 - Added 10 tests in `test_datatables_sort.py`
 - Result: 246 passed, 0 failed
+
+## Iteration 5 — 2026-03-14
+
+**Type:** Quality / Code Quality
+**Version:** 1.15.0 → 1.15.1
+**Focus:** DRY refactor + bare except fixes
+
+### Changes Made
+
+1. **Extracted `_process_cursor()` helper** (`datatables.py`)
+   - Eliminated ~15 lines of duplicated result-processing logic shared between `results()` and `get_export_data()`
+   - Both methods now delegate cursor-to-list conversion to `_process_cursor()`
+   - Zero behavior change; purely structural improvement
+
+2. **Fixed bare `except:` clauses** in `_parse_searchpanes_filters()` (`datatables.py`)
+   - Number conversion: `except:` → `except (ValueError, TypeError):`
+   - ObjectId conversion: `except:` → `except Exception:`
+   - Prevents silently swallowing serious errors (MemoryError, KeyboardInterrupt, etc.)
+
+### Test Results
+- All existing tests pass (272 passed, 59 subtests passed)
+- No regressions
+- API fully backward compatible
+
+### Quality Impact
+- Reduced code duplication in result processing path
+- Improved exception handling specificity
+- Single point of maintenance for cursor→dict conversion logic
+
+Iteration 6 (v1.15.1→1.16.0): Range filtering — pipe-delimited min|max syntax in column search values for number and date type columns. Also fixed date column search to use date-aware parsing instead of regex. 12 tests added.
