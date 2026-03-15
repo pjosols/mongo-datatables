@@ -101,6 +101,10 @@ class DataTables:
         request_args: Dict[str, Any],
         data_fields: Optional[List['DataField']] = None,
         use_text_index: bool = True,
+        allow_disk_use: bool = False,
+        row_class=None,
+        row_data=None,
+        row_attr=None,
         **custom_filter: Any,
     ) -> None:
         """Initialize the DataTables processor.
@@ -111,6 +115,13 @@ class DataTables:
             request_args: DataTables request parameters
             data_fields: List of DataField objects defining database fields with UI mappings
             use_text_index: Whether to use text indexes when available (default: True)
+            allow_disk_use: Pass allowDiskUse=True to all aggregation pipelines (default: False).
+                            Enables MongoDB to write temporary files when the 100 MB in-memory
+                            aggregation limit is exceeded. Useful for large datasets with complex
+                            SearchBuilder or SearchPanes filters.
+            row_class: Static string or callable(row) -> str for DT_RowClass per-row CSS class
+            row_data: Static dict or callable(row) -> dict for DT_RowData per-row data attributes
+            row_attr: Static dict or callable(row) -> dict for DT_RowAttr per-row HTML attributes
             **custom_filter: Additional filtering criteria
         """
         self.collection = self._get_collection(pymongo_object, collection_name)
@@ -118,6 +129,10 @@ class DataTables:
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
         self.use_text_index = use_text_index
+        self.allow_disk_use = allow_disk_use
+        self.row_class = row_class
+        self.row_data = row_data
+        self.row_attr = row_attr
 
         if 'data_fields' in custom_filter:
             del custom_filter['data_fields']
@@ -265,7 +280,7 @@ class DataTables:
             search_terms,
             self.searchable_columns,
             original_search=self.search_value,
-            search_regex=bool(self.request_args.get("search", {}).get("regex", False))
+            search_regex=self.request_args.get("search", {}).get("regex", False) in (True, "true", "True", 1)
         )
 
     @property
@@ -320,14 +335,14 @@ class DataTables:
                 total_pipeline = ([{"$match": self.custom_filter}] if self.custom_filter else []) + group_stage
                 total_map = {
                     r["_id"]: r["count"]
-                    for r in self.collection.aggregate(total_pipeline)
+                    for r in self.collection.aggregate(total_pipeline, allowDiskUse=self.allow_disk_use)
                 }
 
                 # count: full filter applied
                 count_pipeline = ([{"$match": self.filter}] if self.filter else []) + group_stage
                 count_map = {
                     r["_id"]: r["count"]
-                    for r in self.collection.aggregate(count_pipeline)
+                    for r in self.collection.aggregate(count_pipeline, allowDiskUse=self.allow_disk_use)
                 }
 
                 # Merge: all values from total_map, count from count_map (0 if filtered out)
@@ -686,6 +701,12 @@ class DataTables:
                 d["DT_RowId"] = str(d.pop("_id"))
             self._format_result_values(d)
             d = self._remap_aliases(d)
+            if self.row_class is not None:
+                d["DT_RowClass"] = self.row_class(d) if callable(self.row_class) else self.row_class
+            if self.row_data is not None:
+                d["DT_RowData"] = self.row_data(d) if callable(self.row_data) else self.row_data
+            if self.row_attr is not None:
+                d["DT_RowAttr"] = self.row_attr(d) if callable(self.row_attr) else self.row_attr
             processed.append(d)
         return processed
 
@@ -756,7 +777,7 @@ class DataTables:
 
             pipeline.append({"$project": self.projection})
 
-            self._results = self._process_cursor(self.collection.aggregate(pipeline))
+            self._results = self._process_cursor(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
             return self._results
 
         except PyMongoError as e:
@@ -818,7 +839,7 @@ class DataTables:
                             {"$count": "total"}
                         ]
                         
-                        result = list(self.collection.aggregate(pipeline))
+                        result = list(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
                         self._recordsFiltered = result[0]["total"] if result else 0
                         logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")
                     except Exception as e:
@@ -838,129 +859,21 @@ class DataTables:
                     self._recordsFiltered = 0
         return self._recordsFiltered
 
-    def _parse_fixed_columns_config(self) -> Optional[Dict[str, Any]]:
-        """Parse FixedColumns configuration from request parameters.
-        
-        Returns:
-            FixedColumns configuration dict or None if not requested
-        """
-        fixed_columns = self.request_args.get("fixedColumns")
-        if not fixed_columns:
-            return None
-            
-        config = {}
-        
-        # Parse left fixed columns
-        if "left" in fixed_columns:
-            try:
-                config["left"] = int(fixed_columns["left"])
-            except (ValueError, TypeError):
-                config["left"] = 0
-                
-        # Parse right fixed columns  
-        if "right" in fixed_columns:
-            try:
-                config["right"] = int(fixed_columns["right"])
-            except (ValueError, TypeError):
-                config["right"] = 0
-                
-        return config if config else None
+    def _parse_extension_config(self, key: str) -> Optional[Dict[str, Any]]:
+        """Return the extension config dict from request_args for the given key, or None.
 
-    def _parse_responsive_config(self) -> Optional[Dict[str, Any]]:
-        """Parse Responsive extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing responsive configuration or None if not requested
-        """
-        responsive_params = self.request_args.get("responsive")
-        if not responsive_params:
-            return None
-            
-        config = {}
-        
-        # Parse breakpoints configuration
-        if "breakpoints" in responsive_params:
-            breakpoints = responsive_params["breakpoints"]
-            if isinstance(breakpoints, dict):
-                config["breakpoints"] = breakpoints
-                
-        # Parse display configuration
-        if "display" in responsive_params:
-            display = responsive_params["display"]
-            if isinstance(display, dict):
-                config["display"] = display
-                
-        # Parse column priorities
-        if "priorities" in responsive_params:
-            priorities = responsive_params["priorities"]
-            if isinstance(priorities, dict):
-                config["priorities"] = priorities
-                
-        return config if config else None
+        Args:
+            key: The request_args key for the extension (e.g. ``"fixedColumns"``).
 
-    def _parse_buttons_config(self) -> Optional[Dict[str, Any]]:
-        """Parse Buttons extension configuration from request parameters.
-        
         Returns:
-            Dictionary containing buttons configuration or None if not requested
+            The config dict if present, ``{}`` if the value is ``True``, or ``None``.
         """
-        buttons_params = self.request_args.get("buttons")
-        if not buttons_params:
+        val = self.request_args.get(key)
+        if not val:
             return None
-            
-        config = {}
-        
-        # Parse export configuration
-        if "export" in buttons_params:
-            export_config = buttons_params["export"]
-            if isinstance(export_config, dict):
-                config["export"] = export_config
-                
-        # Parse column visibility configuration
-        if "colvis" in buttons_params:
-            colvis_config = buttons_params["colvis"]
-            if isinstance(colvis_config, dict):
-                config["colvis"] = colvis_config
-                
-        # Parse print configuration
-        if "print" in buttons_params:
-            print_config = buttons_params["print"]
-            if isinstance(print_config, dict):
-                config["print"] = print_config
-                
-        # Parse copy configuration
-        if "copy" in buttons_params:
-            copy_config = buttons_params["copy"]
-            if isinstance(copy_config, dict):
-                config["copy"] = copy_config
-                
-        return config if config else None
-
-    def _parse_select_config(self) -> Optional[Dict[str, Any]]:
-        """Parse Select extension configuration from request parameters.
-        
-        Returns:
-            Dictionary containing select configuration or None if not requested
-        """
-        select_params = self.request_args.get("select")
-        if not select_params:
-            return None
-            
-        # Handle boolean true case (default configuration)
-        if select_params is True:
-            return {"style": "os"}
-            
-        config = {}
-        
-        # Parse selection style
-        if isinstance(select_params, dict):
-            style = select_params.get("style", "os")
-            if style in ["os", "single", "multi", "multi+shift"]:
-                config["style"] = style
-            else:
-                config["style"] = "os"
-                
-        return config if config else None
+        if val is True:
+            return {}
+        return val if isinstance(val, dict) else None
 
     def _parse_rowgroup_config(self) -> Optional[Dict[str, Any]]:
         """Parse RowGroup extension configuration from request parameters.
@@ -1041,7 +954,7 @@ class DataTables:
             pipeline.append(group_stage)
             pipeline.append({"$sort": {"_id": 1}})
             
-            cursor = self.collection.aggregate(pipeline)
+            cursor = self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use)
             groups = list(cursor)
             
             # Format group data
@@ -1088,7 +1001,7 @@ class DataTables:
 
             pipeline.append({"$project": self.projection})
 
-            return self._process_cursor(self.collection.aggregate(pipeline))
+            return self._process_cursor(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
 
         except PyMongoError as e:
             logger.error(f"Error executing export query: {str(e)}", exc_info=True)
@@ -1114,25 +1027,10 @@ class DataTables:
         if self.request_args.get("searchPanes"):
             response["searchPanes"] = {"options": self.get_searchpanes_options()}
             
-        # Add FixedColumns configuration if requested
-        fixed_columns_config = self._parse_fixed_columns_config()
-        if fixed_columns_config:
-            response["fixedColumns"] = fixed_columns_config
-            
-        # Add Responsive configuration if requested
-        responsive_config = self._parse_responsive_config()
-        if responsive_config:
-            response["responsive"] = responsive_config
-            
-        # Add Buttons configuration if requested
-        buttons_config = self._parse_buttons_config()
-        if buttons_config:
-            response["buttons"] = buttons_config
-            
-        # Add Select configuration if requested
-        select_config = self._parse_select_config()
-        if select_config:
-            response["select"] = select_config
+        for ext_key in ("fixedColumns", "responsive", "buttons", "select"):
+            cfg = self._parse_extension_config(ext_key)
+            if cfg is not None:
+                response[ext_key] = cfg
             
         # Add RowGroup data if requested
         rowgroup_data = self._get_rowgroup_data()
