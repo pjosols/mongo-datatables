@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from mongo_datatables.exceptions import QueryBuildError, FieldMappingError
-from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper
+from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +64,12 @@ class MongoQueryBuilder:
             cc = column.get("columnControl")
             has_cc = cc and isinstance(cc, dict)
 
-            if (search_value and column.get("searchable") in (True, "true", "True", 1)) or has_cc:
+            if (search_value and is_truthy(column.get("searchable"))) or has_cc:
                 column_name = column.get("name") or column["data"]
                 field_type = self.field_mapper.get_field_type(column_name)
                 db_field = self.field_mapper.get_db_field(column_name)
 
-                if search_value and column.get("searchable") in (True, "true", "True", 1):
+                if search_value and is_truthy(column.get("searchable")):
                     if field_type == "number":
                         if '|' in search_value:
                             parts = search_value.split('|', 1)
@@ -111,10 +111,10 @@ class MongoQueryBuilder:
                     else:
                         col_ci_raw = column_search.get("caseInsensitive")
                         if col_ci_raw is not None:
-                            col_ci = col_ci_raw in (True, "true", "True", 1)
+                            col_ci = is_truthy(col_ci_raw)
                         else:
                             col_ci = case_insensitive
-                        regex_flag = column_search.get("regex") in (True, "true", "True", 1)
+                        regex_flag = is_truthy(column_search.get("regex"))
                         pattern = search_value if regex_flag else re.escape(search_value)
                         conditions.append({db_field: {"$regex": pattern, "$options": "i" if col_ci else ""}})
 

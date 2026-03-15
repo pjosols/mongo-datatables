@@ -15,6 +15,13 @@ from mongo_datatables.exceptions import FieldMappingError
 
 logger = logging.getLogger(__name__)
 
+_TRUTHY = frozenset([True, "true", "True", 1])
+
+
+def is_truthy(value) -> bool:
+    """Return True if value is a DataTables truthy boolean (True/"true"/"True"/1)."""
+    return value in _TRUTHY
+
 
 class TypeConverter:
     """Utilities for converting string values to appropriate Python types.
