@@ -78,6 +78,7 @@ class Editor:
         validators: Optional[Dict[str, Any]] = None,
         storage_adapter: Optional["StorageAdapter"] = None,
         options=None,
+        hooks: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Initialize the Editor processor.
 
@@ -89,6 +90,9 @@ class Editor:
             data_fields: List of DataField objects defining database fields with UI mappings
             validators: Optional dict mapping field names to callables for field-level validation
             storage_adapter: Optional StorageAdapter instance for file upload handling
+            options: Optional options dict or callable returning options dict
+            hooks: Optional dict of pre-action hooks keyed by 'pre_create', 'pre_edit', 'pre_remove'.
+                Each hook is callable(row_id, row_data) -> bool; falsy return cancels the row.
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
@@ -99,6 +103,7 @@ class Editor:
         self.validators = validators or {}
         self.storage_adapter = storage_adapter
         self._options = options
+        self.hooks = hooks or {}
         self._collection = self._resolve_collection(pymongo_object, collection_name)
 
     def _resolve_options(self):
@@ -216,6 +221,20 @@ class Editor:
 
         return response_doc
 
+    def _run_pre_hook(self, action: str, row_id: str, row_data: dict) -> bool:
+        """Run a pre-action hook if registered; returns False to cancel the row.
+
+        Args:
+            action: Action name ('create', 'edit', 'remove')
+            row_id: Row key or document ID
+            row_data: Row data dict passed to the hook
+
+        Returns:
+            True to proceed, False to cancel this row
+        """
+        hook = self.hooks.get(f"pre_{action}")
+        return bool(hook(row_id, row_data)) if hook else True
+
     def remove(self) -> Dict[str, Any]:
         """Remove one or more documents from the collection.
 
@@ -230,12 +249,16 @@ class Editor:
             raise InvalidDataError("Document ID is required for remove operation")
 
         try:
+            cancelled = []
             for doc_id in self.list_of_ids:
+                if not self._run_pre_hook("remove", doc_id, {}):
+                    cancelled.append(doc_id)
+                    continue
                 try:
                     self.collection.delete_one({"_id": ObjectId(doc_id)})
                 except (ObjectIdError, ValueError) as e:
                     raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
-            return {}
+            return {"cancelled": cancelled} if cancelled else {}
         except InvalidDataError:
             raise
         except PyMongoError as e:
@@ -314,8 +337,12 @@ class Editor:
             raise InvalidDataError("Data is required for create operation")
         try:
             results = []
+            cancelled = []
             for key in sorted(self.data.keys(), key=lambda k: int(k) if k.isdigit() else k):
                 row = self.data[key]
+                if not self._run_pre_hook("create", key, row):
+                    cancelled.append(key)
+                    continue
                 main_data, dot_notation_data = self._preprocess_document(row)
                 data_obj = main_data.copy()
                 for dot_key, value in dot_notation_data.items():
@@ -329,7 +356,10 @@ class Editor:
                 result = self.collection.insert_one(data_obj)
                 created_doc = self.collection.find_one({"_id": result.inserted_id})
                 results.append(self._format_response_document(created_doc))
-            return {"data": results}
+            response = {"data": results}
+            if cancelled:
+                response["cancelled"] = cancelled
+            return response
         except (InvalidDataError, FieldMappingError):
             raise
         except PyMongoError as e:
@@ -408,12 +438,18 @@ class Editor:
 
         try:
             data = []
+            cancelled = []
 
             for doc_id in self.list_of_ids:
                 if doc_id not in self.data:
                     continue
 
                 update_data = self.data[doc_id]
+
+                if not self._run_pre_hook("edit", doc_id, update_data):
+                    cancelled.append(doc_id)
+                    continue
+
                 updates = {}
                 self._process_updates(update_data, updates, "")
 
@@ -430,7 +466,10 @@ class Editor:
                 response_data = self._format_response_document(updated_doc)
                 data.append(response_data)
 
-            return {"data": data}
+            response = {"data": data}
+            if cancelled:
+                response["cancelled"] = cancelled
+            return response
         except (InvalidDataError, FieldMappingError):
             raise
         except PyMongoError as e:
