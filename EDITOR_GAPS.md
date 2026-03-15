@@ -47,12 +47,13 @@ returned alongside `data` in any Editor response. Pass `options=` to
 `Editor.__init__` as a plain dict or zero-arg callable; `process()` merges
 it into every response when set.
 
-### 6. `cancelled` response + pre-event hooks (LOW)
-Protocol supports `cancelled: [row_ids]` for rows the server chose not
-to process. The PHP/Node libraries use `preCreate`/`preEdit`/`preRemove`
-events that can cancel individual rows.
-Add optional pre-operation callbacks; if a callback returns falsy for a
-row, skip it and include its ID in `cancelled`.
+### 6. `cancelled` response + pre-event hooks (LOW) ✅ DONE
+`hooks=` kwarg added to `Editor.__init__` (dict of `'pre_create'`/`'pre_edit'`/`'pre_remove'`
+callables). Each hook is called as `hook(row_id, row_data) -> bool`; a falsy return skips
+that row and adds its ID to a `cancelled` list. The `cancelled` key is included in the
+response only when non-empty. `_run_pre_hook()` helper centralises the dispatch.
+Tests: `tests/test_editor.py::TestEditor::test_run_pre_hook_*`, `test_create_with_hook_*`,
+`test_edit_with_hook_*`, `test_remove_with_hook_*`, `test_remove_partial_cancel`
 
 ### 7. `DT_RowClass`/`DT_RowData`/`DT_RowAttr` in Editor responses (LOW)
 `datatables.py` supports these row metadata fields, but

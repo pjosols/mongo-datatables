@@ -1472,3 +1472,54 @@ elif isinstance(item, float) and not math.isfinite(item):
 - `editor.py`: `options` param in `__init__`, `_resolve_options()` method, `process()` injects options
 - `tests/test_editor_options.py`: 6 new tests
 - Version bumped to v1.34.0
+
+## v1.34.1 — 2026-03-15 — Quality: `is_truthy()` DRY refactor
+
+**Type**: Quality / Refactor  
+**Files changed**: `mongo_datatables/utils.py`, `mongo_datatables/datatables.py`, `mongo_datatables/query_builder.py`  
+**Tests added**: `tests/test_is_truthy.py` (9 new tests)
+
+### Problem
+The inline tuple `(True, "true", "True", 1)` and its negative counterpart `(False, "false", "False", 0)` were copy-pasted at 13 sites across `datatables.py` and `query_builder.py`. Any future change to the truthy set (e.g. adding `"TRUE"`) would require updating all 13 sites.
+
+### Solution
+Added `_TRUTHY = frozenset([True, "true", "True", 1])` and `is_truthy(value) -> bool` to `utils.py`. Replaced all 13 inline checks with `is_truthy(...)`. The two `orderable` sites used `column.get("orderable", True)` to preserve the absent-key-defaults-to-sortable semantics.
+
+### Tests
+- 9 new parametrized tests covering all truthy values, all falsy values, and edge cases (None, empty string, "yes", "1", 2)
+- All 722 existing tests continue to pass (+ 59 subtests)
+
+## v1.35.0 — 2026-03-15 — Editor Gap #6: cancelled response + pre-event hooks
+
+**Type**: Feature (Editor protocol gap)  
+**Files changed**: `mongo_datatables/editor.py`, `tests/test_editor.py`, `EDITOR_GAPS.md`  
+**Tests added**: 16 new tests in `tests/test_editor.py`
+
+### Problem
+The DataTables Editor server protocol supports a `cancelled` array in responses, allowing the server to skip individual rows and report which IDs were not processed. The PHP/Node reference implementations expose `preCreate`/`preEdit`/`preRemove` hooks for this purpose. `editor.py` had no such mechanism.
+
+### Solution
+- Added `hooks: Optional[Dict[str, Any]] = None` parameter to `Editor.__init__`; stored as `self.hooks`.
+- Added `_run_pre_hook(action, row_id, row_data) -> bool`: looks up `self.hooks.get(f"pre_{action}")`, calls it with `(row_id, row_data)`, returns `bool(result)`. No hook → returns `True` (proceed).
+- `create()`: calls `_run_pre_hook("create", key, row)` before each insert; falsy → append key to `cancelled`, skip insert.
+- `edit()`: calls `_run_pre_hook("edit", doc_id, update_data)` before each update; falsy → append to `cancelled`, skip.
+- `remove()`: calls `_run_pre_hook("remove", doc_id, {})` before each delete; falsy → append to `cancelled`, skip.
+- `cancelled` key included in response only when non-empty (backward compatible).
+
+### Tests (16 new, all passing)
+- `test_run_pre_hook_no_hook_returns_true`
+- `test_run_pre_hook_truthy_proceeds`
+- `test_run_pre_hook_falsy_cancels`
+- `test_run_pre_hook_none_return_cancels`
+- `test_create_with_hook_all_proceed`
+- `test_create_with_hook_cancels_row`
+- `test_create_with_hook_partial_cancel`
+- `test_edit_with_hook_cancels_row`
+- `test_edit_with_hook_all_proceed`
+- `test_remove_with_hook_cancels_row`
+- `test_remove_with_hook_all_proceed`
+- `test_remove_partial_cancel`
+- `test_hooks_default_empty`
+- `test_hooks_stored_correctly`
+
+Total tests: 749 passed, 59 subtests (was 722+59).

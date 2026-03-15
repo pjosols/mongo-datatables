@@ -416,6 +416,162 @@ class TestEditor(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("Unsupported action", result["error"])
 
+    # --- Gap #6: pre-event hooks and cancelled response ---
+
+    def test_run_pre_hook_no_hook_returns_true(self):
+        """_run_pre_hook returns True when no hook is registered"""
+        editor = Editor(self.mongo, 'users', self.create_args)
+        self.assertTrue(editor._run_pre_hook("create", "0", {"name": "x"}))
+
+    def test_run_pre_hook_truthy_proceeds(self):
+        """_run_pre_hook returns True when hook returns truthy"""
+        hook = MagicMock(return_value=True)
+        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
+        result = editor._run_pre_hook("create", "0", {"name": "x"})
+        self.assertTrue(result)
+        hook.assert_called_once_with("0", {"name": "x"})
+
+    def test_run_pre_hook_falsy_cancels(self):
+        """_run_pre_hook returns False when hook returns falsy"""
+        hook = MagicMock(return_value=False)
+        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
+        self.assertFalse(editor._run_pre_hook("create", "0", {"name": "x"}))
+
+    def test_run_pre_hook_none_return_cancels(self):
+        """_run_pre_hook returns False when hook returns None"""
+        hook = MagicMock(return_value=None)
+        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
+        self.assertFalse(editor._run_pre_hook("create", "0", {}))
+
+    def test_create_with_hook_all_proceed(self):
+        """create() with hook that allows all rows — no cancelled key in response"""
+        hook = MagicMock(return_value=True)
+        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
+
+        insert_result = MagicMock()
+        insert_result.inserted_id = ObjectId(self.sample_id)
+        self.collection.insert_one.return_value = insert_result
+        self.collection.find_one.return_value = self.sample_doc
+
+        result = editor.create()
+        self.assertIn("data", result)
+        self.assertNotIn("cancelled", result)
+        hook.assert_called_once()
+
+    def test_create_with_hook_cancels_row(self):
+        """create() with hook that cancels a row — row in cancelled, not inserted"""
+        hook = MagicMock(return_value=False)
+        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
+
+        result = editor.create()
+        self.collection.insert_one.assert_not_called()
+        self.assertIn("cancelled", result)
+        self.assertIn("0", result["cancelled"])
+        self.assertEqual(result["data"], [])
+
+    def test_create_with_hook_partial_cancel(self):
+        """create() with hook that cancels only some rows"""
+        multi_create_args = {
+            "action": "create",
+            "data": {
+                "0": {"name": "Alice"},
+                "1": {"name": "Bob"},
+            }
+        }
+        # Cancel row "1", allow row "0"
+        hook = MagicMock(side_effect=lambda row_id, _: row_id == "0")
+        editor = Editor(self.mongo, 'users', multi_create_args, hooks={"pre_create": hook})
+
+        insert_result = MagicMock()
+        insert_result.inserted_id = ObjectId(self.sample_id)
+        self.collection.insert_one.return_value = insert_result
+        self.collection.find_one.return_value = self.sample_doc
+
+        result = editor.create()
+        self.assertEqual(self.collection.insert_one.call_count, 1)
+        self.assertEqual(len(result["data"]), 1)
+        self.assertIn("cancelled", result)
+        self.assertEqual(result["cancelled"], ["1"])
+
+    def test_edit_with_hook_cancels_row(self):
+        """edit() with hook that cancels — doc not updated, ID in cancelled"""
+        hook = MagicMock(return_value=False)
+        editor = Editor(self.mongo, 'users', self.edit_args, self.sample_id,
+                        hooks={"pre_edit": hook})
+
+        result = editor.edit()
+        self.collection.update_one.assert_not_called()
+        self.assertIn("cancelled", result)
+        self.assertIn(self.sample_id, result["cancelled"])
+        self.assertEqual(result["data"], [])
+
+    def test_edit_with_hook_all_proceed(self):
+        """edit() with hook that allows — normal update, no cancelled key"""
+        hook = MagicMock(return_value=True)
+        editor = Editor(self.mongo, 'users', self.edit_args, self.sample_id,
+                        hooks={"pre_edit": hook})
+
+        update_result = MagicMock()
+        update_result.modified_count = 1
+        self.collection.update_one.return_value = update_result
+        self.collection.find_one.return_value = self.updated_doc
+
+        result = editor.edit()
+        self.assertIn("data", result)
+        self.assertNotIn("cancelled", result)
+
+    def test_remove_with_hook_cancels_row(self):
+        """remove() with hook that cancels — doc not deleted, ID in cancelled"""
+        hook = MagicMock(return_value=False)
+        editor = Editor(self.mongo, 'users', self.remove_args, self.sample_id,
+                        hooks={"pre_remove": hook})
+
+        result = editor.remove()
+        self.collection.delete_one.assert_not_called()
+        self.assertIn("cancelled", result)
+        self.assertIn(self.sample_id, result["cancelled"])
+
+    def test_remove_with_hook_all_proceed(self):
+        """remove() with hook that allows — normal delete, returns {}"""
+        hook = MagicMock(return_value=True)
+        editor = Editor(self.mongo, 'users', self.remove_args, self.sample_id,
+                        hooks={"pre_remove": hook})
+
+        delete_result = MagicMock()
+        delete_result.deleted_count = 1
+        self.collection.delete_one.return_value = delete_result
+
+        result = editor.remove()
+        self.collection.delete_one.assert_called_once()
+        self.assertEqual(result, {})
+
+    def test_remove_partial_cancel(self):
+        """remove() with hook that cancels one of two IDs"""
+        ids = f"{self.sample_id},{self.sample_id2}"
+        # Cancel sample_id2, allow sample_id
+        hook = MagicMock(side_effect=lambda doc_id, _: doc_id == self.sample_id)
+        editor = Editor(self.mongo, 'users', self.remove_args, ids,
+                        hooks={"pre_remove": hook})
+
+        delete_result = MagicMock()
+        self.collection.delete_one.return_value = delete_result
+
+        result = editor.remove()
+        self.assertEqual(self.collection.delete_one.call_count, 1)
+        self.assertIn("cancelled", result)
+        self.assertEqual(result["cancelled"], [self.sample_id2])
+
+    def test_hooks_default_empty(self):
+        """Editor initializes with empty hooks when none provided"""
+        editor = Editor(self.mongo, 'users', self.create_args)
+        self.assertEqual(editor.hooks, {})
+
+    def test_hooks_stored_correctly(self):
+        """Editor stores provided hooks dict"""
+        hook = MagicMock()
+        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
+        self.assertIs(editor.hooks["pre_create"], hook)
+
 
 if __name__ == '__main__':
     # Run tests with increased verbosity
