@@ -152,5 +152,15 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         self.assertIsInstance(formatted_dict['array_field'][1], str)
 
 
+    def test_count_filtered_both_aggregate_and_count_documents_fail(self):
+        """When both aggregate and count_documents fail, count_filtered returns 0."""
+        dt = DataTables(self.mongo, 'test_collection', self.request_args, ["name"])
+        dt._filter_cache = {"name": "test"}  # inject non-empty filter via cache
+        self.collection.aggregate.side_effect = PyMongoError("aggregate failed")
+        self.collection.count_documents.side_effect = PyMongoError("count_documents failed")
+        result = dt.count_filtered()
+        self.assertEqual(result, 0)
+
+
 if __name__ == '__main__':
     unittest.main()

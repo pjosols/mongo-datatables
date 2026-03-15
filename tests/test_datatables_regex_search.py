@@ -134,3 +134,35 @@ class TestRegexSearchFlag(BaseDataTablesTest):
         name_cond = next((c["name"] for c in result["$and"] if "name" in c), None)
         self.assertIsNotNone(name_cond)
         self.assertEqual(name_cond["$regex"], "^J.*n$")
+
+    # --- String coercion: DataTables sends "false"/"true" strings, not booleans ---
+
+    def test_global_search_regex_string_false_escapes(self):
+        """search[regex]='false' (string) must be treated as False — special chars escaped."""
+        self.request_args["search"]["value"] = "john.doe"
+        self.request_args["search"]["regex"] = "false"
+        with patch.object(DataTables, 'has_text_index', return_value=False):
+            dt = DataTables(self.mongo, 'users', self.request_args, use_text_index=False)
+            result = dt.global_search_condition
+        patterns = [list(c.values())[0].get("$regex") for c in result.get("$or", []) if isinstance(list(c.values())[0], dict)]
+        self.assertTrue(any(p == "john\\.doe" for p in patterns if p))
+
+    def test_global_search_regex_string_true_raw(self):
+        """search[regex]='true' (string) must be treated as True — raw pattern used."""
+        self.request_args["search"]["value"] = "^john"
+        self.request_args["search"]["regex"] = "true"
+        with patch.object(DataTables, 'has_text_index', return_value=False):
+            dt = DataTables(self.mongo, 'users', self.request_args, use_text_index=False)
+            result = dt.global_search_condition
+        patterns = [list(c.values())[0].get("$regex") for c in result.get("$or", []) if isinstance(list(c.values())[0], dict)]
+        self.assertTrue(any(p == "^john" for p in patterns if p))
+
+    def test_global_search_regex_absent_escapes(self):
+        """search[regex] absent defaults to False — special chars escaped."""
+        self.request_args["search"]["value"] = "a+b"
+        self.request_args["search"].pop("regex", None)
+        with patch.object(DataTables, 'has_text_index', return_value=False):
+            dt = DataTables(self.mongo, 'users', self.request_args, use_text_index=False)
+            result = dt.global_search_condition
+        patterns = [list(c.values())[0].get("$regex") for c in result.get("$or", []) if isinstance(list(c.values())[0], dict)]
+        self.assertTrue(any(p == "a\\+b" for p in patterns if p))

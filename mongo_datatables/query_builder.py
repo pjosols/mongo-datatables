@@ -60,7 +60,7 @@ class MongoQueryBuilder:
             column_search = column.get("search", {})
             search_value = column_search.get("value", "")
 
-            if search_value and column.get("searchable", False):
+            if search_value and column.get("searchable") in (True, "true", "True", 1):
                 column_name = column.get("name") or column["data"]
                 field_type = self.field_mapper.get_field_type(column_name)
 
