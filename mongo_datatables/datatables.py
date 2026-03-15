@@ -126,6 +126,7 @@ class DataTables:
         self._results = None
         self._recordsTotal = None
         self._recordsFiltered = None
+        self._filter_cache = None
         self._has_text_index = None
 
         self._check_text_index()
@@ -165,8 +166,7 @@ class DataTables:
         if not self.use_text_index:
             self._has_text_index = False
             return
-        indexes = list(self.collection.list_indexes())
-        self._has_text_index = any("textIndexVersion" in idx for idx in indexes)
+        self._has_text_index = any("textIndexVersion" in idx for idx in self.collection.list_indexes())
 
     @property
     def has_text_index(self) -> bool:
@@ -471,7 +471,6 @@ class DataTables:
 
     def _sb_number(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
         """Build a MongoDB condition for a numeric SearchBuilder criterion."""
-        from mongo_datatables.utils import TypeConverter
         def _n(v):
             return TypeConverter.to_number(v)
         try:
@@ -489,16 +488,15 @@ class DataTables:
 
     def _sb_date(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
         """Build a MongoDB condition for a date SearchBuilder criterion."""
-        from mongo_datatables.utils import DateHandler
         def _d(v):
             return DateHandler.parse_iso_date(v)
         try:
             if condition == "=":
                 d = _d(v0)
-                return {field: {"$gte": d, "$lt": d + __import__('datetime').timedelta(days=1)}}
+                return {field: {"$gte": d, "$lt": d + timedelta(days=1)}}
             if condition == "!=":
                 d = _d(v0)
-                return {"$or": [{field: {"$lt": d}}, {field: {"$gte": d + __import__('datetime').timedelta(days=1)}}]}
+                return {"$or": [{field: {"$lt": d}}, {field: {"$gte": d + timedelta(days=1)}}]}
             if condition == "<":   return {field: {"$lt": _d(v0)}}
             if condition == ">":   return {field: {"$gt": _d(v0)}}
             if condition == "between":  return {field: {"$gte": _d(v0), "$lte": _d(v1)}}
@@ -525,6 +523,16 @@ class DataTables:
     @property
     def filter(self) -> Dict[str, Any]:
         """Combine all filter conditions into a single MongoDB query.
+
+        Returns:
+            MongoDB query with all filter conditions
+        """
+        if self._filter_cache is None:
+            self._filter_cache = self._build_filter()
+        return self._filter_cache
+
+    def _build_filter(self) -> Dict[str, Any]:
+        """Build the combined MongoDB filter from all active conditions.
 
         Returns:
             MongoDB query with all filter conditions
@@ -577,13 +585,23 @@ class DataTables:
         sort_spec = {}
         for order_info in self.request_args.get("order", []):
             col_idx = int(order_info["column"])
-            if 0 <= col_idx < len(self.columns):
+            order_name = order_info.get("name", "")
+            # Resolve column: prefer name-based lookup (ColReorder), fall back to index
+            column = None
+            if order_name:
+                column = next(
+                    (c for c in self.columns if c.get("name") == order_name or c.get("data") == order_name),
+                    None
+                )
+            if column is None and 0 <= col_idx < len(self.columns):
                 column = self.columns[col_idx]
-                ui_field_name = column.get("data")
-                if ui_field_name and column.get("orderable", "true") != "false":
-                    db_field_name = self.field_mapper.get_db_field(ui_field_name)
-                    if db_field_name not in sort_spec:
-                        sort_spec[db_field_name] = 1 if order_info["dir"] == "asc" else -1
+            if column is None:
+                continue
+            ui_field_name = column.get("data")
+            if ui_field_name and column.get("orderable", "true") != "false":
+                db_field_name = self.field_mapper.get_db_field(ui_field_name)
+                if db_field_name not in sort_spec:
+                    sort_spec[db_field_name] = 1 if order_info["dir"] == "asc" else -1
         if "_id" not in sort_spec:
             sort_spec["_id"] = 1
         return sort_spec
@@ -622,7 +640,7 @@ class DataTables:
 
         for column in self.columns:
             if "data" in column and column["data"]:
-                projection[column["data"]] = 1
+                projection[self.field_mapper.get_db_field(column["data"])] = 1
 
         return projection
 
@@ -768,7 +786,7 @@ class DataTables:
                         result = list(self.collection.aggregate(pipeline))
                         self._recordsFiltered = result[0]["total"] if result else 0
                         logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")
-                    except (PyMongoError, Exception) as e:
+                    except Exception as e:
                         # Fallback to traditional count_documents
                         logger.debug(f"Aggregation failed, using count_documents: {str(e)}")
                         self._recordsFiltered = self.collection.count_documents(self.filter)
