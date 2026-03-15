@@ -43,8 +43,7 @@ class TestColumnControlText:
 
     def test_notContains(self):
         r = self._q("notContains")
-        pat = r["$and"][0]["name"]["$not"]
-        assert isinstance(pat, re.Pattern) and pat.pattern == re.escape("foo")
+        assert r["$and"][0]["name"] == {"$not": {"$regex": re.escape("foo"), "$options": "i"}}
 
     def test_equal(self):
         r = self._q("equal")
@@ -52,8 +51,7 @@ class TestColumnControlText:
 
     def test_notEqual(self):
         r = self._q("notEqual")
-        pat = r["$and"][0]["name"]["$not"]
-        assert isinstance(pat, re.Pattern) and pat.pattern == f"^{re.escape('foo')}$"
+        assert r["$and"][0]["name"] == {"$not": {"$regex": f"^{re.escape('foo')}$", "$options": "i"}}
 
     def test_starts(self):
         r = self._q("starts")
@@ -147,6 +145,19 @@ class TestColumnControlDate:
         cols = [_col("created", {"search": {"value": "", "logic": "notEmpty", "type": "date"}})]
         r = _build(cols, self.FIELDS)
         assert r["$and"][0]["created"] == {"$nin": [None, ""]}
+
+    def test_equal_iso_datetime_string(self):
+        r = self._q("equal", "2024-01-15T00:00:00.000Z")
+        cond = r["$and"][0]["created"]
+        assert "$gte" in cond and "$lt" in cond
+
+    def test_greater_iso_datetime_string(self):
+        r = self._q("greater", "2024-01-15T00:00:00.000Z")
+        assert "$gt" in r["$and"][0]["created"]
+
+    def test_less_iso_datetime_string(self):
+        r = self._q("less", "2024-01-15T00:00:00.000Z")
+        assert "$lt" in r["$and"][0]["created"]
 
 
 # --- List (multi-select) ---

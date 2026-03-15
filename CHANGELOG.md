@@ -1,3 +1,24 @@
+## [1.29.4] - 2026-03-15
+### Fixed
+- `_sb_date` now handles full ISO datetime strings (e.g. `2024-01-15T00:00:00.000Z`) from DataTables SearchBuilder by extracting the date portion with `.split('T')[0]` before parsing. Previously, ISO datetime strings caused `parse_iso_date` to raise `FieldMappingError`, silently returning `{}` — the SearchBuilder date filter appeared to work in the UI but had no effect on results. Same fix as v1.28.2 (ColumnControl) and v1.29.2 (SearchPanes).
+
+## [1.29.0] - 2026-03-15
+
+### Changed
+- Editor now supports all pymongo object types (MongoClient, raw Database, Flask-PyMongo, dict-style), matching DataTables._get_collection behavior
+- `db` property updated to resolve correctly for all supported pymongo object types
+- `collection` property now resolved at construction time via `_resolve_collection()` static method
+
+## [1.28.0] - 2026-03-15
+
+### Added
+- `search[smart]` AND semantics for multi-word global search. When `search[smart]=true` (DataTables default), each search term must match at least one searchable column (`$and` of per-term `$or`s). When `search[smart]=false`, the previous flat `$or` behavior is preserved. Single-term and quoted-phrase searches are unaffected.
+
+## [1.27.5] - 2026-03-15
+### Fixed
+- `search_terms_with_a_colon` now uses `":" in term` instead of `term.count(":") == 1`, fixing silent drop of search terms containing multiple colons (e.g. `url:https://example.com`). Such terms were excluded from both field-specific and global search paths, producing zero results with no error. `build_column_specific_search` already uses `split(":", 1)` so multi-colon values are handled correctly.
+- `_sb_criterion` now routes `html-num` and `html-num-fmt` SearchBuilder column types to `_sb_number` instead of `_sb_string`, matching the DataTables spec. Previously these types produced `$regex` conditions instead of numeric comparisons.
+
 ## [1.27.4] - 2026-03-15
 ### Added / Fixed
 - `get_rows()` now returns a DataTables-compatible error response on unhandled exceptions: `{"draw": ..., "error": str(e), "recordsTotal": 0, "recordsFiltered": 0, "data": []}` instead of propagating the exception to the caller
