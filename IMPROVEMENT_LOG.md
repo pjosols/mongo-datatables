@@ -4,7 +4,55 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
-## Iteration 5 (v1.21.2) — 2026-03-14 — QUALITY: draw Property Refactor
+## v1.27.0 — 2026-03-15 — Feature: columns[i][orderData] support
+
+**Type:** Feature
+**Iteration:** 6 of 10
+
+### What changed
+- `get_sort_specification()` in `datatables.py`: added `orderData` handling after column resolution
+- When `column.get("orderData")` is present, normalize to list of ints and expand sort to those target columns (same direction)
+- Falls back to original behavior when `orderData` is absent
+- 8 new tests in `tests/test_order_data.py`
+
+### Test results
+- New tests: 8/8 passed
+- Full suite: 526 passed (was 518), 0 regressions
+
+### Why this feature
+- DataTables `orderData` is a standard DT config option that was completely unhandled server-side
+- Enables display columns (e.g. formatted names) to sort by underlying data columns (e.g. last_name)
+- Complements existing ColReorder + multi-column sort support
+- Zero impact on existing behavior (purely additive)
+
+---
+
+## Iteration 7 (v1.22.1) — 2026-03-14 — BUG FIX: Invalid Number Search Fallback
+
+**Change:** Fixed `_build_number_condition` silently returning a `$regex` condition when number conversion fails.
+
+**Problem:** When a `number`-typed field received an invalid search value (e.g. `price:abc` or `price:>notanumber`), `_build_number_condition` caught the `FieldMappingError` and returned `{field: {"$regex": ..., "$options": "i"}}`. This is semantically wrong — MongoDB regex matching never matches numeric BSON values, so the condition always returns zero results while silently appearing to work. The correct behavior is to return `None` (skip the condition), consistent with how `build_column_search` already handles invalid numbers.
+
+**Fix:**
+- Changed `except Exception: return {field: {"$regex": ...}}` to `except Exception: return None` in `_build_number_condition`
+- One-line change in `query_builder.py`
+
+**Tests:** `tests/test_invalid_number_search.py` — 7 new tests covering:
+- Invalid colon-syntax value returns empty filter
+- Invalid value produces no `$regex` on number field
+- Invalid value with operator returns empty filter
+- Valid number colon search still works
+- Valid operator colon search still works
+- Invalid column search returns empty filter
+- Invalid column search produces no `$regex` on number field
+
+**Suite:** 491 tests passing (was 484 before this iteration's new tests)
+
+---
+
+## Iteration 6 (v1.22.0) — 2026-03-14 — FEATURE: searchFixed Support
+
+
 
 **Change:** Extracted inline `draw` validation from `get_rows()` into a dedicated `draw` property.
 
@@ -604,3 +652,261 @@ column.get("searchable") in (True, "true", "True", 1)
 
 ### Backward compatibility
 - Fully backward compatible: `searchFixed` key is optional; absent or empty dict is a no-op
+
+## Iteration 24 (v1.22.1 → v1.23.0) — Per-Column searchFixed Support
+
+**Type:** Feature
+**Date:** 2026-03-14
+
+### Problem
+DataTables 2.0+ supports `columns[i][searchFixed]` — a dict of named, persistent fixed searches scoped to a specific column. The existing `_parse_search_fixed()` only handled the top-level `request_args["searchFixed"]` (global fixed searches). Per-column fixed searches were silently ignored.
+
+### Solution
+Added `_parse_column_search_fixed()` method that iterates `self.columns`, reads each column's `searchFixed` dict, and for each non-empty value builds a column-scoped condition via `query_builder.build_column_search()`. Wired into `_build_filter()` alongside the existing global searchFixed handling.
+
+### Changes
+- `mongo_datatables/datatables.py`: Added `_parse_column_search_fixed()` method; wired into `_build_filter()`
+- `tests/test_column_search_fixed.py`: 8 new tests covering all cases
+
+### Tests
+- 8 new tests added, all passing
+- Full suite: 499 passed, 0 failures
+
+---
+
+## Iteration 25 (v1.23.0 → v1.23.1) — 2026-03-15
+
+### Type: Quality / Bug Fix
+
+### Problem
+`_sb_string()` negative conditions (`!=`, `!contains`, `!starts`, `!ends`) produced invalid BSON:
+```python
+# Invalid — $not does not accept $options as a sibling key
+{field: {"$not": {"$regex": "^foo$", "$options": "i"}}}
+```
+MongoDB requires the value of `$not` to be a compiled regex (BSON Regex), not a plain dict. Executing this query against MongoDB raises a server error.
+
+The existing test `test_sb_string_not_bson.py` was written to verify JSON serializability but inadvertently asserted the *wrong* structure (checking for `$options` key in the plain dict), masking the bug.
+
+### Fix
+- `mongo_datatables/datatables.py` — `_sb_string()`: replaced all four `$not` plain-dict patterns with `re.compile(..., re.IGNORECASE)`, which PyMongo serializes as a valid BSON regex.
+- `tests/test_sb_string_not_bson.py`: updated to assert `$not` value is a `re.Pattern` (not a plain dict) and verify `.pattern` and `re.IGNORECASE` flag.
+- `tests/test_search_builder.py`: updated 4 stale assertions (`test_not_equals`, `test_not_contains`, `test_not_starts`, `test_not_ends`) that were checking the old invalid structure.
+
+### Result
+- 499 passed, 59 subtests passed (0 regressions)
+- All negative SearchBuilder string conditions now produce valid BSON
+- Backward compatible: query semantics unchanged, only serialization format corrected
+
+## v1.23.2 — SearchBuilder `!between` fix for number and date types
+
+**Date:** 2026-03-15  
+**Type:** Bug Fix  
+**Iteration:** 2 of 10
+
+### Problem
+`_sb_number` and `_sb_date` used `{field: {"$not": {"$gte": ..., "$lte": ...}}}` for the `!between` condition. MongoDB's `$not` operator cannot wrap a compound range expression — this raised a server error at query time. The same class of bug was fixed for `_sb_string` in v1.23.1 but the number and date handlers were missed.
+
+### Fix
+Replaced invalid `$not` compound with correct `$or` exclusion pattern in both methods:
+- `_sb_number !between`: `{"$or": [{field: {"$lt": v0}}, {field: {"$gt": v1}}]}`
+- `_sb_date !between`: `{"$or": [{field: {"$lt": v0}}, {field: {"$gt": v1}}]}`
+
+### Files Changed
+- `mongo_datatables/datatables.py`: 2 lines changed (`_sb_number` line 557, `_sb_date` line 578)
+- `tests/test_search_builder.py`: `test_not_between` updated + `test_not_between_date` added
+- `setup.py`: version 1.23.1 → 1.23.2
+
+### Test Results
+500 tests passing (499 → 500), 0 failures
+---
+
+## v1.25.0 — 2026-03-15
+
+**Type:** Code Quality / Refactor  
+**Iteration:** 1 of 10 (Balanced Development Workflow)
+
+### Change: Extract `_build_pipeline()` shared helper
+
+**Problem:** `results()` and `get_export_data()` duplicated identical pipeline construction logic (match → sort → project), differing only in the presence of `$skip`/`$limit` stages. This DRY violation meant any future pipeline change required two edits.
+
+**Solution:**
+- Added `_build_pipeline(paginate: bool = True)` private method that builds the aggregation pipeline once
+- `results()` calls `_build_pipeline(paginate=True)` — includes `$skip`/`$limit`
+- `get_export_data()` calls `_build_pipeline(paginate=False)` — omits pagination stages
+- Changed `DataField.VALID_TYPES` from `list` to `frozenset` for O(1) membership testing; updated error message to use `sorted()` for deterministic output
+
+**Tests:** Added `tests/test_build_pipeline.py` with 10 tests covering pipeline structure and consistency between paginated/export paths.
+
+**Results:** 510 tests passing (10 new). Zero regressions. Backward compatible.
+
+## Iteration 26 (v1.25.0 → v1.26.0) - 2026-03-15
+- **Type**: Feature (DataTables 2.x protocol)
+- **Change**: `search.return` optimization — when `search[return]=false`, `get_rows()` returns `recordsFiltered=-1` instead of running the count aggregation. Saves a MongoDB round-trip on large collections where the client doesn't need the filtered count.
+- **Tests**: 7 new tests in `tests/test_search_return.py` (517 total)
+- **Status**: ✅ COMPLETED
+
+## Iteration 4 (v1.26.0 → v1.26.1) — 2026-03-15 — QUALITY: Stale Mock Fix + Operator Parsing Cleanup
+
+**Type:** Quality / Bug Fix  
+**Iteration:** 4 of 10 (Balanced Development Workflow)
+
+### Changes
+
+**1. Fixed stale `$facet` mock in `tests/test_searchpanes.py` (failing test)**
+
+`test_searchpanes_options_generation` used a flat `aggregate.return_value` list:
+```python
+[{"_id": "Active", "count": 5}, {"_id": "Inactive", "count": 3}]
+```
+But `get_searchpanes_options` calls `aggregate` twice and expects `$facet`-shaped output — a single document keyed by column name. The mock was stale relative to the `$facet` refactor in v1.18.0. Fixed to use `side_effect` with the correct shape:
+```python
+facet_doc = {"name": [], "age": [], "status": [{"_id": "Active", "count": 5}, ...]}
+self.collection.aggregate.side_effect = [[facet_doc], [facet_doc]]
+```
+
+**2. Added `IndexError` guard in `get_searchpanes_options` (`datatables.py`)**
+
+The two `list(aggregate(...))[0]` calls would raise `IndexError` on empty collections. Changed to safe pattern:
+```python
+docs = list(self.collection.aggregate(...))
+result = docs[0] if docs else {}
+```
+
+**3. Simplified operator prefix parsing in `query_builder.py`**
+
+Reordered `>=`/`<=` checks before `>`/`<` — eliminates fragile negative guards (`and not value.startswith(">=")`). Behavior identical, logic cleaner:
+```python
+# Before (fragile):
+if value.startswith(">") and not value.startswith(">="):
+# After (clean):
+if value.startswith(">="):
+    ...
+elif value.startswith(">"):
+```
+
+### Test Results
+- 518 passed, 59 subtests passed (0 failures) — was 517 with 1 failure before this iteration
+- Fixed the pre-existing failing test `test_searchpanes_options_generation`
+
+### Backward Compatibility
+Fully backward compatible. All changes are either test fixes or defensive guards with identical happy-path behavior.
+
+## v1.26.2 — 2026-03-15
+
+**Type:** Quality / Code Clarity  
+**Iteration:** 5 of 10 (Balanced Development Workflow)
+
+### Change: Remove redundant `or {}` guards in `count_total()`
+
+**Problem:** `count_total()` used `self.custom_filter or {}` in two places. `self.custom_filter` is always a dict (assigned from `**custom_filter` kwargs in `__init__`), so the `or {}` guard is dead code that misleads readers into thinking `custom_filter` could be `None` or falsy. It was also inconsistent with the rest of the file (`_build_filter` uses `if self.custom_filter:` directly, `count_filtered` uses `self.filter` directly).
+
+**Fix:** Replaced `self.custom_filter or {}` with `self.custom_filter` in both occurrences in `count_total()`.
+
+**Tests:** No new tests needed — behavior is identical. All 518 existing tests pass.
+
+**Backward compatible:** Yes — `count_documents({})` and `count_documents(self.custom_filter)` when `custom_filter == {}` are identical.
+
+## Iteration 7 (Session 2) — v1.27.0 → v1.27.1 — Date Range Upper Bound Bug Fix
+
+**Date:** 2026-03-15
+**Type:** Bug Fix
+**Branch:** fix/date-range-upper-bound-v1.27.1
+
+### Problem
+In `query_builder.py` `build_column_search()`, the date range upper bound was stored under the wrong MongoDB operator key. When a user searched with a pipe-delimited date range (e.g. `2024-01-01|2024-12-31`), the upper bound condition was built as:
+```python
+{"date_field": {"$gte": datetime(2024,1,1), "$lte": datetime(2025,1,1)}}
+```
+Using `$lte` with the next day's midnight (`datetime(2025,1,1,0,0,0)`) incorrectly includes documents timestamped at exactly midnight on January 1, 2025 — one instant beyond the intended range end.
+
+### Root Cause
+`DateHandler.get_date_range_for_comparison(date_str, '<=')` returns `{"$lt": next_day}` (exclusive upper bound). The code correctly retrieved `.get('$lt')` to get the next-day datetime value, but stored it under the key `'$lte'` instead of `'$lt'`.
+
+### Fix
+One-character key change in `query_builder.py`:
+```python
+# Before (buggy)
+range_cond['$lte'] = date_range.get('$lt')
+# After (correct)
+range_cond['$lt'] = date_range.get('$lt')
+```
+This matches the behavior of `_build_date_condition` and `_sb_date` for the `<=` case, and is consistent with how `DateHandler` works throughout the codebase.
+
+### Tests Updated
+- `tests/test_range_filter.py`: Updated `test_both_bounds` and `test_upper_bound_only` assertions from `$lte` → `$lt` key.
+
+### Result
+- 526/526 tests pass
+- No API changes — behavior change is a correctness fix (documents at exact midnight boundary no longer incorrectly included)
+
+## v1.27.2 — 2026-03-15
+
+**Type:** Quality / Performance
+**Iteration:** 9 of 10 (Balanced Development Workflow)
+
+### Change: Pre-compute field mapper lookups in `build_global_search`
+
+**Problem:** In `query_builder.py`, `build_global_search()` called `self.field_mapper.get_field_type(column)` and `self.field_mapper.get_db_field(column)` inside the inner `for term in search_terms` loop. For a search with N terms and M searchable columns, this caused O(N×M) field mapper lookups where O(M) is sufficient — the field type and db field name for a column do not change between terms.
+
+**Fix:** Extracted a `col_meta` list (built once before the term loop) containing `(db_field, field_type)` tuples for all non-date columns. The inner loop now iterates over `col_meta` directly.
+
+```python
+# Before: O(N×M) lookups
+for term in search_terms:
+    for column in searchable_columns:
+        field_type = self.field_mapper.get_field_type(column)  # repeated N times
+        ...
+        or_conditions.append({self.field_mapper.get_db_field(column): ...})  # repeated N times
+
+# After: O(M) lookups
+col_meta = []
+for c in searchable_columns:
+    ft = self.field_mapper.get_field_type(c)   # called once per column
+    if ft != "date":
+        col_meta.append((self.field_mapper.get_db_field(c), ft))  # called once per column
+
+for term in search_terms:
+    for db_field, field_type in col_meta:  # no lookups here
+        ...
+```
+
+**Tests added:** `tests/test_global_search_perf.py` (4 tests)
+- `test_field_mapper_called_once_per_column_not_per_term` — verifies call counts via mock
+- `test_global_search_multi_term_produces_correct_or_conditions` — 2 terms × 2 columns = 4 $or conditions
+- `test_global_search_quoted_phrase_word_boundary` — quoted phrase uses \\b word-boundary regex
+- `test_global_search_skips_date_columns` — date-typed columns excluded from results
+
+**Result:** 559/559 tests pass. No API changes. Backward compatible.
+---
+
+## Iteration 10 (Quality) — v1.27.3
+**Date**: 2026-03-15
+**Type**: Quality / Performance
+**Focus**: Remove dead computation from `_get_rowgroup_data`
+
+### Problem
+`_get_rowgroup_data` in `datatables.py` computed `$sum` and `$avg` MongoDB accumulators for every numeric `DataField` on every RowGroup aggregation query. These values were copied into `group_data` but never consumed by any caller — the DataTables RowGroup extension only uses `count`. This was confirmed by:
+- No caller reading `_sum`/`_avg` keys from the `rowGroup` response
+- The existing test `test_rowgroup_data_generation` not asserting on those keys
+- Coverage showing the numeric-summary passthrough path was effectively untested
+
+### Solution
+- Removed the `for field in self.data_fields` loop that added `$sum`/`$avg` accumulators to the `$group` stage
+- Simplified the result-processing loop to a single dict comprehension: `{str(g['_id']) if g['_id'] is not None else 'null': {'count': g['count']} for g in groups}`
+- Net reduction: ~10 lines of dead code removed from `datatables.py`
+
+### Tests
+- Updated `test_rowgroup_data_generation` mock to return only `_id` + `count` (no `value_sum`/`value_avg`)
+- Added `test_rowgroup_no_numeric_summaries`: asserts no key in any group dict ends with `_sum` or `_avg`
+- **Test count**: 559 → 560 (+1)
+
+### Validation
+- All 560 tests pass (0.72s)
+- Flask demo imports OK
+- Backward compatible: `rowGroup` response shape unchanged (only `dataSrc` + `groups` with `count` per group — same as before)
+
+### Files Changed
+- `mongo_datatables/datatables.py`: simplified `_get_rowgroup_data`
+- `tests/test_rowgroup.py`: updated mock + added 1 test
+- `mongo_datatables/__init__.py`, `setup.py`: version 1.27.2 → 1.27.3

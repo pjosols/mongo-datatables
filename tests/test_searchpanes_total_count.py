@@ -33,16 +33,20 @@ BASE_ARGS = {
     "searchPanes": True,
 }
 
+# $facet returns a single document: {col_name: [{_id, count}, ...]}
+def _facet_result(col_name, rows):
+    return [{col_name: rows}]
+
 
 class TestSearchPanesTotalCount:
 
     def test_options_include_total_and_count_keys(self):
         """Each option must have both 'total' and 'count' keys."""
         dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
-        dt.collection.aggregate.return_value = [
+        dt.collection.aggregate.return_value = _facet_result("status", [
             {"_id": "Active", "count": 5},
             {"_id": "Inactive", "count": 3},
-        ]
+        ])
         options = dt.get_searchpanes_options()
         assert "status" in options
         for opt in options["status"]:
@@ -52,8 +56,9 @@ class TestSearchPanesTotalCount:
     def test_total_equals_base_count_no_filter(self):
         """When no search filter is active, total and count should be equal."""
         dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
-        # Both aggregations return same data (no filter active)
-        dt.collection.aggregate.return_value = [{"_id": "Active", "count": 7}]
+        dt.collection.aggregate.return_value = _facet_result("status", [
+            {"_id": "Active", "count": 7},
+        ])
         options = dt.get_searchpanes_options()
         opt = options["status"][0]
         assert opt["total"] == 7
@@ -65,11 +70,11 @@ class TestSearchPanesTotalCount:
         args["search"] = {"value": "Active", "regex": False}
         dt = _make_dt(args, [DataField("status", "string")])
 
-        # First call (total pipeline) returns both values
-        # Second call (count pipeline, with filter) returns only Active
+        # First call (total pipeline): both values
+        # Second call (count pipeline, with filter): only Active
         dt.collection.aggregate.side_effect = [
-            [{"_id": "Active", "count": 5}, {"_id": "Inactive", "count": 3}],
-            [{"_id": "Active", "count": 5}],
+            _facet_result("status", [{"_id": "Active", "count": 5}, {"_id": "Inactive", "count": 3}]),
+            _facet_result("status", [{"_id": "Active", "count": 5}]),
         ]
         options = dt.get_searchpanes_options()
         status_opts = {o["value"]: o for o in options["status"]}
@@ -79,9 +84,29 @@ class TestSearchPanesTotalCount:
         assert status_opts["Inactive"]["count"] == 0
 
     def test_two_aggregations_called_per_column(self):
-        """get_searchpanes_options must call aggregate twice per column."""
+        """get_searchpanes_options must call aggregate exactly twice (total + count)."""
         dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
-        dt.collection.aggregate.return_value = [{"_id": "Active", "count": 2}]
+        dt.collection.aggregate.return_value = _facet_result("status", [{"_id": "Active", "count": 2}])
+        dt.get_searchpanes_options()
+        assert dt.collection.aggregate.call_count == 2
+
+    def test_two_aggregations_total_regardless_of_column_count(self):
+        """$facet approach must call aggregate exactly 2 times even with multiple columns."""
+        args = dict(BASE_ARGS)
+        args["columns"] = [
+            {"data": "status", "searchable": True, "orderable": True,
+             "search": {"value": "", "regex": False}},
+            {"data": "category", "searchable": True, "orderable": True,
+             "search": {"value": "", "regex": False}},
+            {"data": "region", "searchable": True, "orderable": True,
+             "search": {"value": "", "regex": False}},
+        ]
+        dt = _make_dt(args, [
+            DataField("status", "string"),
+            DataField("category", "string"),
+            DataField("region", "string"),
+        ])
+        dt.collection.aggregate.return_value = [{"status": [], "category": [], "region": []}]
         dt.get_searchpanes_options()
         assert dt.collection.aggregate.call_count == 2
 
@@ -90,7 +115,7 @@ class TestSearchPanesTotalCount:
         args = dict(BASE_ARGS)
         args["search"] = {"value": "something", "regex": False}
         dt = _make_dt(args, [DataField("status", "string")], custom_filter={"tenant": "acme"})
-        dt.collection.aggregate.return_value = []
+        dt.collection.aggregate.return_value = [{"status": []}]
         dt.get_searchpanes_options()
 
         calls = dt.collection.aggregate.call_args_list
@@ -108,7 +133,7 @@ class TestSearchPanesTotalCount:
         args = dict(BASE_ARGS)
         args["search"] = {"value": "Active", "regex": False}
         dt = _make_dt(args, [DataField("status", "string")])
-        dt.collection.aggregate.return_value = []
+        dt.collection.aggregate.return_value = [{"status": []}]
         dt.get_searchpanes_options()
 
         calls = dt.collection.aggregate.call_args_list
@@ -119,11 +144,11 @@ class TestSearchPanesTotalCount:
     def test_options_sorted_by_total_descending(self):
         """Options should be sorted by total count descending."""
         dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
-        dt.collection.aggregate.return_value = [
+        dt.collection.aggregate.return_value = _facet_result("status", [
             {"_id": "Rare", "count": 1},
             {"_id": "Common", "count": 10},
             {"_id": "Medium", "count": 5},
-        ]
+        ])
         options = dt.get_searchpanes_options()
         totals = [o["total"] for o in options["status"]]
         assert totals == sorted(totals, reverse=True)
@@ -145,9 +170,9 @@ class TestSearchPanesTotalCount:
             # results() call
             iter([]),
             # get_searchpanes_options total call
-            [{"_id": "Active", "count": 4}],
+            _facet_result("status", [{"_id": "Active", "count": 4}]),
             # get_searchpanes_options count call
-            [{"_id": "Active", "count": 4}],
+            _facet_result("status", [{"_id": "Active", "count": 4}]),
         ]
         dt.collection.count_documents.return_value = 4
         response = dt.get_rows()

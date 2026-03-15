@@ -1,6 +1,23 @@
+## v1.27.2 — 2026-03-15
+
+### Performance: Pre-compute field mapper lookups in `build_global_search`
+
+- In `query_builder.py`, `build_global_search()` previously called `field_mapper.get_field_type()` and `field_mapper.get_db_field()` inside the inner `for term in search_terms` loop, causing O(N×M) lookups for N terms and M columns.
+- Refactored to pre-compute `col_meta` (a list of `(db_field, field_type)` tuples, excluding date columns) once before the term loop, reducing lookups to O(M).
+- No API changes. Identical output for all inputs.
+- Added 4 new tests in `tests/test_global_search_perf.py` covering: call-count efficiency, multi-term OR conditions, quoted-phrase word-boundary regex, and date-column exclusion.
+
 # Changelog
 
 All notable changes to mongo-datatables are documented here.
+
+## [1.27.1] - 2026-03-15
+### Fixed
+- Date range column search upper bound now uses `$lt` (exclusive) instead of `$lte` (inclusive) with next-day midnight, preventing off-by-one inclusion of documents at exact day boundaries
+
+## [1.27.0] - 2026-03-15
+### Added
+- `columns[i][orderData]` support: when a column definition includes `orderData` (int or list of ints), sorting that column redirects to the specified column indices instead. Scalar and list forms both supported. Out-of-range indices and non-orderable targets are silently skipped. Backward compatible — columns without `orderData` behave identically to before.
 
 ## [1.22.0] - 2026-03-14
 
