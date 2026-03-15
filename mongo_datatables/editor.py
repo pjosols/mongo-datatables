@@ -45,6 +45,22 @@ from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
 logger = logging.getLogger(__name__)
 
 
+class StorageAdapter:
+    """Pluggable storage backend for Editor file uploads.
+
+    Subclass and implement `store` (and optionally `retrieve` / `files_for_field`)
+    to integrate any storage backend (filesystem, GridFS, S3, etc.).
+    """
+
+    def store(self, field: str, filename: str, content_type: str, data: bytes) -> str:
+        """Persist uploaded file data and return a unique file ID string."""
+        raise NotImplementedError
+
+    def retrieve(self, file_id: str) -> bytes:
+        """Return raw bytes for a previously stored file."""
+        raise NotImplementedError
+
+
 class Editor:
     """Server-side processor for DataTables Editor with MongoDB.
 
@@ -59,7 +75,8 @@ class Editor:
         request_args: Dict[str, Any],
         doc_id: Optional[str] = None,
         data_fields: Optional[List[DataField]] = None,
-        validators: Optional[Dict[str, Any]] = None
+        validators: Optional[Dict[str, Any]] = None,
+        storage_adapter: Optional["StorageAdapter"] = None
     ) -> None:
         """Initialize the Editor processor.
 
@@ -70,6 +87,7 @@ class Editor:
             doc_id: Comma-separated list of document IDs for edit/remove operations
             data_fields: List of DataField objects defining database fields with UI mappings
             validators: Optional dict mapping field names to callables for field-level validation
+            storage_adapter: Optional StorageAdapter instance for file upload handling
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
@@ -78,6 +96,7 @@ class Editor:
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
         self.validators = validators or {}
+        self.storage_adapter = storage_adapter
         self._collection = self._resolve_collection(pymongo_object, collection_name)
 
     @staticmethod
@@ -241,6 +260,38 @@ class Editor:
                 seen.add(str_val)
                 results.append({"label": str_val, "value": str_val})
         return {"data": results}
+
+    def upload(self) -> Dict[str, Any]:
+        """Handle action=upload — store a file via the pluggable storage adapter.
+
+        Expects request_args to contain:
+            uploadField: name of the Editor field this file belongs to
+            upload: dict with keys filename, content_type, data (bytes)
+
+        Returns:
+            {"upload": {"id": "<file_id>"}, "files": {<field>: {<id>: {...}} or {}}}
+
+        Raises:
+            InvalidDataError: if adapter, uploadField, or upload data is missing
+        """
+        if not self.storage_adapter:
+            raise InvalidDataError("No storage adapter configured for file uploads")
+        field = self.request_args.get("uploadField", "")
+        if not field:
+            raise InvalidDataError("uploadField is required for upload action")
+        upload = self.request_args.get("upload")
+        if not upload:
+            raise InvalidDataError("No file data provided for upload")
+        file_id = self.storage_adapter.store(
+            field,
+            upload.get("filename", ""),
+            upload.get("content_type", ""),
+            upload.get("data", b""),
+        )
+        files = {}
+        if "files_for_field" in type(self.storage_adapter).__dict__:
+            files[field] = self.storage_adapter.files_for_field(field)
+        return {"upload": {"id": file_id}, "files": files}
 
     def create(self) -> Dict[str, Any]:
         """Create one or more new documents in the collection.
@@ -460,6 +511,7 @@ class Editor:
             "edit": self.edit,
             "remove": self.remove,
             "search": self.search,
+            "upload": self.upload,
         }
 
         if self.action not in actions:
