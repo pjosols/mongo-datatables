@@ -4,6 +4,32 @@ This log tracks iterative improvements made to the mongo-datatables library.
 
 ---
 
+## v1.27.5 — 2026-03-15 — BUG FIX: Multi-colon search terms + html-num SearchBuilder types
+
+**Type:** Bug Fix (2 fixes)
+**Iteration:** 2 of 10
+
+### What changed
+
+**Fix 1 — `search_terms_with_a_colon` (datatables.py)**
+- Changed filter from `term.count(":") == 1` to `":" in term`
+- Fixes silent data loss: terms like `url:https://example.com` (3 colons) were excluded from both `search_terms_with_a_colon` (count != 1) and `search_terms_without_a_colon` (contains `:`) — silently dropped with zero results
+- `build_column_specific_search` already uses `split(":", 1)` so multi-colon values parse correctly as `field=url`, `value=https://example.com`
+
+**Fix 2 — `_sb_criterion` html-num/html-num-fmt dispatch (datatables.py)**
+- Added `"html-num"` and `"html-num-fmt"` to the numeric type dispatch in `_sb_criterion`
+- These are valid DataTables SearchBuilder column types per the spec; previously they fell through to `_sb_string`, producing `$regex` conditions instead of numeric comparisons
+
+### Test results
+- 11 new tests in `tests/test_multi_colon_search.py`
+- Full suite: 575 passed (was 564), 0 regressions
+
+### Why these fixes
+- Multi-colon silent drop: real user-facing data loss for URL fields, email fields, or any colon-containing value in field:value syntax
+- html-num dispatch: spec compliance — numeric HTML columns sent wrong query type to MongoDB
+
+---
+
 ## v1.27.0 — 2026-03-15 — Feature: columns[i][orderData] support
 
 **Type:** Feature
@@ -910,3 +936,48 @@ for term in search_terms:
 - `mongo_datatables/datatables.py`: simplified `_get_rowgroup_data`
 - `tests/test_rowgroup.py`: updated mock + added 1 test
 - `mongo_datatables/__init__.py`, `setup.py`: version 1.27.2 → 1.27.3
+
+## Iteration 1 (Session 2) — v1.27.4 — Error Response Protocol Compliance (2026-03-15)
+
+**Type:** Feature / Protocol Compliance
+**Focus:** DataTables `error` field in `get_rows()` response
+
+### Problem
+The DataTables server-side processing protocol specifies that the server response MAY include an `error` string key to signal failures to the client UI. mongo-datatables had no such handling — unhandled exceptions in `get_rows()` would propagate to the caller (crashing the endpoint), and `_check_text_index()` would raise `PyMongoError` on connection failure during construction.
+
+### Solution
+- Wrapped `get_rows()` body in `try/except Exception`, returning `{"draw": self.draw, "error": str(e), "recordsTotal": 0, "recordsFiltered": 0, "data": []}` on failure
+- Guarded `_check_text_index()` `list_indexes()` call with `try/except PyMongoError`, falling back to `_has_text_index = False`
+- Added 4 new tests covering both error paths and the success (no-error-key) path
+
+### Changes
+- `mongo_datatables/datatables.py`: `get_rows()` try/except wrapper, `_check_text_index()` PyMongoError guard
+- `tests/test_datatables_error_handling.py`: 4 new test methods
+
+### Results
+- 564 tests pass (was 560)
+- flask-demo: 1 passed
+- django-demo: 3 passed
+- Version: 1.27.3 → 1.27.4
+
+## Iteration 26 — v1.28.0 (2026-03-15)
+
+**Type:** Feature
+**Focus:** `search[smart]` AND semantics for multi-word global search
+
+### Problem
+DataTables sends `search[smart]=true` by default. When a user types multiple words (e.g. "John Smith"), the expected behavior is that EACH word must appear somewhere in the matching row (AND semantics). The previous implementation used a flat `$or` across all terms × columns, meaning ANY word matching ANY column returned the row — semantically incorrect for the default DataTables configuration.
+
+### Solution
+Added `search_smart` parameter to `build_global_search()` in `query_builder.py`. When `search_smart=True` and there are multiple search terms, the method builds `$and` of per-term `$or`s instead of a flat `$or`. The `global_search_condition` property in `datatables.py` now reads `search[smart]` from the request (defaulting to `True`) and passes it through.
+
+### Changes
+- `mongo_datatables/query_builder.py`: Added `search_smart=True` param; multi-term path now builds `{"$and": [{"$or": [...]}, {"$or": [...]}]}` when smart=True
+- `mongo_datatables/datatables.py`: `global_search_condition` reads `search.get("smart", True)` with string coercion and passes to `build_global_search`
+- `tests/test_smart_search.py`: 8 new tests covering AND/OR semantics, string coercion, default behavior, empty search
+- Updated 2 existing tests that were asserting old flat-$or behavior for multi-term searches
+
+### Results
+- 583 tests passing (8 new tests added)
+- Backward compatible: single-term, quoted-phrase, and text-index paths unchanged
+- `smart=false` preserves legacy flat-$or behavior
