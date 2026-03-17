@@ -513,6 +513,17 @@ class DataTables:
     def _remap_aliases(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         return remap_aliases(doc, self.field_mapper)
 
+    @staticmethod
+    def _filter_has_text(f: dict) -> bool:
+        """Return True if the filter contains a $text operator at any depth."""
+        if "$text" in f:
+            return True
+        for v in f.values():
+            if isinstance(v, list):
+                if any(isinstance(item, dict) and DataTables._filter_has_text(item) for item in v):
+                    return True
+        return False
+
     def _build_pipeline(self, paginate: bool = True) -> list:
         """Build the aggregation pipeline for results or export.
 
@@ -522,9 +533,16 @@ class DataTables:
         Returns:
             List of MongoDB aggregation pipeline stages.
         """
-        pipeline = list(self.pipeline_stages)
-        if self.filter:
-            pipeline.append({"$match": self.filter})
+        pipeline = []
+        current_filter = self.filter
+        if current_filter and self._filter_has_text(current_filter):
+            # $text match must be the first pipeline stage — prepend before pipeline_stages
+            pipeline.append({"$match": current_filter})
+            pipeline.extend(self.pipeline_stages)
+        else:
+            pipeline.extend(self.pipeline_stages)
+            if current_filter:
+                pipeline.append({"$match": current_filter})
         if self.sort_specification:
             pipeline.append({"$sort": self.sort_specification})
         if paginate:

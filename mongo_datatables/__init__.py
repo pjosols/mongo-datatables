@@ -1,7 +1,7 @@
 """
 MongoDB integration with jQuery DataTables
 """
-__version__ = '1.41.2'
+__version__ = '1.41.3'
 
 from mongo_datatables.datatables import DataTables, DataField
 from mongo_datatables.editor import Editor
