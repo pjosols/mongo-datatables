@@ -1,3 +1,10 @@
+## [1.41.2] - 2026-03-16
+
+### Changed
+- Reverted `use_text_index` default back to `True` (was changed to `False` in v1.41.0).
+  Text index search is the correct default for consistency with v1.1.x releases.
+  Users who prefer substring/regex matching can opt in with `use_text_index=False`.
+
 ## [1.41.1] - 2026-03-16
 
 ### Changed
