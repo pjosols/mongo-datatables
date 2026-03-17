@@ -1,3 +1,10 @@
+## [1.41.3] - 2026-03-16
+
+### Fixed
+- `_build_pipeline`: when the filter contains a `$text` operator, the `$match` stage is now
+  placed before any `pipeline_stages`. MongoDB requires `$match` with `$text` to be the first
+  pipeline stage; previously, non-empty `pipeline_stages` caused an `OperationFailure`.
+
 ## [1.41.2] - 2026-03-16
 
 ### Changed
