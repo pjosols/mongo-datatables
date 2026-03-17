@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.abspath('../..'))
 project = 'mongo-datatables'
 copyright = '2025, Paul Olsen'
 author = 'Paul Olsen'
-release = '1.0.0'
+
+from mongo_datatables import __version__
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from mongo_datatables.exceptions import QueryBuildError, FieldMappingError
-from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper
+from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +44,14 @@ class MongoQueryBuilder:
 
     def build_column_search(
         self,
-        columns: List[Dict[str, Any]]
+        columns: List[Dict[str, Any]],
+        case_insensitive: bool = True,
     ) -> Dict[str, Any]:
         """Build search conditions for individual column searches.
 
         Args:
             columns: List of column configurations from DataTables request
+            case_insensitive: Whether to perform case-insensitive regex searches (default: True)
 
         Returns:
             MongoDB query condition for column-specific searches
@@ -62,57 +64,72 @@ class MongoQueryBuilder:
             cc = column.get("columnControl")
             has_cc = cc and isinstance(cc, dict)
 
-            if (search_value and column.get("searchable") in (True, "true", "True", 1)) or has_cc:
+            if (search_value and is_truthy(column.get("searchable"))) or has_cc:
                 column_name = column.get("name") or column["data"]
                 field_type = self.field_mapper.get_field_type(column_name)
                 db_field = self.field_mapper.get_db_field(column_name)
 
-            if search_value and column.get("searchable") in (True, "true", "True", 1):
-                if field_type == "number":
-                    if '|' in search_value:
-                        parts = search_value.split('|', 1)
-                        range_cond: Dict[str, Any] = {}
-                        try:
-                            if parts[0].strip():
-                                range_cond['$gte'] = TypeConverter.to_number(parts[0].strip())
-                            if parts[1].strip():
-                                range_cond['$lte'] = TypeConverter.to_number(parts[1].strip())
-                        except (ValueError, TypeError, FieldMappingError):
-                            pass
-                        if range_cond:
-                            conditions.append({db_field: range_cond})
+                if search_value and is_truthy(column.get("searchable")):
+                    if field_type == "number":
+                        if '|' in search_value:
+                            parts = search_value.split('|', 1)
+                            range_cond: Dict[str, Any] = {}
+                            try:
+                                if parts[0].strip():
+                                    range_cond['$gte'] = TypeConverter.to_number(parts[0].strip())
+                                if parts[1].strip():
+                                    range_cond['$lte'] = TypeConverter.to_number(parts[1].strip())
+                            except (ValueError, TypeError, FieldMappingError):
+                                pass
+                            if range_cond:
+                                conditions.append({db_field: range_cond})
+                        else:
+                            try:
+                                numeric_value = TypeConverter.to_number(search_value)
+                                conditions.append({db_field: numeric_value})
+                            except (ValueError, TypeError, FieldMappingError):
+                                pass
+                    elif field_type == "date":
+                        if '|' in search_value:
+                            parts = search_value.split('|', 1)
+                            range_cond = {}
+                            try:
+                                if parts[0].strip():
+                                    date_range = DateHandler.get_date_range_for_comparison(parts[0].strip(), '>=')
+                                    range_cond['$gte'] = date_range.get('$gte')
+                                if parts[1].strip():
+                                    date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
+                                    range_cond['$lt'] = date_range.get('$lt')
+                            except (ValueError, TypeError, FieldMappingError):
+                                pass
+                            if range_cond:
+                                conditions.append({db_field: range_cond})
+                        else:
+                            cond = self._build_date_condition(db_field, search_value, '=')
+                            if cond:
+                                conditions.append(cond)
                     else:
-                        try:
-                            numeric_value = TypeConverter.to_number(search_value)
-                            conditions.append({db_field: numeric_value})
-                        except Exception:
-                            pass
-                elif field_type == "date":
-                    if '|' in search_value:
-                        parts = search_value.split('|', 1)
-                        range_cond = {}
-                        try:
-                            if parts[0].strip():
-                                date_range = DateHandler.get_date_range_for_comparison(parts[0].strip(), '>=')
-                                range_cond['$gte'] = date_range.get('$gte')
-                            if parts[1].strip():
-                                date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
-                                range_cond['$lt'] = date_range.get('$lt')
-                        except Exception:
-                            pass
-                        if range_cond:
-                            conditions.append({db_field: range_cond})
-                    else:
-                        cond = self._build_date_condition(db_field, search_value, '=')
-                        if cond:
-                            conditions.append(cond)
-                else:
-                    regex_flag = column_search.get("regex") in (True, "true", "True", 1)
-                    pattern = search_value if regex_flag else re.escape(search_value)
-                    conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
+                        col_ci_raw = column_search.get("caseInsensitive")
+                        if col_ci_raw is not None:
+                            col_ci = is_truthy(col_ci_raw)
+                        else:
+                            col_ci = case_insensitive
+                        regex_flag = is_truthy(column_search.get("regex"))
+                        col_smart = is_truthy(column_search.get("smart", True))
+                        opts = "i" if col_ci else ""
+                        if col_smart and not regex_flag:
+                            words = search_value.split()
+                            if len(words) > 1:
+                                and_terms = [{db_field: {"$regex": re.escape(w), "$options": opts}} for w in words]
+                                conditions.append({"$and": and_terms})
+                            else:
+                                conditions.append({db_field: {"$regex": re.escape(search_value), "$options": opts}})
+                        else:
+                            pattern = search_value if regex_flag else re.escape(search_value)
+                            conditions.append({db_field: {"$regex": pattern, "$options": opts}})
 
-            if has_cc:
-                conditions.extend(self._build_column_control_condition(db_field, field_type, cc))
+                if has_cc:
+                    conditions.extend(self._build_column_control_condition(db_field, field_type, cc))
 
         if conditions:
             return {"$and": conditions}
@@ -125,6 +142,7 @@ class MongoQueryBuilder:
         original_search: str = "",
         search_regex: bool = False,
         search_smart: bool = True,
+        case_insensitive: bool = True,
     ) -> Dict[str, Any]:
         """Build global search conditions.
 
@@ -136,6 +154,9 @@ class MongoQueryBuilder:
             search_terms: List of parsed search terms (without colons)
             searchable_columns: List of searchable column names
             original_search: Original search string before parsing (for quote detection)
+            search_regex: Whether to treat search terms as regex patterns
+            search_smart: Whether to use smart (AND) multi-term search
+            case_insensitive: Whether to perform case-insensitive regex searches (default: True)
 
         Returns:
             MongoDB query condition for global search
@@ -152,7 +173,7 @@ class MongoQueryBuilder:
                 was_quoted = True
 
         if was_quoted and len(search_terms) == 1:
-            if self.use_text_index and self.has_text_index:
+            if self.use_text_index and self.has_text_index and not search_regex and case_insensitive:
                 return {"$text": {"$search": original_search}}
 
             or_conditions = []
@@ -164,13 +185,13 @@ class MongoQueryBuilder:
 
                 regex_term = search_terms[0] if search_regex else re.escape(search_terms[0])
                 pattern = regex_term if search_regex else f"\\b{regex_term}\\b"
-                or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i"}})
+                or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
 
             if or_conditions:
                 return {"$or": or_conditions}
             return {}
 
-        if self.use_text_index and self.has_text_index:
+        if self.use_text_index and self.has_text_index and not search_regex and case_insensitive:
             text_search_query = " ".join(search_terms)
             return {"$text": {"$search": text_search_query}}
 
@@ -189,11 +210,11 @@ class MongoQueryBuilder:
                     if field_type == "number":
                         try:
                             term_conds.append({db_field: TypeConverter.to_number(term)})
-                        except Exception:
+                        except (ValueError, TypeError, FieldMappingError):
                             pass
                     else:
                         pattern = term if search_regex else re.escape(term)
-                        term_conds.append({db_field: {"$regex": pattern, "$options": "i"}})
+                        term_conds.append({db_field: {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
                 if term_conds:
                     per_term.append({"$or": term_conds} if len(term_conds) > 1 else term_conds[0])
             return {"$and": per_term} if per_term else {}
@@ -204,17 +225,18 @@ class MongoQueryBuilder:
                 if field_type == "number":
                     try:
                         or_conditions.append({db_field: TypeConverter.to_number(term)})
-                    except Exception:
+                    except (ValueError, TypeError, FieldMappingError):
                         pass
                 else:
                     pattern = term if search_regex else re.escape(term)
-                    or_conditions.append({db_field: {"$regex": pattern, "$options": "i"}})
+                    or_conditions.append({db_field: {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
         return {"$or": or_conditions} if or_conditions else {}
 
     def build_column_specific_search(
         self,
         colon_terms: List[str],
-        searchable_columns: List[str]
+        searchable_columns: List[str],
+        case_insensitive: bool = True,
     ) -> Dict[str, Any]:
         """Build search conditions for column-specific searches using colon syntax.
 
@@ -267,7 +289,7 @@ class MongoQueryBuilder:
                 if condition:
                     and_conditions.append(condition)
             else:
-                and_conditions.append({db_field: {"$regex": re.escape(value), "$options": "i"}})
+                and_conditions.append({db_field: {"$regex": re.escape(value), "$options": "i" if case_insensitive else ""}})
 
         if and_conditions:
             return {"$and": and_conditions}
@@ -285,7 +307,7 @@ class MongoQueryBuilder:
                     for v in values:
                         try:
                             converted.append(TypeConverter.to_number(v))
-                        except Exception:
+                        except (ValueError, TypeError, FieldMappingError):
                             pass
                     if converted:
                         conditions.append({db_field: {"$in": converted}})
@@ -318,7 +340,7 @@ class MongoQueryBuilder:
                             conditions.append({db_field: {"$lt": num}})
                         elif logic == "lessOrEqual":
                             conditions.append({db_field: {"$lte": num}})
-                    except Exception:
+                    except (ValueError, TypeError, FieldMappingError):
                         pass
                 elif stype == "date":
                     try:
@@ -332,7 +354,7 @@ class MongoQueryBuilder:
                             conditions.append({db_field: {"$gt": parsed}})
                         elif logic == "less":
                             conditions.append({db_field: {"$lt": parsed}})
-                    except Exception:
+                    except (ValueError, TypeError, FieldMappingError):
                         pass
                 else:
                     escaped = re.escape(value)
@@ -382,7 +404,7 @@ class MongoQueryBuilder:
                 return {field: numeric_value}
             else:
                 return {field: numeric_value}
-        except Exception:
+        except (ValueError, TypeError, FieldMappingError):
             return None
 
     def _build_date_condition(
@@ -407,5 +429,5 @@ class MongoQueryBuilder:
                 return {field: date_condition}
             else:
                 return {field: {"$regex": re.escape(value), "$options": "i"}}
-        except Exception:
+        except (ValueError, TypeError, FieldMappingError):
             return {field: {"$regex": re.escape(value), "$options": "i"}}

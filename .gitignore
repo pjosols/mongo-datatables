@@ -39,3 +39,6 @@ htmlcov/
 .cursor/
 .windsurf/
 .aider/
+
+# Local dev notes and scripts
+_dev/
