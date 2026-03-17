@@ -1,25 +1,20 @@
 """Server-side processing for jQuery DataTables with MongoDB."""
 
 import logging
-import math
-import re
-import uuid
-from datetime import timedelta
+
 from typing import Dict, List, Any, Optional
-from bson import Binary, Decimal128, ObjectId, Regex
-from bson.errors import InvalidId as ObjectIdError
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
-from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler, is_truthy
-from mongo_datatables.exceptions import FieldMappingError
+from mongo_datatables.utils import FieldMapper, SearchTermParser, is_truthy
 from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.search_builder import parse_search_builder
+from mongo_datatables.search_fixed import parse_search_fixed, parse_column_search_fixed
+from mongo_datatables.formatting import format_result_values, remap_aliases, process_cursor
+from mongo_datatables.search_panes import get_searchpanes_options as _get_searchpanes_options_fn, parse_searchpanes_filters
 
 logger = logging.getLogger(__name__)
-
-# Bitmask → regex flag letter mapping for BSON Regex serialization
-_REGEX_FLAGS = ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re.VERBOSE, 'x'))
 
 
 class DataField:
@@ -331,340 +326,22 @@ class DataTables:
         )
 
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Generate SearchPanes options with both ``total`` and ``count`` per value.
-
-        Uses a single ``$facet`` aggregation for all columns, reducing MongoDB
-        round-trips from 2N to exactly 2 regardless of column count.
-
-        DataTables SearchPanes server-side protocol requires two counts per option:
-        - ``total``: count across the base dataset (custom_filter only, no search/pane filters)
-        - ``count``: count with all current filters applied
-
-        Returns:
-            Dictionary mapping column names to their option lists
-        """
-        eligible = [
-            (col.get("data"), self.field_mapper.get_db_field(col.get("data")))
-            for col in self.columns
-            if is_truthy(col.get("searchable"))
-            and col.get("data")
-            and self.field_mapper.get_field_type(col.get("data")) not in ("object", "array")
-        ]
-        if not eligible:
-            return {}
-
-        facet_branches = {
-            col_name: [
-                {"$group": {"_id": f"${db_field}", "count": {"$sum": 1}}},
-                {"$match": {"_id": {"$ne": None}}},
-            ]
-            for col_name, db_field in eligible
-        }
-        total_pipeline = ([{"$match": self.custom_filter}] if self.custom_filter else []) + [{"$facet": facet_branches}]
-        count_pipeline = ([{"$match": self.filter}] if self.filter else []) + [{"$facet": facet_branches}]
-
-        try:
-            total_docs = list(self.collection.aggregate(total_pipeline, allowDiskUse=self.allow_disk_use))
-            total_result = total_docs[0] if total_docs else {}
-            count_docs = list(self.collection.aggregate(count_pipeline, allowDiskUse=self.allow_disk_use))
-            count_result = count_docs[0] if count_docs else {}
-        except Exception as e:
-            logger.error(f"Error generating SearchPanes options: {str(e)}")
-            return {col_name: [] for col_name, _ in eligible}
-
-        def _hashable(v):
-            return str(v.to_decimal()) if isinstance(v, Decimal128) else v
-
-        options = {}
-        for col_name, _ in eligible:
-            total_map = {_hashable(r["_id"]): r["count"] for r in total_result.get(col_name, [])}
-            count_map = {_hashable(r["_id"]): r["count"] for r in count_result.get(col_name, [])}
-            column_options = []
-            for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
-                if isinstance(raw_value, ObjectId):
-                    display_value = str(raw_value)
-                elif hasattr(raw_value, 'isoformat'):
-                    display_value = raw_value.isoformat()
-                else:
-                    display_value = str(raw_value) if raw_value is not None else ""
-                column_options.append({
-                    "label": display_value,
-                    "value": display_value,
-                    "total": total,
-                    "count": count_map.get(_hashable(raw_value), 0),
-                })
-            options[col_name] = column_options
-        return options
+        return _get_searchpanes_options_fn(
+            self.columns, self.field_mapper, self.custom_filter, self.filter,
+            self.collection, self.allow_disk_use,
+        )
 
     def _parse_searchpanes_filters(self) -> Dict[str, Any]:
-        """Parse SearchPanes filter parameters from request.
-
-        Returns:
-            MongoDB query conditions for SearchPanes filters
-        """
-        conditions = []
-        
-        # Check for searchPanes parameter in request
-        searchpanes = self.request_args.get("searchPanes", {})
-        
-        # If searchPanes is just a boolean flag, no filters to apply
-        if not isinstance(searchpanes, dict):
-            return {}
-        
-        for column_name, selected_values in searchpanes.items():
-            if not selected_values:
-                continue
-                
-            db_field = self.field_mapper.get_db_field(column_name)
-            field_type = self.field_mapper.get_field_type(column_name)
-            
-            # Convert values based on field type
-            converted_values = []
-            for value in selected_values:
-                if field_type == "number":
-                    try:
-                        converted_values.append(TypeConverter.to_number(value))
-                    except (ValueError, TypeError):
-                        converted_values.append(value)
-                elif field_type == "objectid":
-                    try:
-                        converted_values.append(ObjectId(value))
-                    except (ObjectIdError, ValueError):
-                        converted_values.append(value)
-                elif field_type == "date":
-                    try:
-                        converted_values.append(DateHandler.parse_iso_date(value.split('T')[0]))
-                    except FieldMappingError:
-                        converted_values.append(value)
-                else:
-                    converted_values.append(value)
-            
-            if converted_values:
-                conditions.append({db_field: {"$in": converted_values}})
-        
-        if conditions:
-            return {"$and": conditions}
-        return {}
+        return parse_searchpanes_filters(self.request_args, self.field_mapper)
 
     def _parse_search_fixed(self) -> Dict[str, Any]:
-        """Parse searchFixed named searches (DataTables 2.0+) into a MongoDB filter.
-
-        Supports both the DataTables 2.x wire format (``search.fixed`` array of
-        ``{name, term}`` objects) and the legacy dict format (``searchFixed`` dict).
-        Entries with ``term == "function"`` are skipped (client-side-only functions).
-
-        Each named fixed search is ANDed with the main query. Values are treated
-        as global search terms across all searchable columns.
-        """
-        # DataTables 2.x wire format: search.fixed is an array of {name, term}
-        fixed_array = self.request_args.get("search", {}).get("fixed", [])
-        # Legacy/custom format: top-level searchFixed dict
-        legacy_dict = self.request_args.get("searchFixed", {})
-
-        terms_to_apply = []
-        if isinstance(fixed_array, list):
-            for entry in fixed_array:
-                term = entry.get("term") if isinstance(entry, dict) else None
-                if term and term != "function":
-                    terms_to_apply.append(term)
-        if isinstance(legacy_dict, dict):
-            for value in legacy_dict.values():
-                if value:
-                    terms_to_apply.append(str(value))
-
-        search_config = self.request_args.get("search", {}) if isinstance(self.request_args.get("search"), dict) else {}
-        search_regex = is_truthy(search_config.get("regex", False))
-        case_insensitive = is_truthy(search_config.get("caseInsensitive", True))
-        conditions = []
-        for value in terms_to_apply:
-            parsed = SearchTermParser.parse(str(value))
-            cond = self.query_builder.build_global_search(
-                parsed, self.searchable_columns, original_search=str(value),
-                search_regex=search_regex, case_insensitive=case_insensitive
-            )
-            if cond:
-                conditions.append(cond)
-        if not conditions:
-            return {}
-        return {"$and": conditions} if len(conditions) > 1 else conditions[0]
+        return parse_search_fixed(self.request_args, self.query_builder, self.searchable_columns)
 
     def _parse_column_search_fixed(self) -> Dict[str, Any]:
-        """Parse per-column searchFixed (DataTables 2.0+) into a MongoDB filter.
-
-        Supports both the DataTables 2.x wire format (``columns[i].search.fixed``
-        array of ``{name, term}`` objects) and the legacy dict format
-        (``columns[i].searchFixed`` dict). Entries with ``term == "function"`` are
-        skipped.
-
-        Returns:
-            MongoDB query condition, or ``{}`` if no column-level fixed searches exist.
-        """
-        conditions = []
-        for col in self.columns:
-            db_field = self.field_mapper.get_db_field(col.get("data", ""))
-            if not db_field:
-                continue
-
-            # DataTables 2.x wire format: col.search.fixed array
-            fixed_array = col.get("search", {}).get("fixed", []) if isinstance(col.get("search"), dict) else []
-            # Legacy format: col.searchFixed dict
-            legacy_dict = col.get("searchFixed", {})
-
-            col_terms = []
-            if isinstance(fixed_array, list):
-                for entry in fixed_array:
-                    term = entry.get("term") if isinstance(entry, dict) else None
-                    if term and term != "function":
-                        col_terms.append(term)
-            if isinstance(legacy_dict, dict):
-                for value in legacy_dict.values():
-                    if value:
-                        col_terms.append(str(value))
-
-            existing_search = col.get("search", {}) if isinstance(col.get("search"), dict) else {}
-            for value in col_terms:
-                cond = self.query_builder.build_column_search(
-                    [{**col, "search": {
-                        "value": str(value),
-                        "regex": False,
-                        "smart": existing_search.get("smart", True),
-                        "caseInsensitive": existing_search.get("caseInsensitive", True),
-                    }}]
-                )
-                if cond:
-                    conditions.append(cond)
-
-        if not conditions:
-            return {}
-        return {"$and": conditions} if len(conditions) > 1 else conditions[0]
+        return parse_column_search_fixed(self.columns, self.field_mapper, self.query_builder)
 
     def _parse_search_builder(self) -> Dict[str, Any]:
-        """Translate a SearchBuilder criteria tree into a MongoDB query.
-
-        The DataTables SearchBuilder extension sends a nested ``searchBuilder``
-        parameter when ``serverSide: true`` is enabled.  Each leaf criterion has
-        the shape::
-
-            {
-                "condition": "=",
-                "origData": "salary",
-                "type": "num",
-                "value": ["50000"]
-            }
-
-        Groups are nested via a ``criteria`` list and a ``logic`` key
-        (``"AND"`` or ``"OR"``).
-
-        Returns:
-            MongoDB query dict, or ``{}`` if no SearchBuilder data is present.
-        """
-        sb = self.request_args.get("searchBuilder")
-        if not sb or not isinstance(sb, dict):
-            return {}
-        return self._sb_group(sb)
-
-    def _sb_group(self, group: Dict[str, Any]) -> Dict[str, Any]:
-        """Recursively convert a SearchBuilder group to a MongoDB condition."""
-        logic = group.get("logic", "AND").upper()
-        mongo_op = "$and" if logic == "AND" else "$or"
-        parts = []
-        for criterion in group.get("criteria", []):
-            if "criteria" in criterion:
-                # nested group
-                sub = self._sb_group(criterion)
-                if sub:
-                    parts.append(sub)
-            else:
-                cond = self._sb_criterion(criterion)
-                if cond:
-                    parts.append(cond)
-        if not parts:
-            return {}
-        return {mongo_op: parts} if len(parts) > 1 else parts[0]
-
-    def _sb_criterion(self, criterion: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert a single SearchBuilder leaf criterion to a MongoDB condition."""
-        condition = criterion.get("condition", "")
-        orig_data = criterion.get("origData") or criterion.get("data", "")
-        values = criterion.get("value", [])
-        sb_type = criterion.get("type", "string")
-
-        if not orig_data or not condition:
-            return {}
-
-        db_field = self.field_mapper.get_db_field(orig_data)
-        v0 = values[0] if values else None
-        v1 = values[1] if len(values) > 1 else criterion.get("value2")
-
-        # null / not-null — type-aware: num/date only check None; string/html also check empty string
-        if condition == "null":
-            if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt", "date", "moment", "luxon"):
-                return {db_field: None}
-            return {db_field: {"$in": [None, ""]}}
-        if condition == "!null":
-            if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt", "date", "moment", "luxon"):
-                return {db_field: {"$ne": None}}
-            return {db_field: {"$nin": [None, ""]}}
-
-        if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt"):
-            return self._sb_number(db_field, condition, v0, v1)
-        if sb_type in ("date", "moment", "luxon"):
-            return self._sb_date(db_field, condition, v0, v1)
-        # string / html / array / default
-        return self._sb_string(db_field, condition, v0)
-
-    def _sb_number(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
-        """Build a MongoDB condition for a numeric SearchBuilder criterion."""
-        def _n(v):
-            return TypeConverter.to_number(v)
-        try:
-            if condition == "=":   return {field: _n(v0)}
-            if condition == "!=":  return {field: {"$ne": _n(v0)}}
-            if condition == "<":   return {field: {"$lt": _n(v0)}}
-            if condition == "<=":  return {field: {"$lte": _n(v0)}}
-            if condition == ">":   return {field: {"$gt": _n(v0)}}
-            if condition == ">=":  return {field: {"$gte": _n(v0)}}
-            if condition == "between":  return {field: {"$gte": _n(v0), "$lte": _n(v1)}}
-            if condition == "!between": return {"$or": [{field: {"$lt": _n(v0)}}, {field: {"$gt": _n(v1)}}]}
-        except (ValueError, TypeError, FieldMappingError):
-            pass
-        return {}
-
-    def _sb_date(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
-        """Build a MongoDB condition for a date SearchBuilder criterion."""
-        def _d(v):
-            return DateHandler.parse_iso_date(v.split('T')[0])
-        try:
-            if condition == "=":
-                d = _d(v0)
-                return {field: {"$gte": d, "$lt": d + timedelta(days=1)}}
-            if condition == "!=":
-                d = _d(v0)
-                return {"$or": [{field: {"$lt": d}}, {field: {"$gte": d + timedelta(days=1)}}]}
-            if condition == "<":   return {field: {"$lt": _d(v0)}}
-            if condition == "<=":  return {field: {"$lt": _d(v0) + timedelta(days=1)}}
-            if condition == ">":   return {field: {"$gt": _d(v0)}}
-            if condition == ">=":  return {field: {"$gte": _d(v0)}}
-            if condition == "between":  return {field: {"$gte": _d(v0), "$lt": _d(v1) + timedelta(days=1)}}
-            if condition == "!between": return {"$or": [{field: {"$lt": _d(v0)}}, {field: {"$gte": _d(v1) + timedelta(days=1)}}]}
-        except (ValueError, TypeError, FieldMappingError):
-            pass
-        return {}
-
-    def _sb_string(self, field: str, condition: str, v0) -> Dict[str, Any]:
-        """Build a MongoDB condition for a string SearchBuilder criterion."""
-        if v0 is None:
-            return {}
-        s = re.escape(v0)
-        if condition == "=":        return {field: {"$regex": f"^{s}$", "$options": "i"}}
-        if condition == "!=":       return {field: {"$not": {"$regex": f"^{s}$", "$options": "i"}}}
-        if condition == "contains":  return {field: {"$regex": s, "$options": "i"}}
-        if condition == "!contains": return {field: {"$not": {"$regex": s, "$options": "i"}}}
-        if condition == "starts":    return {field: {"$regex": f"^{s}", "$options": "i"}}
-        if condition == "!starts":   return {field: {"$not": {"$regex": f"^{s}", "$options": "i"}}}
-        if condition == "ends":      return {field: {"$regex": f"{s}$", "$options": "i"}}
-        if condition == "!ends":     return {field: {"$not": {"$regex": f"{s}$", "$options": "i"}}}
-        return {}
+        return parse_search_builder(self.request_args, self.field_mapper)
 
     @property
     def filter(self) -> Dict[str, Any]:
@@ -829,112 +506,13 @@ class DataTables:
         return projection
 
     def _format_result_values(self, result_dict: Dict[str, Any], parent_key: str = "") -> None:
-        """Recursively format values in result dictionary for JSON serialization.
-
-        Args:
-            result_dict: Dictionary to process
-            parent_key: Key of parent for nested dictionaries
-        """
-        if not result_dict:
-            return
-            
-        items = list(result_dict.items())
-        for key, val in items:
-            full_key = f"{parent_key}.{key}" if parent_key else key
-
-            if isinstance(val, dict):
-                self._format_result_values(val, full_key)
-            elif isinstance(val, list):
-                for i, item in enumerate(val):
-                    if isinstance(item, dict):
-                        self._format_result_values(item, f"{full_key}[{i}]")
-                    elif isinstance(item, ObjectId):
-                        val[i] = str(item)
-                    elif hasattr(item, 'isoformat'):
-                        val[i] = item.isoformat()
-                    elif isinstance(item, Decimal128):
-                        val[i] = float(item.to_decimal())
-                    elif isinstance(item, Binary):
-                        val[i] = str(uuid.UUID(bytes=bytes(item))) if item.subtype in (3, 4) else item.hex()
-                    elif isinstance(item, Regex):
-                        flags = ''.join(v for k, v in _REGEX_FLAGS if int(item.flags) & int(k))
-                        val[i] = f'/{item.pattern}/{flags}'
-                    elif isinstance(item, float) and not math.isfinite(item):
-                        val[i] = None
-            elif isinstance(val, ObjectId):
-                result_dict[key] = str(val)
-            elif hasattr(val, 'isoformat'):
-                result_dict[key] = val.isoformat()
-            elif isinstance(val, float) and not math.isfinite(val):
-                result_dict[key] = None
-            elif isinstance(val, Decimal128):
-                result_dict[key] = float(val.to_decimal())
-            elif isinstance(val, Binary):
-                result_dict[key] = str(uuid.UUID(bytes=bytes(val))) if val.subtype in (3, 4) else val.hex()
-            elif isinstance(val, Regex):
-                flags = ''.join(v for k, v in _REGEX_FLAGS if int(val.flags) & int(k))
-                result_dict[key] = f'/{val.pattern}/{flags}'
+        format_result_values(result_dict, parent_key)
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
-        """Convert aggregation cursor to DataTables-formatted list."""
-        processed = []
-        for result in cursor:
-            d = dict(result)
-            if self.row_id and self.row_id in d:
-                d["DT_RowId"] = str(d[self.row_id])
-            elif "_id" in d:
-                d["DT_RowId"] = str(d.pop("_id"))
-            self._format_result_values(d)
-            d = self._remap_aliases(d)
-            if self.row_class is not None:
-                d["DT_RowClass"] = self.row_class(d) if callable(self.row_class) else self.row_class
-            if self.row_data is not None:
-                d["DT_RowData"] = self.row_data(d) if callable(self.row_data) else self.row_data
-            if self.row_attr is not None:
-                d["DT_RowAttr"] = self.row_attr(d) if callable(self.row_attr) else self.row_attr
-            processed.append(d)
-        return processed
+        return process_cursor(cursor, self.row_id, self.field_mapper, self.row_class, self.row_data, self.row_attr)
 
     def _remap_aliases(self, doc: Dict[str, Any]) -> Dict[str, Any]:
-        """Remap DB field names to UI aliases in a result document.
-
-        For DataFields with dot-notation names (e.g. 'PublisherInfo.Date'),
-        MongoDB returns nested dicts. This method extracts the value and
-        stores it under the UI alias key, removing the intermediate nesting
-        when no other fields from that parent are needed.
-        """
-        if not self.field_mapper.db_to_ui:
-            return doc
-        for db_field, ui_alias in self.field_mapper.db_to_ui.items():
-            if db_field == ui_alias:
-                continue  # no remapping needed
-            if '.' in db_field:
-                # Extract value from nested structure
-                parts = db_field.split('.')
-                val = doc
-                for part in parts:
-                    if isinstance(val, dict) and part in val:
-                        val = val[part]
-                    else:
-                        val = None
-                        break
-                if val is not None:
-                    doc[ui_alias] = val
-                    # Remove top-level parent key only if it's no longer needed
-                    top = parts[0]
-                    if top in doc and isinstance(doc[top], dict):
-                        # Check if any other db_field uses this same top-level key
-                        other_uses = any(
-                            f != db_field and f.startswith(top + '.')
-                            for f in self.field_mapper.db_to_ui
-                        )
-                        if not other_uses:
-                            del doc[top]
-            else:
-                # Simple rename: db_field key -> ui_alias key
-                if db_field in doc:
-                    doc[ui_alias] = doc.pop(db_field)
-        return doc
+        return remap_aliases(doc, self.field_mapper)
 
     def _build_pipeline(self, paginate: bool = True) -> list:
         """Build the aggregation pipeline for results or export.

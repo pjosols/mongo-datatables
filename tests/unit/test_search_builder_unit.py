@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.query_builder import MongoQueryBuilder
 from mongo_datatables.exceptions import FieldMappingError
+from mongo_datatables.search_builder import _sb_date, _sb_number, _sb_string
 
 
 # ---------------------------------------------------------------------------
@@ -289,23 +290,22 @@ class TestSearchBuilderFilterIntegration:
 
 class TestSbDateIsoDatetime(unittest.TestCase):
     def setUp(self):
-        self.dt = _make_sb_date_dt()
         self.field = "created_at"
 
     def test_equal_iso_datetime_string(self):
-        result = self.dt._sb_date(self.field, "=", "2024-01-15T00:00:00.000Z", None)
+        result = _sb_date(self.field, "=", "2024-01-15T00:00:00.000Z", None)
         self.assertEqual(result, {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}})
 
     def test_greater_iso_datetime_string(self):
-        result = self.dt._sb_date(self.field, ">", "2024-01-15T00:00:00.000Z", None)
+        result = _sb_date(self.field, ">", "2024-01-15T00:00:00.000Z", None)
         self.assertEqual(result, {self.field: {"$gt": datetime(2024, 1, 15)}})
 
     def test_less_iso_datetime_string(self):
-        result = self.dt._sb_date(self.field, "<", "2024-01-15T00:00:00.000Z", None)
+        result = _sb_date(self.field, "<", "2024-01-15T00:00:00.000Z", None)
         self.assertEqual(result, {self.field: {"$lt": datetime(2024, 1, 15)}})
 
     def test_plain_date_string_unchanged(self):
-        result = self.dt._sb_date(self.field, "=", "2024-01-15", None)
+        result = _sb_date(self.field, "=", "2024-01-15", None)
         self.assertEqual(result, {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}})
 
 
@@ -315,48 +315,37 @@ class TestSbDateIsoDatetime(unittest.TestCase):
 
 class TestSbDateOperators(unittest.TestCase):
     def setUp(self):
-        collection = MagicMock()
-        collection.list_indexes.return_value = []
-        mongo = MagicMock()
-        mongo.__getitem__ = MagicMock(return_value=collection)
-        self.dt = DataTables(mongo, "col", {
-            "draw": 1, "start": 0, "length": 10,
-            "search": {"value": "", "regex": False},
-            "order": [{"column": 0, "dir": "asc"}],
-            "columns": [{"data": "date_field", "searchable": True, "orderable": True,
-                         "search": {"value": "", "regex": False}}],
-        })
         self.field = "created_at"
         self.date_str = "2024-03-15"
         self.day_start = datetime(2024, 3, 15)
         self.next_day = datetime(2024, 3, 16)
 
     def test_sb_date_lte_returns_lt_next_day(self):
-        result = self.dt._sb_date(self.field, "<=", self.date_str, None)
+        result = _sb_date(self.field, "<=", self.date_str, None)
         self.assertEqual(result, {self.field: {"$lt": self.next_day}})
 
     def test_sb_date_gte_returns_gte_day_start(self):
-        result = self.dt._sb_date(self.field, ">=", self.date_str, None)
+        result = _sb_date(self.field, ">=", self.date_str, None)
         self.assertEqual(result, {self.field: {"$gte": self.day_start}})
 
     def test_sb_date_lt_still_works(self):
-        result = self.dt._sb_date(self.field, "<", self.date_str, None)
+        result = _sb_date(self.field, "<", self.date_str, None)
         self.assertEqual(result, {self.field: {"$lt": self.day_start}})
 
     def test_sb_date_gt_still_works(self):
-        result = self.dt._sb_date(self.field, ">", self.date_str, None)
+        result = _sb_date(self.field, ">", self.date_str, None)
         self.assertEqual(result, {self.field: {"$gt": self.day_start}})
 
     def test_sb_date_eq_still_works(self):
-        result = self.dt._sb_date(self.field, "=", self.date_str, None)
+        result = _sb_date(self.field, "=", self.date_str, None)
         self.assertEqual(result, {self.field: {"$gte": self.day_start, "$lt": self.next_day}})
 
     def test_sb_date_between_still_works(self):
-        result = self.dt._sb_date(self.field, "between", "2024-03-01", "2024-03-31")
+        result = _sb_date(self.field, "between", "2024-03-01", "2024-03-31")
         self.assertEqual(result, {self.field: {"$gte": datetime(2024, 3, 1), "$lt": datetime(2024, 4, 1)}})
 
     def test_sb_date_invalid_date_returns_empty(self):
-        result = self.dt._sb_date(self.field, "<=", "not-a-date", None)
+        result = _sb_date(self.field, "<=", "not-a-date", None)
         self.assertEqual(result, {})
 
 
@@ -366,32 +355,32 @@ class TestSbDateOperators(unittest.TestCase):
 
 class TestSbNumberExceptionNarrowing:
     def test_invalid_number_returns_empty(self):
-        assert _make_qb_dt()._sb_number('price', '=', 'not-a-number', None) == {}
+        assert _sb_number('price', '=', 'not-a-number', None) == {}
 
     def test_invalid_number_between_returns_empty(self):
-        assert _make_qb_dt()._sb_number('price', 'between', 'abc', 'xyz') == {}
+        assert _sb_number('price', 'between', 'abc', 'xyz') == {}
 
     def test_valid_number_works(self):
-        assert _make_qb_dt()._sb_number('price', '=', '42', None) == {'price': 42}
+        assert _sb_number('price', '=', '42', None) == {'price': 42}
 
     def test_valid_number_gt_works(self):
-        assert _make_qb_dt()._sb_number('price', '>', '10', None) == {'price': {'$gt': 10}}
+        assert _sb_number('price', '>', '10', None) == {'price': {'$gt': 10}}
 
 
 class TestSbDateExceptionNarrowing:
     def test_invalid_date_returns_empty(self):
-        assert _make_qb_dt()._sb_date('created', '=', 'not-a-date', None) == {}
+        assert _sb_date('created', '=', 'not-a-date', None) == {}
 
     def test_invalid_date_between_returns_empty(self):
-        assert _make_qb_dt()._sb_date('created', 'between', 'bad', 'also-bad') == {}
+        assert _sb_date('created', 'between', 'bad', 'also-bad') == {}
 
     def test_valid_date_works(self):
-        result = _make_qb_dt()._sb_date('created', '=', '2024-01-15', None)
+        result = _sb_date('created', '=', '2024-01-15', None)
         assert '$gte' in result['created']
         assert '$lt' in result['created']
 
     def test_valid_date_gt_works(self):
-        result = _make_qb_dt()._sb_date('created', '>', '2024-01-15', None)
+        result = _sb_date('created', '>', '2024-01-15', None)
         assert '$gt' in result['created']
 
 
@@ -409,8 +398,7 @@ NEGATIVE_CONDITIONS = [
 
 @pytest.mark.parametrize("condition,value,expected_pattern", NEGATIVE_CONDITIONS)
 def test_negative_condition_uses_dict_not_compiled_regex(condition, value, expected_pattern):
-    dt = DataTables.__new__(DataTables)
-    result = dt._sb_string("name", condition, value)
+    result = _sb_string("name", condition, value)
     not_val = result["name"]["$not"]
     assert isinstance(not_val, dict), f"$not must be a dict, got {type(not_val)}"
     assert not_val["$regex"] == expected_pattern
@@ -419,8 +407,7 @@ def test_negative_condition_uses_dict_not_compiled_regex(condition, value, expec
 
 @pytest.mark.parametrize("condition,value,_", NEGATIVE_CONDITIONS)
 def test_negative_condition_is_json_serializable(condition, value, _):
-    dt = DataTables.__new__(DataTables)
-    result = dt._sb_string("name", condition, value)
+    result = _sb_string("name", condition, value)
     json.dumps(result)  # must not raise
 
 
