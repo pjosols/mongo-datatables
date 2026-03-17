@@ -83,6 +83,7 @@ class Editor:
         row_data=None,
         row_attr=None,
         file_fields=None,
+        dependent_handlers: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Initialize the Editor processor.
 
@@ -102,6 +103,9 @@ class Editor:
             row_attr: Optional dict or callable(row) -> dict to set DT_RowAttr on each response row.
             file_fields: Optional list of field names that are upload fields. When set and
                 storage_adapter has files_for_field(), 'files' is included in create/edit responses.
+            dependent_handlers: Optional dict mapping field names to callables for dependent field
+                Ajax requests. Each callable receives (field, values, rows) and returns a response
+                dict with any of: options, values, messages, errors, labels, show, hide, enable, disable.
         """
         self.mongo = pymongo_object
         self.collection_name = collection_name
@@ -109,6 +113,7 @@ class Editor:
         self.doc_id = doc_id or ""
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
+        self.fields: Dict[str, DataField] = {f.alias: f for f in self.data_fields if isinstance(f, DataField)}
         self.validators = validators or {}
         self.storage_adapter = storage_adapter
         self._options = options
@@ -117,6 +122,7 @@ class Editor:
         self.row_data = row_data
         self.row_attr = row_attr
         self.file_fields = file_fields or []
+        self.dependent_handlers = dependent_handlers or {}
         self._collection = self._resolve_collection(pymongo_object, collection_name)
 
     def _resolve_options(self):
@@ -207,7 +213,7 @@ class Editor:
         """
         if not self.doc_id:
             return []
-        return self.doc_id.split(",")
+        return [id_.strip() for id_ in self.doc_id.split(",") if id_.strip()]
 
     def _format_response_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         """Format document for response to Editor.
@@ -294,7 +300,7 @@ class Editor:
         if search_term is not None:
             query = {db_field: {"$regex": re.escape(search_term), "$options": "i"}}
         elif values:
-            query = {db_field: {"$in": values}}
+            query = {db_field: {"$in": self._coerce_values(field, values)}}
         else:
             return {"data": []}
 
@@ -305,11 +311,50 @@ class Editor:
             val = doc.get(db_field)
             if val is None:
                 continue
-            str_val = str(val)
-            if str_val not in seen:
-                seen.add(str_val)
-                results.append({"label": str_val, "value": str_val})
+            key = str(val)
+            if key not in seen:
+                seen.add(key)
+                results.append({"label": str(val), "value": val})
         return {"data": results}
+
+    def _coerce_values(self, field: str, values: list) -> list:
+        """Coerce string values from the request to the field's declared type."""
+        data_field = self.fields.get(field)
+        if data_field is None:
+            return values
+        field_type = getattr(data_field, "data_type", None)
+        if field_type == "number":
+            coerced = []
+            for v in values:
+                try:
+                    coerced.append(int(v) if isinstance(v, str) and "." not in v else float(v))
+                except (ValueError, TypeError):
+                    coerced.append(v)
+            return coerced
+        if field_type == "boolean":
+            return [v if isinstance(v, bool) else str(v).lower() in ("true", "1") for v in values]
+        return values
+
+    def dependent(self) -> Dict[str, Any]:
+        """Handle dependent field Ajax requests.
+
+        Called when a field configured with Editor's dependent() method triggers
+        an Ajax call. Dispatches to a registered handler for the triggering field.
+
+        Returns:
+            Response dict with any of: options, values, messages, errors, labels,
+            show, hide, enable, disable keys.
+
+        Raises:
+            InvalidDataError: If no handler is registered for the triggering field.
+        """
+        field = self.request_args.get("field", "")
+        handler = self.dependent_handlers.get(field)
+        if not handler:
+            raise InvalidDataError(f"No dependent handler registered for field: {field}")
+        values = self.request_args.get("values", {})
+        rows = self.request_args.get("rows", [])
+        return handler(field, values, rows)
 
     def upload(self) -> Dict[str, Any]:
         """Handle action=upload — store a file via the pluggable storage adapter.
@@ -339,7 +384,7 @@ class Editor:
             upload.get("data", b""),
         )
         files = {}
-        if "files_for_field" in type(self.storage_adapter).__dict__:
+        if hasattr(self.storage_adapter, 'files_for_field'):
             files[field] = self.storage_adapter.files_for_field(field)
         return {"upload": {"id": file_id}, "files": files}
 
@@ -485,7 +530,8 @@ class Editor:
                 if doc_id not in self.data:
                     continue
 
-                update_data = self.data[doc_id]
+                update_data = {k: v for k, v in self.data[doc_id].items()
+                               if not k.startswith("DT_Row")}
 
                 if not self._run_pre_hook("edit", doc_id, update_data):
                     cancelled.append(doc_id)
@@ -602,6 +648,7 @@ class Editor:
             "remove": self.remove,
             "search": self.search,
             "upload": self.upload,
+            "dependent": self.dependent,
         }
 
         if self.action not in actions:
@@ -610,7 +657,11 @@ class Editor:
         # Run validators for write operations that have data rows
         if self.validators and self.action in ("create", "edit"):
             field_errors = []
-            for row_data in self.data.values():
+            if self.action == "edit":
+                rows_to_validate = {k: v for k, v in self.data.items() if k in self.list_of_ids}
+            else:
+                rows_to_validate = self.data
+            for row_data in rows_to_validate.values():
                 field_errors.extend(self._run_validators(row_data))
             if field_errors:
                 return {"fieldErrors": field_errors}
