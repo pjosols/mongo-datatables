@@ -32,22 +32,26 @@ def get_searchpanes_options(
         Dictionary mapping column names to their option lists
     """
     eligible = [
-        (col.get("data"), field_mapper.get_db_field(col.get("data")))
+        (col.get("data"), field_mapper.get_db_field(col.get("data")), field_mapper.get_field_type(col.get("data")))
         for col in columns
         if is_truthy(col.get("searchable"))
         and col.get("data")
-        and field_mapper.get_field_type(col.get("data")) not in ("object", "array")
+        and field_mapper.get_field_type(col.get("data")) != "object"
     ]
     if not eligible:
         return {}
 
-    facet_branches = {
-        col_name: [
+    # Array fields need $unwind before $group so individual elements become pane options
+    facet_branches = {}
+    for col_name, db_field, field_type in eligible:
+        stages = []
+        if field_type == "array":
+            stages.append({"$unwind": f"${db_field}"})
+        stages.extend([
             {"$group": {"_id": f"${db_field}", "count": {"$sum": 1}}},
             {"$match": {"_id": {"$ne": None}}},
-        ]
-        for col_name, db_field in eligible
-    }
+        ])
+        facet_branches[col_name] = stages
     total_pipeline = ([{"$match": custom_filter}] if custom_filter else []) + [{"$facet": facet_branches}]
     count_pipeline = ([{"$match": current_filter}] if current_filter else []) + [{"$facet": facet_branches}]
 
@@ -64,7 +68,7 @@ def get_searchpanes_options(
         return str(v.to_decimal()) if isinstance(v, Decimal128) else v
 
     options = {}
-    for col_name, _ in eligible:
+    for col_name, _, __ in eligible:
         total_map = {_hashable(r["_id"]): r["count"] for r in total_result.get(col_name, [])}
         count_map = {_hashable(r["_id"]): r["count"] for r in count_result.get(col_name, [])}
         column_options = []
