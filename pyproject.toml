@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mongo-datatables"
+dynamic = ["version"]
+description = "Server-side processing for DataTables and Editor with MongoDB"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Paul Olsen", email = "pjosols@wholeshoot.com"}]
+keywords = ["datatables", "editor", "mongodb", "pymongo", "flask", "django", "server-side"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: Flask",
+    "Framework :: Django",
+]
+requires-python = ">=3.8"
+dependencies = ["pymongo>=3.9.0"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "coverage", "tox", "sphinx", "sphinx-rtd-theme"]
+test = ["pytest", "pytest-cov", "coverage"]
+docs = ["sphinx", "sphinx-rtd-theme"]
+
+[project.urls]
+Homepage = "https://github.com/pjosols/mongo-datatables"
+Documentation = "https://mongo-datatables.readthedocs.io/"
+"Bug Reports" = "https://github.com/pjosols/mongo-datatables/issues"
+Source = "https://github.com/pjosols/mongo-datatables"
+
+[tool.setuptools.dynamic]
+version = {attr = "mongo_datatables.__version__"}
+
+[tool.setuptools.packages.find]
+exclude = ["tests*", "docs*", "htmlcov*"]

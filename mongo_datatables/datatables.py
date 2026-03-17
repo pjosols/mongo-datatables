@@ -1,17 +1,18 @@
 """Server-side processing for jQuery DataTables with MongoDB."""
 
 import logging
-import math
-import re
-from datetime import timedelta
+
 from typing import Dict, List, Any, Optional
-from bson import Decimal128, ObjectId
 from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
-from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter, DateHandler
+from mongo_datatables.utils import FieldMapper, SearchTermParser, is_truthy
 from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.search_builder import parse_search_builder
+from mongo_datatables.search_fixed import parse_search_fixed, parse_column_search_fixed
+from mongo_datatables.formatting import format_result_values, remap_aliases, process_cursor
+from mongo_datatables.search_panes import get_searchpanes_options as _get_searchpanes_options_fn, parse_searchpanes_filters
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +62,14 @@ class DataField:
         Raises:
             ValueError: If data_type is not a valid MongoDB type
         """
+        if not name or not name.strip():
+            raise ValueError("DataField name must be a non-empty string")
         self.name = name
         
         # Validate data type
         data_type = data_type.lower()
         if data_type not in self.VALID_TYPES:
-            raise ValueError(f"Invalid data type: {data_type}. Must be one of: {', '.join(sorted(self.VALID_TYPES))}")
+            raise ValueError(f"Invalid data_type '{data_type}'. Must be one of: {sorted(self.VALID_TYPES)}")
         self.data_type = data_type
         
         # Use the last part of the field path as the default alias if none provided
@@ -104,6 +107,7 @@ class DataTables:
         row_data=None,
         row_attr=None,
         row_id: Optional[str] = None,
+        pipeline_stages: Optional[List[Dict[str, Any]]] = None,
         **custom_filter: Any,
     ) -> None:
         """Initialize the DataTables processor.
@@ -113,7 +117,9 @@ class DataTables:
             collection_name: Name of the MongoDB collection
             request_args: DataTables request parameters
             data_fields: List of DataField objects defining database fields with UI mappings
-            use_text_index: Whether to use text indexes when available (default: True)
+            use_text_index: Whether to use text indexes when available (default: True).
+                            When True, uses MongoDB text index for fast whole-word search.
+                            Set False to use regex for substring matching.
             allow_disk_use: Pass allowDiskUse=True to all aggregation pipelines (default: False).
                             Enables MongoDB to write temporary files when the 100 MB in-memory
                             aggregation limit is exceeded. Useful for large datasets with complex
@@ -124,6 +130,8 @@ class DataTables:
             row_id: Field name to use as DT_RowId (default: None uses MongoDB _id).
                     When set, the specified field's value is used as DT_RowId instead of _id.
                     The _id field is still included in the projection for internal use.
+            pipeline_stages: Optional list of MongoDB aggregation stages to inject before
+                    the $match stage in all pipelines (e.g. $lookup, $addFields).
             **custom_filter: Additional filtering criteria
         """
         self.collection = self._get_collection(pymongo_object, collection_name)
@@ -136,6 +144,7 @@ class DataTables:
         self.row_data = row_data
         self.row_attr = row_attr
         self.row_id = row_id
+        self.pipeline_stages = list(pipeline_stages) if pipeline_stages else []
 
         if 'data_fields' in custom_filter:
             del custom_filter['data_fields']
@@ -167,12 +176,12 @@ class DataTables:
         Returns:
             MongoDB collection object
         """
-        if hasattr(pymongo_object, "db"):
+        if isinstance(pymongo_object, Database):
+            db = pymongo_object
+        elif hasattr(pymongo_object, "db"):
             db = pymongo_object.db
         elif hasattr(pymongo_object, "get_database"):
             db = pymongo_object.get_database()
-        elif isinstance(pymongo_object, Database):
-            db = pymongo_object
         else:
             return pymongo_object[collection_name]
 
@@ -217,7 +226,7 @@ class DataTables:
             List of column names that are searchable
         """
         return [
-            column["data"] for column in self.columns if column.get("searchable") in (True, "true", "True", 1)
+            column["data"] for column in self.columns if is_truthy(column.get("searchable"))
         ]
 
     @property
@@ -266,340 +275,100 @@ class DataTables:
 
     @property
     def column_search_conditions(self) -> Dict[str, Any]:
-        """Generate search conditions for individual column searches.
+        """Build filter conditions from per-column search inputs.
+
+        Reads ``columns[i][search][value]`` for each column and matches it
+        against that column's field only.  Respects the ``smart``, ``regex``,
+        and ``caseInsensitive`` flags on each column's search object.  For
+        ``number`` and ``date`` fields, a pipe-delimited ``min|max`` value is
+        treated as an inclusive range.
 
         Returns:
-            MongoDB query condition for column-specific searches
+            ``{"$and": [...]}`` combining all active column conditions, or
+            ``{}`` if no column searches are active.
         """
-        return self.query_builder.build_column_search(self.columns)
+        search = self.request_args.get("search", {})
+        case_insensitive = is_truthy(search.get("caseInsensitive", True))
+        return self.query_builder.build_column_search(self.columns, case_insensitive=case_insensitive)
 
     @property
     def global_search_condition(self) -> Dict[str, Any]:
-        """Generate search conditions for the global search value.
+        """Build the filter condition for the global search box.
 
-        This method uses text indexes when available for better performance.
-        For quoted terms, it performs exact phrase matching.
-        For non-quoted terms, it uses OR semantics to match any of the terms.
+        Uses ``$text`` when a text index is available and the ``regex`` and
+        ``caseInsensitive`` flags allow it; otherwise falls back to per-column
+        ``$regex``.  Respects ``search[smart]``, ``search[regex]``, and
+        ``search[caseInsensitive]`` from the request.  Colon-syntax terms
+        (``field:value``) are excluded here — see
+        :attr:`column_specific_search_condition`.
 
         Returns:
-            MongoDB query condition for global search
+            A MongoDB query dict, or ``{}`` if the search value is empty.
         """
         search = self.request_args.get("search", {})
         return self.query_builder.build_global_search(
             self.search_terms_without_a_colon,
             self.searchable_columns,
             original_search=self.search_value,
-            search_regex=search.get("regex", False) in (True, "true", "True", 1),
-            search_smart=search.get("smart", True) not in (False, "false", "False", 0),
+            search_regex=is_truthy(search.get("regex", False)),
+            search_smart=is_truthy(search.get("smart", True)),
+            case_insensitive=is_truthy(search.get("caseInsensitive", True)),
         )
 
     @property
     def column_specific_search_condition(self) -> Dict[str, Any]:
-        """Generate search conditions for column-specific searches using the colon syntax.
+        """Build filter conditions from ``field:value`` colon-syntax terms.
 
-        Handles search terms in the format "field:value" for targeted column searching.
-        Also supports comparison operators: >, <, >=, <=, = for numeric and date fields.
+        Extracts colon-syntax terms from the global search value and targets
+        each against its named field.  Supports plain values, quoted phrases,
+        and comparison operators (``>``, ``>=``, ``<``, ``<=``, ``=``) for
+        ``number`` and ``date`` fields.  All terms are ANDed.  Respects
+        ``search[caseInsensitive]``.
 
         Returns:
-            MongoDB query condition for column-specific searches
+            ``{"$and": [...]}`` combining all colon-term conditions, or ``{}``
+            if no colon-syntax terms are present.
         """
         colon_terms = self.search_terms_with_a_colon
+        search = self.request_args.get("search", {})
+        case_insensitive = is_truthy(search.get("caseInsensitive", True))
         return self.query_builder.build_column_specific_search(
             colon_terms,
-            self.searchable_columns
+            self.searchable_columns,
+            case_insensitive=case_insensitive,
         )
 
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Generate SearchPanes options with both ``total`` and ``count`` per value.
+        """Return option counts for each SearchPanes column.
 
-        Uses a single ``$facet`` aggregation for all columns, reducing MongoDB
-        round-trips from 2N to exactly 2 regardless of column count.
+        Queries the collection to compute, for each searchable column, the
+        distinct values present along with two counts per value:
 
-        DataTables SearchPanes server-side protocol requires two counts per option:
-        - ``total``: count across the base dataset (custom_filter only, no search/pane filters)
-        - ``count``: count with all current filters applied
+        - ``total`` — how many documents have that value in the full collection
+          (respecting any ``custom_filter`` but ignoring the current search).
+        - ``count`` — how many documents have that value after the current
+          search/filter is applied.
 
         Returns:
-            Dictionary mapping column names to their option lists
+            Dict mapping each column's ``data`` name to a list of
+            ``{"label": value, "total": int, "count": int}`` dicts.
         """
-        eligible = [
-            (col.get("data"), self.field_mapper.get_db_field(col.get("data")))
-            for col in self.columns
-            if col.get("searchable") in (True, "true", "True", 1)
-            and col.get("data")
-            and self.field_mapper.get_field_type(col.get("data")) not in ("object", "array")
-        ]
-        if not eligible:
-            return {}
-
-        facet_branches = {
-            col_name: [
-                {"$group": {"_id": f"${db_field}", "count": {"$sum": 1}}},
-                {"$match": {"_id": {"$ne": None}}},
-            ]
-            for col_name, db_field in eligible
-        }
-        total_pipeline = ([{"$match": self.custom_filter}] if self.custom_filter else []) + [{"$facet": facet_branches}]
-        count_pipeline = ([{"$match": self.filter}] if self.filter else []) + [{"$facet": facet_branches}]
-
-        try:
-            total_docs = list(self.collection.aggregate(total_pipeline, allowDiskUse=self.allow_disk_use))
-            total_result = total_docs[0] if total_docs else {}
-            count_docs = list(self.collection.aggregate(count_pipeline, allowDiskUse=self.allow_disk_use))
-            count_result = count_docs[0] if count_docs else {}
-        except Exception as e:
-            logger.error(f"Error generating SearchPanes options: {str(e)}")
-            return {col_name: [] for col_name, _ in eligible}
-
-        options = {}
-        for col_name, _ in eligible:
-            def _hashable(v):
-                return str(v.to_decimal()) if isinstance(v, Decimal128) else v
-            total_map = {_hashable(r["_id"]): r["count"] for r in total_result.get(col_name, [])}
-            count_map = {_hashable(r["_id"]): r["count"] for r in count_result.get(col_name, [])}
-            column_options = []
-            for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
-                if isinstance(raw_value, ObjectId):
-                    display_value = str(raw_value)
-                elif hasattr(raw_value, 'isoformat'):
-                    display_value = raw_value.isoformat()
-                else:
-                    display_value = str(raw_value) if raw_value is not None else ""
-                column_options.append({
-                    "label": display_value,
-                    "value": display_value,
-                    "total": total,
-                    "count": count_map.get(raw_value, 0),
-                })
-            options[col_name] = column_options
-        return options
+        return _get_searchpanes_options_fn(
+            self.columns, self.field_mapper, self.custom_filter, self.filter,
+            self.collection, self.allow_disk_use,
+        )
 
     def _parse_searchpanes_filters(self) -> Dict[str, Any]:
-        """Parse SearchPanes filter parameters from request.
-
-        Returns:
-            MongoDB query conditions for SearchPanes filters
-        """
-        conditions = []
-        
-        # Check for searchPanes parameter in request
-        searchpanes = self.request_args.get("searchPanes", {})
-        
-        # If searchPanes is just a boolean flag, no filters to apply
-        if not isinstance(searchpanes, dict):
-            return {}
-        
-        for column_name, selected_values in searchpanes.items():
-            if not selected_values:
-                continue
-                
-            db_field = self.field_mapper.get_db_field(column_name)
-            field_type = self.field_mapper.get_field_type(column_name)
-            
-            # Convert values based on field type
-            converted_values = []
-            for value in selected_values:
-                if field_type == "number":
-                    try:
-                        converted_values.append(TypeConverter.to_number(value))
-                    except (ValueError, TypeError):
-                        converted_values.append(value)
-                elif field_type == "objectid":
-                    try:
-                        converted_values.append(ObjectId(value))
-                    except Exception:
-                        converted_values.append(value)
-                elif field_type == "date":
-                    try:
-                        converted_values.append(DateHandler.parse_iso_date(value.split('T')[0]))
-                    except Exception:
-                        converted_values.append(value)
-                else:
-                    converted_values.append(value)
-            
-            if converted_values:
-                conditions.append({db_field: {"$in": converted_values}})
-        
-        if conditions:
-            return {"$and": conditions}
-        return {}
+        return parse_searchpanes_filters(self.request_args, self.field_mapper)
 
     def _parse_search_fixed(self) -> Dict[str, Any]:
-        """Parse searchFixed named searches (DataTables 2.0+) into a MongoDB filter.
-
-        Each named fixed search is ANDed with the main query. Values are treated
-        as global search terms across all searchable columns.
-        """
-        search_fixed = self.request_args.get("searchFixed", {})
-        if not isinstance(search_fixed, dict) or not search_fixed:
-            return {}
-        conditions = []
-        for value in search_fixed.values():
-            if not value:
-                continue
-            terms = SearchTermParser.parse(str(value))
-            cond = self.query_builder.build_global_search(
-                terms, self.searchable_columns, original_search=str(value),
-                search_regex=False
-            )
-            if cond:
-                conditions.append(cond)
-        if not conditions:
-            return {}
-        return {"$and": conditions} if len(conditions) > 1 else conditions[0]
+        return parse_search_fixed(self.request_args, self.query_builder, self.searchable_columns)
 
     def _parse_column_search_fixed(self) -> Dict[str, Any]:
-        """Parse per-column searchFixed dicts (DataTables 2.0+) into a MongoDB filter.
-
-        Each column may carry a ``searchFixed`` dict of named fixed searches.
-        Values are applied as column-scoped searches using ``build_column_search``.
-
-        Returns:
-            MongoDB query condition, or ``{}`` if no column-level fixed searches exist.
-        """
-        conditions = []
-        for col in self.columns:
-            col_fixed = col.get("searchFixed", {})
-            if not isinstance(col_fixed, dict) or not col_fixed:
-                continue
-            db_field = self.field_mapper.get_db_field(col.get("data", ""))
-            if not db_field:
-                continue
-            for value in col_fixed.values():
-                if not value:
-                    continue
-                cond = self.query_builder.build_column_search(
-                    [{**col, "search": {"value": str(value), "regex": False}}]
-                )
-                if cond:
-                    conditions.append(cond)
-        if not conditions:
-            return {}
-        return {"$and": conditions} if len(conditions) > 1 else conditions[0]
+        return parse_column_search_fixed(self.columns, self.field_mapper, self.query_builder)
 
     def _parse_search_builder(self) -> Dict[str, Any]:
-        """Translate a SearchBuilder criteria tree into a MongoDB query.
-
-        The DataTables SearchBuilder extension sends a nested ``searchBuilder``
-        parameter when ``serverSide: true`` is enabled.  Each leaf criterion has
-        the shape::
-
-            {
-                "condition": "=",
-                "origData": "salary",
-                "type": "num",
-                "value": ["50000"]
-            }
-
-        Groups are nested via a ``criteria`` list and a ``logic`` key
-        (``"AND"`` or ``"OR"``).
-
-        Returns:
-            MongoDB query dict, or ``{}`` if no SearchBuilder data is present.
-        """
-        sb = self.request_args.get("searchBuilder")
-        if not sb or not isinstance(sb, dict):
-            return {}
-        return self._sb_group(sb)
-
-    def _sb_group(self, group: Dict[str, Any]) -> Dict[str, Any]:
-        """Recursively convert a SearchBuilder group to a MongoDB condition."""
-        logic = group.get("logic", "AND").upper()
-        mongo_op = "$and" if logic == "AND" else "$or"
-        parts = []
-        for criterion in group.get("criteria", []):
-            if "criteria" in criterion:
-                # nested group
-                sub = self._sb_group(criterion)
-                if sub:
-                    parts.append(sub)
-            else:
-                cond = self._sb_criterion(criterion)
-                if cond:
-                    parts.append(cond)
-        if not parts:
-            return {}
-        return {mongo_op: parts} if len(parts) > 1 else parts[0]
-
-    def _sb_criterion(self, criterion: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert a single SearchBuilder leaf criterion to a MongoDB condition."""
-        condition = criterion.get("condition", "")
-        orig_data = criterion.get("origData") or criterion.get("data", "")
-        values = criterion.get("value", [])
-        sb_type = criterion.get("type", "string")
-
-        if not orig_data or not condition:
-            return {}
-
-        db_field = self.field_mapper.get_db_field(orig_data)
-        v0 = values[0] if values else None
-        v1 = values[1] if len(values) > 1 else None
-
-        # null / not-null (all types)
-        if condition == "null":
-            return {db_field: {"$in": [None, "", False]}}
-        if condition == "!null":
-            return {db_field: {"$nin": [None, "", False]}}
-
-        if sb_type in ("num", "num-fmt", "html-num", "html-num-fmt"):
-            return self._sb_number(db_field, condition, v0, v1)
-        if sb_type in ("date", "moment", "luxon"):
-            return self._sb_date(db_field, condition, v0, v1)
-        # string / html / array / default
-        return self._sb_string(db_field, condition, v0)
-
-    def _sb_number(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
-        """Build a MongoDB condition for a numeric SearchBuilder criterion."""
-        def _n(v):
-            return TypeConverter.to_number(v)
-        try:
-            if condition == "=":   return {field: _n(v0)}
-            if condition == "!=":  return {field: {"$ne": _n(v0)}}
-            if condition == "<":   return {field: {"$lt": _n(v0)}}
-            if condition == "<=":  return {field: {"$lte": _n(v0)}}
-            if condition == ">":   return {field: {"$gt": _n(v0)}}
-            if condition == ">=":  return {field: {"$gte": _n(v0)}}
-            if condition == "between":  return {field: {"$gte": _n(v0), "$lte": _n(v1)}}
-            if condition == "!between": return {"$or": [{field: {"$lt": _n(v0)}}, {field: {"$gt": _n(v1)}}]}
-        except Exception:
-            pass
-        return {}
-
-    def _sb_date(self, field: str, condition: str, v0, v1) -> Dict[str, Any]:
-        """Build a MongoDB condition for a date SearchBuilder criterion."""
-        def _d(v):
-            return DateHandler.parse_iso_date(v.split('T')[0])
-        try:
-            if condition == "=":
-                d = _d(v0)
-                return {field: {"$gte": d, "$lt": d + timedelta(days=1)}}
-            if condition == "!=":
-                d = _d(v0)
-                return {"$or": [{field: {"$lt": d}}, {field: {"$gte": d + timedelta(days=1)}}]}
-            if condition == "<":   return {field: {"$lt": _d(v0)}}
-            if condition == "<=":  return {field: {"$lt": _d(v0) + timedelta(days=1)}}
-            if condition == ">":   return {field: {"$gt": _d(v0)}}
-            if condition == ">=":  return {field: {"$gte": _d(v0)}}
-            if condition == "between":  return {field: {"$gte": _d(v0), "$lte": _d(v1)}}
-            if condition == "!between": return {"$or": [{field: {"$lt": _d(v0)}}, {field: {"$gt": _d(v1)}}]}
-        except Exception:
-            pass
-        return {}
-
-    def _sb_string(self, field: str, condition: str, v0) -> Dict[str, Any]:
-        """Build a MongoDB condition for a string SearchBuilder criterion."""
-        if v0 is None:
-            return {}
-        s = re.escape(v0)
-        if condition == "=":        return {field: {"$regex": f"^{s}$", "$options": "i"}}
-        if condition == "!=":       return {field: {"$not": {"$regex": f"^{s}$", "$options": "i"}}}
-        if condition == "contains":  return {field: {"$regex": s, "$options": "i"}}
-        if condition == "!contains": return {field: {"$not": {"$regex": s, "$options": "i"}}}
-        if condition == "starts":    return {field: {"$regex": f"^{s}", "$options": "i"}}
-        if condition == "!starts":   return {field: {"$not": {"$regex": f"^{s}", "$options": "i"}}}
-        if condition == "ends":      return {field: {"$regex": f"{s}$", "$options": "i"}}
-        if condition == "!ends":     return {field: {"$not": {"$regex": f"{s}$", "$options": "i"}}}
-        return {}
+        return parse_search_builder(self.request_args, self.field_mapper)
 
     @property
     def filter(self) -> Dict[str, Any]:
@@ -692,7 +461,7 @@ class DataTables:
                 for idx in indices:
                     if 0 <= idx < len(self.columns):
                         target = self.columns[idx]
-                        if target.get("orderable") not in (False, "false", "False", 0):
+                        if is_truthy(target.get("orderable", True)):
                             field = target.get("data")
                             if field:
                                 db_field = self.field_mapper.get_db_field(field)
@@ -700,7 +469,7 @@ class DataTables:
                                     sort_spec[db_field] = direction
             else:
                 ui_field_name = column.get("data")
-                if ui_field_name and column.get("orderable") not in (False, "false", "False", 0):
+                if ui_field_name and is_truthy(column.get("orderable", True)):
                     db_field_name = self.field_mapper.get_db_field(ui_field_name)
                     if db_field_name not in sort_spec:
                         sort_spec[db_field_name] = direction
@@ -739,7 +508,11 @@ class DataTables:
 
     @property
     def draw(self) -> int:
-        """Get the draw counter for DataTables response sequencing."""
+        """The ``draw`` counter from the request, echoed unchanged in the response.
+
+        Returns:
+            Request ``draw`` value coerced to a positive int; defaults to ``1``.
+        """
         try:
             return max(1, int(self.request_args.get("draw", 1)))
         except (ValueError, TypeError):
@@ -764,100 +537,24 @@ class DataTables:
         return projection
 
     def _format_result_values(self, result_dict: Dict[str, Any], parent_key: str = "") -> None:
-        """Recursively format values in result dictionary for JSON serialization.
-
-        Args:
-            result_dict: Dictionary to process
-            parent_key: Key of parent for nested dictionaries
-        """
-        if not result_dict:
-            return
-            
-        items = list(result_dict.items())
-        for key, val in items:
-            full_key = f"{parent_key}.{key}" if parent_key else key
-
-            if isinstance(val, dict):
-                self._format_result_values(val, full_key)
-            elif isinstance(val, list):
-                for i, item in enumerate(val):
-                    if isinstance(item, dict):
-                        self._format_result_values(item, f"{full_key}[{i}]")
-                    elif isinstance(item, ObjectId):
-                        val[i] = str(item)
-                    elif hasattr(item, 'isoformat'):
-                        val[i] = item.isoformat()
-                    elif isinstance(item, Decimal128):
-                        val[i] = float(item.to_decimal())
-            elif isinstance(val, ObjectId):
-                result_dict[key] = str(val)
-            elif hasattr(val, 'isoformat'):
-                result_dict[key] = val.isoformat()
-            elif isinstance(val, float) and not math.isfinite(val):
-                result_dict[key] = None
-            elif isinstance(val, Decimal128):
-                result_dict[key] = float(val.to_decimal())
+        format_result_values(result_dict, parent_key)
 
     def _process_cursor(self, cursor) -> List[Dict[str, Any]]:
-        """Convert aggregation cursor to DataTables-formatted list."""
-        processed = []
-        for result in cursor:
-            d = dict(result)
-            if self.row_id and self.row_id in d:
-                d["DT_RowId"] = str(d[self.row_id])
-            elif "_id" in d:
-                d["DT_RowId"] = str(d.pop("_id"))
-            self._format_result_values(d)
-            d = self._remap_aliases(d)
-            if self.row_class is not None:
-                d["DT_RowClass"] = self.row_class(d) if callable(self.row_class) else self.row_class
-            if self.row_data is not None:
-                d["DT_RowData"] = self.row_data(d) if callable(self.row_data) else self.row_data
-            if self.row_attr is not None:
-                d["DT_RowAttr"] = self.row_attr(d) if callable(self.row_attr) else self.row_attr
-            processed.append(d)
-        return processed
+        return process_cursor(cursor, self.row_id, self.field_mapper, self.row_class, self.row_data, self.row_attr)
 
     def _remap_aliases(self, doc: Dict[str, Any]) -> Dict[str, Any]:
-        """Remap DB field names to UI aliases in a result document.
+        return remap_aliases(doc, self.field_mapper)
 
-        For DataFields with dot-notation names (e.g. 'PublisherInfo.Date'),
-        MongoDB returns nested dicts. This method extracts the value and
-        stores it under the UI alias key, removing the intermediate nesting
-        when no other fields from that parent are needed.
-        """
-        if not self.field_mapper.db_to_ui:
-            return doc
-        for db_field, ui_alias in self.field_mapper.db_to_ui.items():
-            if db_field == ui_alias:
-                continue  # no remapping needed
-            if '.' in db_field:
-                # Extract value from nested structure
-                parts = db_field.split('.')
-                val = doc
-                for part in parts:
-                    if isinstance(val, dict) and part in val:
-                        val = val[part]
-                    else:
-                        val = None
-                        break
-                if val is not None:
-                    doc[ui_alias] = val
-                    # Remove top-level parent key only if it's no longer needed
-                    top = parts[0]
-                    if top in doc and isinstance(doc[top], dict):
-                        # Check if any other db_field uses this same top-level key
-                        other_uses = any(
-                            f != db_field and f.startswith(top + '.')
-                            for f in self.field_mapper.db_to_ui
-                        )
-                        if not other_uses:
-                            del doc[top]
-            else:
-                # Simple rename: db_field key -> ui_alias key
-                if db_field in doc:
-                    doc[ui_alias] = doc.pop(db_field)
-        return doc
+    @staticmethod
+    def _filter_has_text(f: dict) -> bool:
+        """Return True if the filter contains a $text operator at any depth."""
+        if "$text" in f:
+            return True
+        for v in f.values():
+            if isinstance(v, list):
+                if any(isinstance(item, dict) and DataTables._filter_has_text(item) for item in v):
+                    return True
+        return False
 
     def _build_pipeline(self, paginate: bool = True) -> list:
         """Build the aggregation pipeline for results or export.
@@ -869,8 +566,15 @@ class DataTables:
             List of MongoDB aggregation pipeline stages.
         """
         pipeline = []
-        if self.filter:
-            pipeline.append({"$match": self.filter})
+        current_filter = self.filter
+        if current_filter and self._filter_has_text(current_filter):
+            # $text match must be the first pipeline stage — prepend before pipeline_stages
+            pipeline.append({"$match": current_filter})
+            pipeline.extend(self.pipeline_stages)
+        else:
+            pipeline.extend(self.pipeline_stages)
+            if current_filter:
+                pipeline.append({"$match": current_filter})
         if self.sort_specification:
             pipeline.append({"$sort": self.sort_specification})
         if paginate:
@@ -946,7 +650,7 @@ class DataTables:
                 self._recordsFiltered = self.count_total()
             else:
                 try:
-                    pipeline = [{"$match": self.filter}, {"$count": "total"}]
+                    pipeline = list(self.pipeline_stages) + [{"$match": self.filter}, {"$count": "total"}]
                     result = list(self.collection.aggregate(pipeline, allowDiskUse=self.allow_disk_use))
                     self._recordsFiltered = result[0]["total"] if result else 0
                     logger.debug(f"Filtered count via aggregation: {self._recordsFiltered}")

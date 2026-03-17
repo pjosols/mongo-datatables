@@ -2,112 +2,180 @@
 Editor
 ======
 
-Overview
-========
+The ``Editor`` class provides server-side CRUD for `DataTables Editor
+<https://editor.datatables.net/>`_ (a commercial DataTables extension).  It
+receives the JSON payload that Editor posts, dispatches to the appropriate
+action, and returns the response Editor expects.
 
-The ``Editor`` class provides server-side implementation for the DataTables Editor extension,
-enabling CRUD (Create, Read, Update, Delete) operations on MongoDB collections.
+.. autoclass:: mongo_datatables.editor.StorageAdapter
+   :members:
 
-DataTables Editor is a commercial extension for DataTables that provides end users with
-the ability to create, edit and delete entries in a DataTable. This implementation
-translates Editor requests into MongoDB operations.
+.. autoclass:: mongo_datatables.editor.Editor
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
-Class Documentation
-===================
 
-.. py:class:: mongo_datatables.editor.Editor(pymongo_object, collection_name, request_args, doc_id=None)
+Basic Setup
+===========
 
-   Server-side processor for DataTables Editor with MongoDB.
-
-   This class handles CRUD operations from DataTables Editor, translating them
-   into appropriate MongoDB operations.
-
-   :param pymongo_object: PyMongo client connection or Flask-PyMongo instance
-   :param collection_name: Name of the MongoDB collection
-   :param request_args: Editor request parameters (from request.get_json())
-   :param doc_id: Comma-separated list of document IDs for edit/remove operations
-
-   .. py:method:: process()
-
-      Process the Editor request based on the action.
-
-      :return: Response data for the Editor client
-      :rtype: dict
-      :raises ValueError: If action is not supported
-
-Key Properties
-==============
-
-.. py:attribute:: db
-
-   Get the MongoDB database instance.
-
-   :return: The PyMongo database instance
-
-.. py:attribute:: collection
-
-   Get the MongoDB collection.
-
-   :return: The PyMongo collection instance
-
-.. py:attribute:: action
-
-   Get the Editor action type (create, edit, remove).
-
-   :return: Action type string
-
-.. py:attribute:: data
-
-   Get the data payload from the request.
-
-   :return: Dictionary containing the submitted data
-
-.. py:attribute:: list_of_ids
-
-   Get list of document IDs for batch operations.
-
-   :return: List of document ID strings
-
-Example Usage
-=============
-
-Basic usage with Flask:
+A single endpoint handles all Editor actions (``create``, ``edit``,
+``remove``).  Editor sends an ``action`` field in the request body;
+``process()`` dispatches automatically.
 
 .. code-block:: python
 
-    from flask import Flask, request, jsonify
-    from flask_pymongo import PyMongo
-    from mongo_datatables import Editor
+    from mongo_datatables import Editor, DataField
 
-    app = Flask(__name__)
-    app.config["MONGO_URI"] = "mongodb://localhost:27017/myDatabase"
-    mongo = PyMongo(app)
-
-    @app.route('/api/editor', methods=['POST'])
+    @app.route("/api/editor", methods=["POST"])
     def editor_endpoint():
         data = request.get_json()
-        doc_id = request.args.get('id', '')
-        result = Editor(mongo, 'users', data, doc_id).process()
+        result = Editor(
+            db,
+            "albums",
+            data,
+            doc_id=request.args.get("id"),
+            data_fields=data_fields,
+        ).process()
         return jsonify(result)
 
-Supporting multiple collections:
+The ``doc_id`` parameter carries the document ID(s) for ``edit`` and
+``remove`` operations; DataTables Editor appends them to the request URL as
+``?id=<id>``.
+
+
+Validators
+==========
+
+Pass a ``validators`` dict to enforce field-level rules before any write.
+Each value is a callable that receives the submitted field value and returns
+an error string, or ``None`` to pass.
 
 .. code-block:: python
 
-    @app.route('/api/editor/<collection>', methods=['POST'])
-    def editor_endpoint(collection):
-        data = request.get_json()
-        doc_id = request.args.get('id', '')
-        result = Editor(mongo, collection, data, doc_id).process()
-        return jsonify(result)
+    Editor(
+        db, "albums", data,
+        doc_id=request.args.get("id"),
+        data_fields=data_fields,
+        validators={
+            "year": lambda v: "Must be a valid year" if not (1900 < int(v) < 2100) else None,
+            "title": lambda v: "Title is required" if not v.strip() else None,
+        },
+    ).process()
 
-Editor Actions
-==============
+Validation errors are returned to Editor and displayed inline in the form
+without saving any data.
 
-The Editor class handles three main actions:
 
-1. **create** - Add a new document to the MongoDB collection
-2. **edit** - Update one or more existing documents
-3. **remove** - Delete one or more documents from the collection
+Hooks
+=====
 
-The action is determined by the `action` parameter in the request payload sent by DataTables Editor.
+Pre-action hooks run before each create, edit, or remove operation.  Return a
+falsy value to cancel that row's operation (the row is added to a
+``"cancelled"`` list in the response).
+
+.. code-block:: python
+
+    Editor(
+        db, "albums", data,
+        doc_id=request.args.get("id"),
+        data_fields=data_fields,
+        hooks={
+            "pre_edit": lambda row_id, row: False if row.get("locked") else True,
+            "pre_remove": lambda row_id, row: False,  # prevent all deletes
+        },
+    ).process()
+
+Hook callables receive the document ID and the submitted row data dict.
+
+
+Options
+=======
+
+Pass ``options`` to include a server-driven options dict in every Editor
+response — useful for keeping select/radio/checkbox choices in sync with the
+database without hardcoding them client-side.
+
+.. code-block:: python
+
+    Editor(
+        db, "albums", data,
+        doc_id=request.args.get("id"),
+        data_fields=data_fields,
+        options=lambda: {
+            "genre": [{"label": g, "value": g} for g in db.albums.distinct("genre")],
+        },
+    ).process()
+
+``options`` can be a plain dict or a zero-argument callable (called on each
+request, so the values stay fresh).
+
+
+Dependent Fields
+================
+
+Editor's ``dependent`` Ajax requests (used to update field options or values
+when another field changes) are handled by ``dependent_handlers``:
+
+.. code-block:: python
+
+    def handle_artist_change(field, values, rows):
+        artist = values.get("artist", "")
+        albums = list(db.albums.find({"artist": artist}, {"title": 1}))
+        return {"options": {"title": [{"label": a["title"], "value": str(a["_id"])} for a in albums]}}
+
+    Editor(
+        db, "albums", data,
+        doc_id=request.args.get("id"),
+        data_fields=data_fields,
+        dependent_handlers={"artist": handle_artist_change},
+    ).process()
+
+The callable receives the triggering field name, the submitted values dict,
+and the current rows list, and returns a dict with any of: ``options``,
+``values``, ``messages``, ``errors``, ``labels``, ``show``, ``hide``,
+``enable``, ``disable``.
+
+
+Autocomplete and Tags Search
+=============================
+
+Editor's ``autocomplete`` and ``tags`` field types issue a separate Ajax
+search request.  Route it to ``Editor.search()``:
+
+.. code-block:: python
+
+    @app.route("/api/editor/search", methods=["POST"])
+    def editor_search():
+        return jsonify(
+            Editor(db, "albums", request.get_json(), data_fields=data_fields).search()
+        )
+
+The search action supports prefix search (``search`` param) and exact value
+lookup (``values[]`` param) for resolving stored values back to display labels.
+
+
+File Uploads
+============
+
+File uploads require a ``StorageAdapter`` subclass and the ``file_fields``
+list:
+
+.. code-block:: python
+
+    class MyStorage(StorageAdapter):
+        def store(self, field, filename, content_type, data):
+            # save to S3, GridFS, filesystem, etc.
+            return unique_file_id
+
+        def retrieve(self, file_id):
+            # return raw bytes
+            ...
+
+    Editor(
+        db, "albums", data,
+        doc_id=request.args.get("id"),
+        data_fields=data_fields,
+        file_fields=["cover_image"],
+        storage_adapter=MyStorage(),
+    ).process()

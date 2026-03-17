@@ -2,6 +2,14 @@
 Changelog
 =========
 
+Current changelog is maintained in `CHANGELOG.md
+<https://github.com/pjosols/mongo-datatables/blob/master/CHANGELOG.md>`_
+in the project repository.
+
+----
+
+Historical entries (prior to v1.2.0):
+
 1.1.1 (2025-03-16)
 ------------------
 
@@ -12,7 +20,6 @@ Changelog
 * Enhanced search implementation with exact phrase matching for quoted terms
 * Improved handling of complex search queries with multiple terms
 * Added comparison operators (>, <, >=, <=, =) for numeric field-specific searches
-* Added debug mode with detailed query statistics for performance monitoring and troubleshooting
 
 1.0.1 (2025-03-13)
 ------------------
@@ -20,10 +27,11 @@ Changelog
 * Fixed path collision error when using dotted notation for nested fields in projection
 
 1.0.0 (2025-03-11) [YANKED]
----------------------------
+----------------------------
 
 .. warning::
-   This release was yanked from PyPI due to a critical bug with nested document field handling that could cause path collision errors. Please use version 1.0.1 or later.
+   This release was yanked from PyPI due to a critical bug with nested document field handling
+   that could cause path collision errors. Please use version 1.0.1 or later.
 
 * First stable release of the rewritten package
 * Comprehensive docstrings and inline documentation
@@ -69,7 +77,7 @@ Changelog
 
 * Major performance improvement: Switched to MongoDB aggregation pipeline for results
 * Changed `length` property to `limit` with proper handling of None value
-* Enhanced projection to use `$ifNull` to handle missing fields gracefully
+* Enhanced projection to use ``$ifNull`` to handle missing fields gracefully
 * Improved data filtering in Editor to ignore empty values
 * Editor now filters out keys with empty values before insert/update
 
@@ -91,14 +99,12 @@ Changelog
 * Added JSON handling for complex data types
 * Proper JSON encoding of complex objects in results
 * Introduced support for MongoDB ObjectId handling
-* Class naming inconsistency between imports and implementations
 * Added support for Flask integration
 
 0.1.4 (2017-09-14)
 ------------------
 
-* Initial implementation with:
-* Basic DataTables server-side processing
+* Initial implementation with basic DataTables server-side processing
 * Support for MongoDB integration
 * Simple filtering and sorting
 * Custom filter support
