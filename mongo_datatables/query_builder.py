@@ -173,7 +173,7 @@ class MongoQueryBuilder:
                 was_quoted = True
 
         if was_quoted and len(search_terms) == 1:
-            if self.use_text_index and self.has_text_index:
+            if self.use_text_index and self.has_text_index and not search_regex and case_insensitive:
                 return {"$text": {"$search": original_search}}
 
             or_conditions = []
@@ -191,7 +191,7 @@ class MongoQueryBuilder:
                 return {"$or": or_conditions}
             return {}
 
-        if self.use_text_index and self.has_text_index:
+        if self.use_text_index and self.has_text_index and not search_regex and case_insensitive:
             text_search_query = " ".join(search_terms)
             return {"$text": {"$search": text_search_query}}
 
