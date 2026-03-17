@@ -5,182 +5,281 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/pjosols/mongo-datatables/branch/main/graph/badge.svg)](https://codecov.io/gh/pjosols/mongo-datatables)
 [![Tests](https://github.com/pjosols/mongo-datatables/actions/workflows/python-tests.yml/badge.svg)](https://github.com/pjosols/mongo-datatables/actions/workflows/python-tests.yml)
+[![Sponsor](https://img.shields.io/badge/sponsor-♥-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/pjosols)
 
 Server-side processing for jQuery DataTables with MongoDB.
 
-## Overview
-
-This package provides an elegant bridge between jQuery DataTables and MongoDB databases, handling the translation of DataTables server-side requests into optimized MongoDB queries. It supports both read operations and full CRUD functionality when paired with DataTables Editor.
-
-## Key Capabilities
-
-- Server-side processing for efficient handling of large datasets
-- Advanced search functionality with column-specific filtering
-- Multi-column sorting with MongoDB optimization, including ColReorder compatibility (`order[i][name]` name-based column ordering is supported)
-- Complete Editor integration for create, read, update, and delete operations
-- Framework-agnostic design compatible with Flask, Django, and other Python web frameworks
+Translates DataTables Ajax requests into MongoDB aggregation pipelines, handling pagination, sorting, filtering, search, SearchPanes, SearchBuilder, and Editor (full CRUD).
 
 ## Installation
 
 ```bash
 pip install mongo-datatables
+# or
+uv add mongo-datatables
 ```
 
-## Basic Implementation
+## Quick Start
 
 ```python
-from flask import request, jsonify
-from mongo_datatables import DataTables
+from flask import Flask, request, jsonify
+from pymongo import MongoClient
+from mongo_datatables import DataTables, DataField
 
-@app.route('/data/<collection>', methods=['POST'])
-def get_data(collection):
-    data = request.get_json()
-    results = DataTables(mongo, collection, data).get_rows()
-    return jsonify(results)
+app = Flask(__name__)
+db = MongoClient("mongodb://localhost:27017/")["mydb"]
+
+@app.route('/data', methods=['POST'])
+def get_data():
+    data_fields = [
+        DataField('title', 'string'),
+        DataField('artist', 'string'),
+        DataField('year', 'number'),
+        DataField('genre', 'string'),
+    ]
+    return jsonify(DataTables(db, 'albums', request.get_json(), data_fields).get_rows())
 ```
 
-## FixedColumns Extension Support
+`db` can be any PyMongo `Database` object — raw `MongoClient(...)["mydb"]`,
+Flask-PyMongo's `mongo.db`, or equivalent from your framework's integration.
 
-mongo-datatables supports the DataTables FixedColumns extension, which allows you to fix columns on the left and/or right side of the table. This is particularly useful for tables with many columns where you want to keep key columns (like ID or actions) always visible.
-
-### Usage
-
-The FixedColumns configuration is automatically parsed from the DataTables request and included in the response:
-
-```python
-# Client-side DataTables configuration
-$('#example').DataTable({
-    processing: true,
-    serverSide: true,
-    ajax: '/datatables_endpoint',
-    columns: [
-        { data: 'id', title: 'ID' },
-        { data: 'name', title: 'Name' },
-        { data: 'email', title: 'Email' },
-        { data: 'department', title: 'Department' },
-        { data: 'actions', title: 'Actions' }
-    ],
-    fixedColumns: {
-        left: 2,    // Fix first 2 columns (ID, Name)
-        right: 1    // Fix last column (Actions)
-    }
-});
-```
-
-### Server Response
-
-When FixedColumns is configured, the server response automatically includes the configuration:
+`get_rows()` returns the standard DataTables server-side response:
 
 ```json
 {
     "draw": 1,
-    "recordsTotal": 1000,
-    "recordsFiltered": 1000,
-    "data": [...],
-    "fixedColumns": {
-        "left": 2,
-        "right": 1
-    }
+    "recordsTotal": 1000000,
+    "recordsFiltered": 4821,
+    "data": [...]
 }
 ```
 
-### Features
+---
 
-- **Seamless Integration**: Works with existing server-side processing
-- **Backward Compatible**: No changes needed for tables without FixedColumns
-- **Automatic Configuration**: Parses and returns FixedColumns settings
-- **CSS-Based**: Uses modern CSS `position: sticky` for optimal performance
+## DataField
 
-## Documentation
-
-For comprehensive documentation, visit [mongo-datatables.readthedocs.io](https://mongo-datatables.readthedocs.io/)
-
-## Search Functionality
-
-### Regex Search Support (v1.14.0)
-
-mongo-datatables fully honors the DataTables server-side protocol's regex flags:
-
-- `search[regex]=true` — treats the global search value as a raw MongoDB regex pattern
-- `columns[i][search][regex]=true` — treats a column's search value as a raw regex pattern
-- When `regex=false` (default), special regex characters are automatically escaped for safe literal matching
-
-This means DataTables clients can enable `searchRegex: true` in their configuration and send patterns like `^John` or `doe$` for precise matching.
-
-### How Search Works in mongo-datatables
-
-mongo-datatables provides powerful search capabilities that adapt based on your MongoDB configuration and search syntax. Understanding how search works can help you optimize performance, especially for large collections.
-
-#### Search Types and Performance
-
-| Type | Example | Large Collection Perf | Description |
-|------|---------|-----------|-------------|
-| **Text** | `George Orwell` | **Fast** *100-300ms* | Text search with indexes (OR semantics) |
-| **Phrase** | `"Margaret Atwood"` | **Fast** *100-300ms* | Exact phrase matching (exact match) |
-| **Field** | `Author:Bradbury` | **Moderate** *1-2s* | Field-specific search (single field) |
-| **Comparison** | `Pages:>100` | **Fast** *200-500ms* | Numeric/date compare (>, <, >=, <=, =) |
-| **Combined** | `Author:"Huxley" Year:>2000` | **Moderate** *0.5-1s* | Multiple search types (AND semantics) |
-| **Regex** | `George Orwell` (no index) | **Slow** *5-10s+* | Fallback search (OR semantics) |
-| **Mixed** | `Title:"Ski" Ishiguro` | **Moderate** *300-700ms* | Phrase + text (AND between terms) |
-
-*Performance metrics based on large collections (>2M docs)*
-
-### Performance Optimization
-
-#### Importance of Indexes for Large Collections
-
-When working with large MongoDB collections, creating proper indexes is **critical** for performance. Without appropriate indexes, queries can become extremely slow or timeout entirely.
-
-#### Text Indexes for Search Performance
-
-The DataTables class is designed to leverage MongoDB text indexes for efficient search operations:
+`DataField(name, data_type, alias=None)` maps a MongoDB field to a DataTables column.
 
 ```python
-# Create a text index in MongoDB (do this once in your setup script)
-db.your_collection.create_index([("field1", "text"), ("field2", "text")])
-
-# DataTables will automatically use the text index when available
-datatables = DataTables(mongo, 'your_collection', request_args)
+DataField('title', 'string')                          # basic field
+DataField('release_date', 'date')                     # enables date comparison search
+DataField('track_count', 'number')                    # enables numeric comparison search
+DataField('PublisherInfo.label', 'string', 'label')   # nested field with UI alias
+DataField('_id', 'objectid')                          # serialized as string in response
 ```
 
-Benefits of text indexes:
+**Valid types:** `string`, `number`, `date`, `boolean`, `array`, `object`, `objectid`, `null`
 
-- **Dramatically faster search** on large collections
-- **Better relevance scoring** for search results
-- **Language-aware stemming** for more natural search
-- **Support for exact phrase queries** using quotes
+The `alias` is the name DataTables uses for the column (`columns[i][data]`). Defaults to the last segment of the field path (`PublisherInfo.label` → `label`).
 
-If a text index is not available, the library will fall back to regex-based search, which is significantly slower for large collections.
+---
 
-#### Regular Indexes for Sorting and Filtering
+## Search
 
-In addition to text indexes, create regular indexes for fields used in sorting and filtering:
+Search is where this library earns its keep. The global search box supports several modes:
+
+### Text index search (fast)
+
+When a MongoDB text index exists, global search uses `$text` — fast even on multi-million-row collections:
 
 ```python
-# Create indexes for commonly sorted/filtered fields
-db.your_collection.create_index("created_at")
-db.your_collection.create_index("status")
+db.albums.create_index([("title", "text"), ("artist", "text"), ("genre", "text")])
 ```
 
-> **Note:** MongoDB has a limit of one text index per collection, but you can include multiple fields in a single text index.
+Without a text index, the library falls back to per-column regex (much slower on large collections).
+
+### Phrase search
+
+Wrap in quotes for exact phrase matching:
+
+```
+"Dark Side of the Moon"
+```
+
+### Multi-word AND search
+
+With `search[smart]=true` (DataTables default), each word must match at least one searchable column:
+
+```
+pink floyd 1973   →  all three terms must appear across the row
+```
+
+### Colon syntax — field-specific search
+
+Target a specific field without needing a separate input:
+
+```
+artist:Bowie                 →  artist contains "Bowie"
+artist:"David Bowie"         →  exact phrase in artist field
+year:1972                    →  year equals 1972
+year:>1990                   →  greater than
+year:>=1990 year:<2000       →  combine multiple conditions (ANDed)
+release_date:>2020-01-01     →  date comparison
+```
+
+### Column search with ranges
+
+Per-column search supports pipe-delimited `min|max` for numbers and dates:
+
+```
+1990|2000          →  1990 ≤ year ≤ 2000
+2020-01-01|2020-12-31
+```
+
+### Regex mode
+
+Set `search[regex]=true` to treat the search value as a raw MongoDB regex:
+
+```
+^Dark             →  starts with "Dark"
+(Floyd|Bowie)     →  matches either
+```
+
+### Case sensitivity
+
+Case-insensitive by default. Pass `search[caseInsensitive]=false` for case-sensitive matching.
+Per-column override via `columns[i][search][caseInsensitive]`.
+
+---
+
+## SearchPanes
+
+No server-side configuration needed — call `get_searchpanes_options()` to populate panes on page load:
+
+```python
+@app.route('/searchpanes', methods=['POST'])
+def searchpanes():
+    dt = DataTables(db, 'albums', request.get_json(), data_fields)
+    return jsonify(dt.get_searchpanes_options())
+```
+
+---
+
+## SearchBuilder
+
+Full server-side support with nested AND/OR criteria trees. Works automatically — no extra configuration needed.
+
+---
+
+## Sorting
+
+Multi-column sorting, ColReorder (`order[i][name]` name-based ordering), and `orderData` column redirect are all supported.
+
+---
+
+## Custom Filters
+
+Scope all queries to a subset of the collection by passing extra filter criteria as keyword arguments:
+
+```python
+DataTables(db, 'albums', args, data_fields, status='active', label='Merge Records')
+```
+
+---
+
+## Editor
+
+Full CRUD support for DataTables Editor.
+
+```python
+from mongo_datatables import Editor
+
+@app.route('/editor', methods=['POST'])
+def editor():
+    data = request.get_json()
+    result = Editor(
+        db, 'albums', data,
+        doc_id=request.args.get('id'),
+        data_fields=data_fields,
+    ).process()
+    return jsonify(result)
+```
+
+Editor also handles `action=search` for `autocomplete` and `tags` field types:
+
+```python
+@app.route('/editor/search', methods=['POST'])
+def editor_search():
+    return jsonify(Editor(db, 'albums', request.get_json(), data_fields=data_fields).search())
+```
+
+**Optional Editor parameters:**
+
+| Parameter | Description |
+|---|---|
+| `validators` | `dict` mapping field names to `callable(value) -> str\|None` |
+| `hooks` | `pre_create`, `pre_edit`, `pre_remove` callables — return falsy to cancel |
+| `options` | `dict` or zero-arg callable for select/radio/checkbox field options |
+| `dependent_handlers` | `dict` mapping field names to callables for dependent field Ajax |
+| `file_fields` + `storage_adapter` | file upload support |
+| `row_class`, `row_data`, `row_attr` | per-row metadata (static value or callable) |
+
+---
+
+## Performance & Indexes
+
+For large collections, indexes are critical — the library uses aggregation pipelines on every request.
+
+### Text index
+
+```python
+db.albums.create_index([
+    ("title", "text"),
+    ("artist", "text"),
+    ("genre", "text"),
+])
+```
+
+With a text index, global search runs in ~100–300ms on multi-million-row collections.
+Without one, regex fallback can take 5–10+ seconds.
+
+> MongoDB allows only one text index per collection, but it can cover multiple fields.
+
+To force regex search even when a text index exists (for substring matching):
+
+```python
+DataTables(db, 'albums', args, data_fields, use_text_index=False)
+```
+
+### Regular indexes
+
+Create indexes for fields used in sorting, column search, or custom filters:
+
+```python
+db.albums.create_index("year")
+db.albums.create_index("artist")
+db.albums.create_index([("artist", 1), ("year", -1)])  # compound
+```
+
+---
+
+## Advanced
+
+**`pipeline_stages`** — inject aggregation stages (`$lookup`, `$addFields`, `$unwind`) before the `$match`, useful for computed or joined fields.
+
+**`allow_disk_use=True`** — pass `allowDiskUse` to aggregation pipelines when complex filters exceed MongoDB's 100 MB in-memory limit.
+
+**`get_export_data()`** — returns all matching rows without pagination for CSV/Excel export.
+
+**`row_id`, `row_class`, `row_data`, `row_attr`** — per-row `DT_Row*` metadata, accepts a static value or a callable receiving the raw document.
+
+See the [full documentation](https://mongo-datatables.readthedocs.io/) for details.
+
+---
 
 ## Development
 
-### Testing
-
-Run the tests:
+Run tests:
 
 ```bash
-python run_tests.py
+python -m pytest tests/
 ```
 
-Generate coverage report:
+Run with coverage:
 
 ```bash
-python run_coverage.py
+python -m pytest --cov=mongo_datatables tests/ --cov-report=term --cov-report=html
 ```
-
-Coverage reports are available in the `htmlcov` directory.
 
 ## License
 

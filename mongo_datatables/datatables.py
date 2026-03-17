@@ -275,10 +275,17 @@ class DataTables:
 
     @property
     def column_search_conditions(self) -> Dict[str, Any]:
-        """Generate search conditions for individual column searches.
+        """Build filter conditions from per-column search inputs.
+
+        Reads ``columns[i][search][value]`` for each column and matches it
+        against that column's field only.  Respects the ``smart``, ``regex``,
+        and ``caseInsensitive`` flags on each column's search object.  For
+        ``number`` and ``date`` fields, a pipe-delimited ``min|max`` value is
+        treated as an inclusive range.
 
         Returns:
-            MongoDB query condition for column-specific searches
+            ``{"$and": [...]}`` combining all active column conditions, or
+            ``{}`` if no column searches are active.
         """
         search = self.request_args.get("search", {})
         case_insensitive = is_truthy(search.get("caseInsensitive", True))
@@ -286,14 +293,17 @@ class DataTables:
 
     @property
     def global_search_condition(self) -> Dict[str, Any]:
-        """Generate search conditions for the global search value.
+        """Build the filter condition for the global search box.
 
-        This method uses text indexes when available for better performance.
-        For quoted terms, it performs exact phrase matching.
-        For non-quoted terms, it uses OR semantics to match any of the terms.
+        Uses ``$text`` when a text index is available and the ``regex`` and
+        ``caseInsensitive`` flags allow it; otherwise falls back to per-column
+        ``$regex``.  Respects ``search[smart]``, ``search[regex]``, and
+        ``search[caseInsensitive]`` from the request.  Colon-syntax terms
+        (``field:value``) are excluded here — see
+        :attr:`column_specific_search_condition`.
 
         Returns:
-            MongoDB query condition for global search
+            A MongoDB query dict, or ``{}`` if the search value is empty.
         """
         search = self.request_args.get("search", {})
         return self.query_builder.build_global_search(
@@ -307,13 +317,17 @@ class DataTables:
 
     @property
     def column_specific_search_condition(self) -> Dict[str, Any]:
-        """Generate search conditions for column-specific searches using the colon syntax.
+        """Build filter conditions from ``field:value`` colon-syntax terms.
 
-        Handles search terms in the format "field:value" for targeted column searching.
-        Also supports comparison operators: >, <, >=, <=, = for numeric and date fields.
+        Extracts colon-syntax terms from the global search value and targets
+        each against its named field.  Supports plain values, quoted phrases,
+        and comparison operators (``>``, ``>=``, ``<``, ``<=``, ``=``) for
+        ``number`` and ``date`` fields.  All terms are ANDed.  Respects
+        ``search[caseInsensitive]``.
 
         Returns:
-            MongoDB query condition for column-specific searches
+            ``{"$and": [...]}`` combining all colon-term conditions, or ``{}``
+            if no colon-syntax terms are present.
         """
         colon_terms = self.search_terms_with_a_colon
         search = self.request_args.get("search", {})
@@ -325,6 +339,20 @@ class DataTables:
         )
 
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Return option counts for each SearchPanes column.
+
+        Queries the collection to compute, for each searchable column, the
+        distinct values present along with two counts per value:
+
+        - ``total`` — how many documents have that value in the full collection
+          (respecting any ``custom_filter`` but ignoring the current search).
+        - ``count`` — how many documents have that value after the current
+          search/filter is applied.
+
+        Returns:
+            Dict mapping each column's ``data`` name to a list of
+            ``{"label": value, "total": int, "count": int}`` dicts.
+        """
         return _get_searchpanes_options_fn(
             self.columns, self.field_mapper, self.custom_filter, self.filter,
             self.collection, self.allow_disk_use,
@@ -480,7 +508,11 @@ class DataTables:
 
     @property
     def draw(self) -> int:
-        """Get the draw counter for DataTables response sequencing."""
+        """The ``draw`` counter from the request, echoed unchanged in the response.
+
+        Returns:
+            Request ``draw`` value coerced to a positive int; defaults to ``1``.
+        """
         try:
             return max(1, int(self.request_args.get("draw", 1)))
         except (ValueError, TypeError):

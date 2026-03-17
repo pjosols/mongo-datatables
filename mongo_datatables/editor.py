@@ -53,11 +53,34 @@ class StorageAdapter:
     """
 
     def store(self, field: str, filename: str, content_type: str, data: bytes) -> str:
-        """Persist uploaded file data and return a unique file ID string."""
+        """Persist an uploaded file and return a unique identifier.
+
+        Args:
+            field: The Editor field name the upload belongs to.
+            filename: Original filename as reported by the browser.
+            content_type: MIME type of the uploaded file.
+            data: Raw file bytes.
+
+        Returns:
+            A unique string ID that can later be passed to :meth:`retrieve`.
+
+        Raises:
+            NotImplementedError: Subclasses must implement this method.
+        """
         raise NotImplementedError
 
     def retrieve(self, file_id: str) -> bytes:
-        """Return raw bytes for a previously stored file."""
+        """Return the raw bytes for a previously stored file.
+
+        Args:
+            file_id: The ID string returned by :meth:`store`.
+
+        Returns:
+            Raw file bytes.
+
+        Raises:
+            NotImplementedError: Subclasses must implement this method.
+        """
         raise NotImplementedError
 
 
@@ -291,7 +314,16 @@ class Editor:
             raise DatabaseOperationError(f"Failed to delete documents: {str(e)}") from e
 
     def search(self) -> Dict[str, Any]:
-        """Handle action=search for autocomplete/tags field lookups."""
+        """Handle ``action=search`` for ``autocomplete`` and ``tags`` field types.
+
+        When ``search`` is in the request, performs a case-insensitive prefix
+        regex match and returns up to 100 deduplicated results.  When
+        ``values[]`` is present instead, performs an exact ``$in`` lookup to
+        resolve stored values back to display labels.
+
+        Returns:
+            ``{"data": [{"label": str, "value": any}, ...]}``
+        """
         field = self.request_args.get("field", "")
         search_term = self.request_args.get("search", None)
         values = self.request_args.get("values", [])
