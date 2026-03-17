@@ -1,5 +1,6 @@
 from setuptools import setup, find_packages
 import os
+import re
 
 # Read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
@@ -13,9 +14,12 @@ except FileNotFoundError:
         long_description = f.read()
     long_description_content_type = 'text/x-rst'
 
+with open(os.path.join(this_directory, 'mongo_datatables', '__init__.py')) as f:
+    version = re.search(r"__version__ = '([^']+)'", f.read()).group(1)
+
 setup(
     name='mongo_datatables',
-    version='1.41.0',
+    version=version,
     description='Server-side processing for DataTables and Editor with MongoDB',
     long_description=long_description,
     long_description_content_type=long_description_content_type,
