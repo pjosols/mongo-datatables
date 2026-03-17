@@ -108,6 +108,10 @@ def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper) -> Dic
         if not selected_values:
             continue
 
+        # DataTables SearchPanes may send selections as {"0": "val"} instead of ["val"]
+        if isinstance(selected_values, dict):
+            selected_values = list(selected_values.values())
+
         db_field = field_mapper.get_db_field(column_name)
         field_type = field_mapper.get_field_type(column_name)
 
