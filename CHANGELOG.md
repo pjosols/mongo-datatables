@@ -59,6 +59,9 @@ documentation and packaging overhaul since the last published version (1.1.1).
 
 ### Fixed
 
+- **SearchBuilder**: `searchBuilder` payload delivered as a JSON string (rather than a decoded object) is now parsed before processing. Occurs when DataTables `submitAs:'json'` interacts with certain extension `preXhr` handler orderings.
+- **SearchPanes**: filter selections sent as `{"0": "val"}` (numeric-keyed object) rather than `["val"]` (array) are now correctly normalised before building the `$in` query. Fixes zero results when clicking a pane value.
+- **SearchPanes**: array-type fields (e.g. `genre`) now appear correctly in pane options. A `$unwind` stage is prepended to the `$facet` branch for array fields so individual elements are counted as distinct options rather than the whole array being excluded.
 - `DataField` aliases now correctly resolved to MongoDB field names in projections, global search, and column search — previously aliased fields silently returned no results or omitted fields from responses
 - `search[regex]` string coercion: `bool("false") == True` bug; now uses membership test
 - `searchable` and `orderable` string/bool coercion for HTTP form data (`"true"`/`"false"` as strings)
