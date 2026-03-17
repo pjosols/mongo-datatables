@@ -16,6 +16,7 @@ from mongo_datatables.datatables import DataTables, DataField
 from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.query_builder import MongoQueryBuilder
 from mongo_datatables.utils import FieldMapper, SearchTermParser, TypeConverter
+from mongo_datatables.search_builder import _sb_group, _sb_date
 from tests.base_test import BaseDataTablesTest
 
 
@@ -2089,12 +2090,9 @@ class TestHashableOutsideLoop(unittest.TestCase):
 class TestSbDateBetweenSemantics(unittest.TestCase):
     """Fix 3: _sb_date between/!between use day-inclusive exclusive upper bound."""
 
-    def setUp(self):
-        self.dt = _make_dt([DataField("created", "date")])
-
     def test_between_uses_lt_not_lte(self):
         """between: upper bound must be $lt end+1day, not $lte end."""
-        result = self.dt._sb_date("created", "between", "2024-01-01", "2024-01-31")
+        result = _sb_date("created", "between", "2024-01-01", "2024-01-31")
         cond = result["created"]
         self.assertIn("$lt", cond)
         self.assertNotIn("$lte", cond)
@@ -2102,12 +2100,12 @@ class TestSbDateBetweenSemantics(unittest.TestCase):
 
     def test_between_lower_bound(self):
         """between: lower bound must be $gte start."""
-        result = self.dt._sb_date("created", "between", "2024-01-01", "2024-01-31")
+        result = _sb_date("created", "between", "2024-01-01", "2024-01-31")
         self.assertEqual(result["created"]["$gte"], datetime(2024, 1, 1))
 
     def test_not_between_upper_uses_gte_not_gt(self):
         """!between: upper complement must be $gte end+1day, not $gt end."""
-        result = self.dt._sb_date("created", "!between", "2024-01-01", "2024-01-31")
+        result = _sb_date("created", "!between", "2024-01-01", "2024-01-31")
         upper = result["$or"][1]
         self.assertIn("$gte", upper["created"])
         self.assertNotIn("$gt", upper["created"])
@@ -2115,13 +2113,13 @@ class TestSbDateBetweenSemantics(unittest.TestCase):
 
     def test_not_between_lower_bound(self):
         """!between: lower complement must be $lt start."""
-        result = self.dt._sb_date("created", "!between", "2024-01-01", "2024-01-31")
+        result = _sb_date("created", "!between", "2024-01-01", "2024-01-31")
         lower = result["$or"][0]
         self.assertEqual(lower["created"]["$lt"], datetime(2024, 1, 1))
 
     def test_between_single_day_range(self):
         """between same start/end: $gte day, $lt day+1 (covers full day)."""
-        result = self.dt._sb_date("created", "between", "2024-06-15", "2024-06-15")
+        result = _sb_date("created", "between", "2024-06-15", "2024-06-15")
         cond = result["created"]
         self.assertEqual(cond["$gte"], datetime(2024, 6, 15))
         self.assertEqual(cond["$lt"], datetime(2024, 6, 16))
@@ -3088,39 +3086,38 @@ class TestBuildFilter:
 
 
 class TestSbGroup:
-    def _dt(self):
-        dt, _ = _make_p2_dt(_P2_BASE_ARGS)
-        return dt
+    def _fm(self):
+        return FieldMapper([])
 
     def test_empty_group_returns_empty(self):
-        assert self._dt()._sb_group({"logic": "AND", "criteria": []}) == {}
+        assert _sb_group({"logic": "AND", "criteria": []}, self._fm()) == {}
 
     def test_single_criterion_not_wrapped(self):
         criterion = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
-        result = self._dt()._sb_group({"logic": "AND", "criteria": [criterion]})
+        result = _sb_group({"logic": "AND", "criteria": [criterion]}, self._fm())
         assert "$and" not in result
         assert result != {}
 
     def test_and_logic_wraps_in_and(self):
         c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
-        result = self._dt()._sb_group({"logic": "AND", "criteria": [c, c]})
+        result = _sb_group({"logic": "AND", "criteria": [c, c]}, self._fm())
         assert "$and" in result
 
     def test_or_logic_wraps_in_or(self):
         c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
-        result = self._dt()._sb_group({"logic": "OR", "criteria": [c, c]})
+        result = _sb_group({"logic": "OR", "criteria": [c, c]}, self._fm())
         assert "$or" in result
 
     def test_nested_group(self):
         c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
         inner = {"logic": "OR", "criteria": [c, c]}
         outer = {"logic": "AND", "criteria": [c, inner]}
-        result = self._dt()._sb_group(outer)
+        result = _sb_group(outer, self._fm())
         assert "$and" in result
 
     def test_invalid_criterion_skipped(self):
         bad = {"condition": "=", "type": "string", "value": ["1984"]}  # no origData
-        result = self._dt()._sb_group({"logic": "AND", "criteria": [bad]})
+        result = _sb_group({"logic": "AND", "criteria": [bad]}, self._fm())
         assert result == {}
 
 

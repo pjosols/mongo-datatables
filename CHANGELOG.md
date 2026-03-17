@@ -1,3 +1,36 @@
+## [1.41.1] - 2026-03-16
+
+### Changed
+- Refactored `datatables.py` (1,185 → 784 lines) by extracting focused modules:
+  `search_builder.py`, `search_fixed.py`, `formatting.py`, `search_panes.py`.
+  No behavior changes. All module helpers are private (`_`-prefixed). Tests updated
+  to call extracted functions directly rather than through `DataTables` instance methods.
+
+## [1.40.0] - 2026-03-15
+### Added
+- `pipeline_stages` parameter on `DataTables`: inject custom MongoDB aggregation stages (e.g. `$addFields`, `$lookup`, `$unwind`) before the `$match` in every pipeline, including `count_filtered`. Enables computed/joined fields that DataTables can sort, filter, and display without pre-storing them in the collection.
+
+## [1.39.5] - 2026-03-15
+
+### Fixed
+- `_parse_search_fixed`: now reads `search.regex` and `search.caseInsensitive` from the
+  request's `search` dict and passes them through to `build_global_search`. Previously
+  hardcoded `search_regex=False` and omitted `case_insensitive`, so global fixed searches
+  always used literal matching and case-insensitive mode regardless of request flags.
+- `_parse_column_search_fixed`: now forwards `smart` and `caseInsensitive` from the
+  column's existing `search` config into `build_column_search`. Previously hardcoded
+  `"regex": False` without forwarding these flags, so per-column fixed searches always
+  used smart=True and caseInsensitive=True regardless of column configuration.
+
+## [1.39.0] - 2026-03-15
+
+### Added
+- DataTables 2.x `search.fixed` wire format support: `_parse_search_fixed` now reads
+  `search.fixed` (array of `{name, term}` objects) as the primary format, with fallback
+  to the legacy `searchFixed` top-level dict. Per-column `_parse_column_search_fixed`
+  similarly reads `columns[i].search.fixed` array with legacy `searchFixed` dict fallback.
+  Entries with `term == "function"` (client-side-only functions) are skipped.
+
 ## [1.38.0] - 2026-03-15
 
 ### Added
