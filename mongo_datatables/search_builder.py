@@ -27,8 +27,19 @@ def parse_search_builder(request_args: Dict[str, Any], field_mapper) -> Dict[str
     Returns:
         MongoDB query dict, or ``{}`` if no SearchBuilder data is present.
     """
+    import json as _json
     sb = request_args.get("searchBuilder")
-    if not sb or not isinstance(sb, dict):
+    if not sb:
+        return {}
+    # Some DataTables/SearchBuilder versions deliver searchBuilder as a
+    # JSON string rather than a decoded object (depends on pipeline and
+    # how submitAs:'json' interacts with extension preXhr handlers).
+    if isinstance(sb, str):
+        try:
+            sb = _json.loads(sb)
+        except (ValueError, TypeError):
+            return {}
+    if not isinstance(sb, dict):
         return {}
     return _sb_group(sb, field_mapper)
 
