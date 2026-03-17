@@ -185,7 +185,7 @@ mongo-datatables works perfectly with Flask and Flask-PyMongo:
 
     from flask import Flask, render_template, request, jsonify
     from flask_pymongo import PyMongo
-    from mongo_datatables import DataTables, Editor
+    from mongo_datatables import DataTables, Editor, DataField
 
     app = Flask(__name__)
     app.config["MONGO_URI"] = "mongodb://localhost:27017/myDatabase"
@@ -208,15 +208,15 @@ mongo-datatables works perfectly with Flask and Flask-PyMongo:
         data = request.get_json()
         doc_id = request.args.get('id', '')
 
-        field_types = {
-            "Title": "text",
-            "PublisherInfo.Date": "date",
-            "Pages": "number",
-            "Rating": "number",
-            "Themes": "array"
-        }
+        fields = [
+            DataField("Title", "string"),
+            DataField("PublisherInfo.Date", "date", alias="Published"),
+            DataField("Pages", "number"),
+            DataField("Rating", "number"),
+            DataField("Themes", "array"),
+        ]
 
-        result = Editor(mongo, 'books', data, doc_id, field_types=field_types).process()
+        result = Editor(mongo, 'books', data, doc_id, data_fields=fields).process()
         return jsonify(result)
 
     if __name__ == '__main__':

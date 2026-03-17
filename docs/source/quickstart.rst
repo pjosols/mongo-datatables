@@ -56,11 +56,6 @@ Create a basic Flask application with MongoDB integration:
     def get_data():
         data = request.get_json()
         results = DataTables(mongo, 'users', data).get_rows()
-        
-        # Optional: Access query statistics for performance monitoring
-        # query_stats = results['_query_stats']
-        # app.logger.info(f"Search using text index: {query_stats['used_text_index']}")
-        
         return jsonify(results)
 
 HTML Template

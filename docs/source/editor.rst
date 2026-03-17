@@ -15,58 +15,25 @@ translates Editor requests into MongoDB operations.
 Class Documentation
 ===================
 
-.. py:class:: mongo_datatables.editor.Editor(pymongo_object, collection_name, request_args, doc_id=None)
+.. autoclass:: mongo_datatables.editor.StorageAdapter
+   :members:
 
-   Server-side processor for DataTables Editor with MongoDB.
+.. autoclass:: mongo_datatables.editor.Editor
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
-   This class handles CRUD operations from DataTables Editor, translating them
-   into appropriate MongoDB operations.
-
-   :param pymongo_object: PyMongo client connection or Flask-PyMongo instance
-   :param collection_name: Name of the MongoDB collection
-   :param request_args: Editor request parameters (from request.get_json())
-   :param doc_id: Comma-separated list of document IDs for edit/remove operations
-
-   .. py:method:: process()
-
-      Process the Editor request based on the action.
-
-      :return: Response data for the Editor client
-      :rtype: dict
-      :raises ValueError: If action is not supported
-
-Key Properties
+Editor Actions
 ==============
 
-.. py:attribute:: db
+The Editor class handles three main actions:
 
-   Get the MongoDB database instance.
+1. **create** — Add a new document to the MongoDB collection
+2. **edit** — Update one or more existing documents
+3. **remove** — Delete one or more documents from the collection
 
-   :return: The PyMongo database instance
-
-.. py:attribute:: collection
-
-   Get the MongoDB collection.
-
-   :return: The PyMongo collection instance
-
-.. py:attribute:: action
-
-   Get the Editor action type (create, edit, remove).
-
-   :return: Action type string
-
-.. py:attribute:: data
-
-   Get the data payload from the request.
-
-   :return: Dictionary containing the submitted data
-
-.. py:attribute:: list_of_ids
-
-   Get list of document IDs for batch operations.
-
-   :return: List of document ID strings
+The action is determined by the ``action`` parameter in the request payload sent by
+DataTables Editor.
 
 Example Usage
 =============
@@ -100,14 +67,3 @@ Supporting multiple collections:
         doc_id = request.args.get('id', '')
         result = Editor(mongo, collection, data, doc_id).process()
         return jsonify(result)
-
-Editor Actions
-==============
-
-The Editor class handles three main actions:
-
-1. **create** - Add a new document to the MongoDB collection
-2. **edit** - Update one or more existing documents
-3. **remove** - Delete one or more documents from the collection
-
-The action is determined by the `action` parameter in the request payload sent by DataTables Editor.
