@@ -9,12 +9,11 @@ build/
 *.egg-info/
 *.egg
 
-# Virtual environments
-venv/
-env/
-ENV/
-.env/
+# Virtual environment
 .venv/
+
+# Environment variables
+.env
 
 # Documentation build
 docs/_build/
