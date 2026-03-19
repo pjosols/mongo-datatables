@@ -22,28 +22,24 @@ uv add mongo-datatables
 ## Quick Start
 
 ```python
-from flask import Flask, request, jsonify
 from pymongo import MongoClient
 from mongo_datatables import DataTables, DataField
 
-app = Flask(__name__)
 db = MongoClient("mongodb://localhost:27017/")["mydb"]
 
-@app.route('/data', methods=['POST'])
-def get_data():
-    data_fields = [
-        DataField('title', 'string'),
-        DataField('artist', 'string'),
-        DataField('year', 'number'),
-        DataField('genre', 'string'),
-    ]
-    return jsonify(DataTables(db, 'albums', request.get_json(), data_fields).get_rows())
+data_fields = [
+    DataField('title', 'string'),
+    DataField('artist', 'string'),
+    DataField('year', 'number'),
+    DataField('genre', 'string'),
+]
+
+# args is the DataTables Ajax request body (a dict)
+result = DataTables(db, 'albums', args, data_fields).get_rows()
 ```
 
-`db` can be any PyMongo `Database` object — raw `MongoClient(...)["mydb"]`,
-Flask-PyMongo's `mongo.db`, or equivalent from your framework's integration.
-
-`get_rows()` returns the standard DataTables server-side response:
+`db` is any PyMongo `Database` object. `args` is the JSON body from a DataTables Ajax POST.
+`get_rows()` returns the standard server-side response:
 
 ```json
 {
@@ -52,6 +48,48 @@ Flask-PyMongo's `mongo.db`, or equivalent from your framework's integration.
     "recordsFiltered": 4821,
     "data": [...]
 }
+```
+
+## Framework Examples
+
+### Flask
+
+```python
+@app.route('/api/data', methods=['POST'])
+def data():
+    return jsonify(DataTables(db, 'albums', request.get_json(), data_fields).get_rows())
+```
+
+### FastAPI
+
+```python
+@app.post('/api/data')
+async def data(request: Request):
+    return JSONResponse(DataTables(db, 'albums', await request.json(), data_fields).get_rows())
+```
+
+### Django
+
+```python
+class DataView(View):
+    def post(self, request):
+        return JsonResponse(DataTables(db, 'albums', json.loads(request.body), data_fields).get_rows())
+```
+
+### Litestar
+
+```python
+@post('/api/data')
+async def data(request: Request) -> dict:
+    return DataTables(db, 'albums', await request.json(), data_fields).get_rows()
+```
+
+### Quart
+
+```python
+@app.route('/api/data', methods=['POST'])
+async def data():
+    return jsonify(DataTables(db, 'albums', await request.get_json(), data_fields).get_rows())
 ```
 
 ---

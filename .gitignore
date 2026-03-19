@@ -16,6 +16,9 @@ ENV/
 .env/
 .venv/
 
+# Documentation build
+docs/_build/
+
 # Testing
 .coverage
 coverage.xml
