@@ -288,6 +288,8 @@ class MongoQueryBuilder:
                 condition = self._build_date_condition(db_field, value, operator)
                 if condition:
                     and_conditions.append(condition)
+            elif field_type == "keyword":
+                and_conditions.append({db_field: value})
             else:
                 and_conditions.append({db_field: {"$regex": re.escape(value), "$options": "i" if case_insensitive else ""}})
 

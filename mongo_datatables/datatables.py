@@ -46,7 +46,7 @@ class DataField:
     
     # Valid MongoDB data types used in this application
     # all other types are treated as text with regex search
-    VALID_TYPES = frozenset(['string', 'number', 'date', 'boolean', 'array', 'object', 'objectid', 'null'])
+    VALID_TYPES = frozenset(['string', 'keyword', 'number', 'date', 'boolean', 'array', 'object', 'objectid', 'null'])
     
     def __init__(self, name: str, data_type: str, alias: str = None):
         """Initialize a DataField.

@@ -15,6 +15,7 @@ documentation and packaging overhaul since the last published version (1.1.1).
 - Case sensitivity control: `search[caseInsensitive]` (global) and `columns[i][search][caseInsensitive]` (per-column)
 - Regex mode: `search[regex]` and `columns[i][search][regex]` pass raw MongoDB regex patterns
 - Colon syntax comparison operators: `field:>N`, `field:>=N`, `field:<N`, `field:<=N`, `field:=N` for `number` and `date` fields
+- `keyword` DataField type: exact equality match (`{field: value}`) instead of regex — uses a regular MongoDB index, ideal for categorical/code fields
 - Pipe-delimited range syntax for column search: `min|max` on `number` and `date` fields
 - Quoted phrase search via word-boundary regex (and `$text` phrase when using text index)
 - `columns[i][name]` lookup in column search alongside `columns[i][data]`
