@@ -106,7 +106,28 @@ DataField('PublisherInfo.label', 'string', 'label')   # nested field with UI ali
 DataField('_id', 'objectid')                          # serialized as string in response
 ```
 
-**Valid types:** `string`, `number`, `date`, `boolean`, `array`, `object`, `objectid`, `null`
+**Valid types:**
+
+| Type | Search behaviour | Uses index? | Operators |
+|---|---|---|---|
+| `keyword` | Exact equality match | Yes (regular index) | — |
+| `string` | Case-insensitive regex (substring) | No | — |
+| `number` | Exact equality or numeric comparison | Yes (regular index) | `>` `>=` `<` `<=` `=` |
+| `date` | Date comparison (ISO `YYYY-MM-DD`) | Yes (regular index) | `>` `>=` `<` `<=` `=` |
+| `array` | Regex against array elements | No | — |
+| `objectid` | Serialized as string in response | — | — |
+| `boolean`, `object`, `null` | Treated as string (regex) | No | — |
+
+Use `keyword` for categorical/code fields (country codes, status values, tags) where exact matching is always intended and index performance matters. Use `string` for free-text fields where substring and partial matching is useful.
+
+```python
+DataField('country_code', 'keyword')   # country:US  →  {"country_code": "US"}  — uses index
+DataField('name',         'string')    # name:york   →  regex, finds "New York", "Yorkshire"
+DataField('year',         'number')    # year:>1990  →  {"year": {"$gt": 1990}}  — uses index
+DataField('released',     'date')      # released:>=2020-01-01  — uses index
+DataField('_id',          'objectid')  # serialized as string in response
+DataField('PublisherInfo.label', 'string', 'label')  # nested field with UI alias
+```
 
 The `alias` is the name DataTables uses for the column (`columns[i][data]`). Defaults to the last segment of the field path (`PublisherInfo.label` → `label`).
 
@@ -147,9 +168,10 @@ pink floyd 1973   →  all three terms must appear across the row
 Target a specific field without needing a separate input:
 
 ```
-artist:Bowie                 →  artist contains "Bowie"
+artist:Bowie                 →  artist contains "Bowie" (string — regex)
 artist:"David Bowie"         →  exact phrase in artist field
-year:1972                    →  year equals 1972
+country_code:US              →  country_code equals "US" (keyword — exact, uses index)
+year:1972                    →  year equals 1972 (number — exact, uses index)
 year:>1990                   →  greater than
 year:>=1990 year:<2000       →  combine multiple conditions (ANDed)
 release_date:>2020-01-01     →  date comparison
