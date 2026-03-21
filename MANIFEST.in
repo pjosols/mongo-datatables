@@ -1,22 +1,10 @@
 include LICENSE.txt
 include README.md
-include CODE_OF_CONDUCT.md
-include CONTRIBUTING.md
+include CHANGELOG.md
 
-# Include package data
-recursive-include mongo_datatables *.py
-recursive-include mongo_datatables *.json
-recursive-include mongo_datatables *.html
-recursive-include mongo_datatables *.css
-recursive-include mongo_datatables *.js
+recursive-include docs/source *.rst
+include docs/requirements.txt
 
-# Include documentation
-recursive-include docs *.md
-recursive-include docs *.rst
-recursive-include docs *.html
-recursive-include docs *.txt
-
-# Exclude development files
 recursive-exclude * __pycache__
 recursive-exclude * *.py[cod]
 recursive-exclude * *.so

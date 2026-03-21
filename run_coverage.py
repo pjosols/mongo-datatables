@@ -9,9 +9,9 @@ def run_tests_with_coverage():
 
     # Run pytest with coverage
     result = subprocess.run([
-        "python", "-m", "pytest",
-        "--cov=mongo_datatables", "tests/",
-        "--cov-report=term",
+        sys.executable, "-m", "pytest",
+        "--cov=mongo_datatables", "--cov-branch", "tests/",
+        "--cov-report=term-missing",
         "--cov-report=html",
         "--cov-report=xml"
     ], check=False)

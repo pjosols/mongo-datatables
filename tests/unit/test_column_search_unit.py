@@ -514,6 +514,21 @@ class TestDateRangeFilter(unittest.TestCase):
         result = self._run("not-a-date|also-not")
         self.assertEqual(result, {})
 
+    def test_operator_prefix_gte_in_column_search(self):
+        """>=YYYY-MM-DD in a date column box uses $gte operator, not '='."""
+        result = self._run(">=2024-06-01")
+        cond = result["$and"][0]["created_at"]
+        self.assertIn("$gte", cond)
+        self.assertNotIn("$lt", cond)
+        self.assertEqual(cond["$gte"], datetime(2024, 6, 1))
+
+    def test_operator_prefix_lt_in_column_search(self):
+        """<YYYY-MM-DD in a date column box uses $lt operator."""
+        result = self._run("<2024-06-01")
+        cond = result["$and"][0]["created_at"]
+        self.assertIn("$lt", cond)
+        self.assertNotIn("$gte", cond)
+
 
 class TestRangeFilterCombined(unittest.TestCase):
     """Range filter combined with global search."""
@@ -544,6 +559,281 @@ class TestRangeFilterCombined(unittest.TestCase):
             price_cond = col_cond["$and"][0]["price"]
             self.assertEqual(price_cond["$gte"], 5)
             self.assertEqual(price_cond["$lte"], 100)
+
+
+class TestSearchPathParity(unittest.TestCase):
+    """Assert that column search and colon syntax produce equivalent conditions for the same input."""
+
+    def _qb(self, data_fields=None):
+        fm = FieldMapper(data_fields or [])
+        return MongoQueryBuilder(fm, use_text_index=False, has_text_index=False)
+
+    def _column_cond(self, field, value, field_type):
+        """Build condition via build_column_search (per-column input box)."""
+        qb = self._qb([DataField(field, field_type)])
+        cols = [_col(field, search_value=value)]
+        result = qb.build_column_search(cols)
+        return result["$and"][0] if "$and" in result else result
+
+    def _colon_cond(self, field, value, field_type):
+        """Build condition via build_column_specific_search (colon syntax)."""
+        qb = self._qb([DataField(field, field_type)])
+        result = qb.build_column_specific_search([f"{field}:{value}"], [field])
+        return result["$and"][0] if "$and" in result else result
+
+    def test_string_field_parity(self):
+        col = self._column_cond("author", "orwell", "string")
+        colon = self._colon_cond("author", "orwell", "string")
+        self.assertEqual(col, colon)
+
+    def test_keyword_field_parity(self):
+        col = self._column_cond("status", "active", "keyword")
+        colon = self._colon_cond("status", "active", "keyword")
+        self.assertEqual(col, colon)
+
+    def test_number_field_no_operator_parity(self):
+        col = self._column_cond("price", "50", "number")
+        colon = self._colon_cond("price", "50", "number")
+        self.assertEqual(col, colon)
+
+    def test_number_field_gte_operator_parity(self):
+        col = self._column_cond("price", ">=50", "number")
+        colon = self._colon_cond("price", ">=50", "number")
+        self.assertEqual(col, colon)
+
+    def test_number_field_lt_operator_parity(self):
+        col = self._column_cond("price", "<100", "number")
+        colon = self._colon_cond("price", "<100", "number")
+        self.assertEqual(col, colon)
+
+    def test_date_field_no_operator_parity(self):
+        col = self._column_cond("created", "2024-01-01", "date")
+        colon = self._colon_cond("created", "2024-01-01", "date")
+        self.assertEqual(col, colon)
+
+    def test_date_field_gte_operator_parity(self):
+        col = self._column_cond("created", ">=2024-01-01", "date")
+        colon = self._colon_cond("created", ">=2024-01-01", "date")
+        self.assertEqual(col, colon)
+
+    def test_date_field_lte_operator_parity(self):
+        col = self._column_cond("created", "<=2024-12-31", "date")
+        colon = self._colon_cond("created", "<=2024-12-31", "date")
+        self.assertEqual(col, colon)
+
+
+class TestQueryBuilderCoverageGaps(unittest.TestCase):
+    """Cover uncovered branches in query_builder.py."""
+
+    def _qb(self, data_fields=None):
+        field_mapper = FieldMapper(data_fields or [])
+        return MongoQueryBuilder(field_mapper, use_text_index=False, has_text_index=False)
+
+    def test_build_column_search_keyword_field_exact_match(self):
+        """L92: keyword field in per-column search → exact match (no regex)."""
+        cols = [_col("status", search_value="active")]
+        result = _build(cols, [DataField("status", "keyword")])
+        self.assertIn("$and", result)
+        self.assertEqual(result["$and"][0]["status"], "active")
+
+    # --- build_global_search ---
+
+    def test_global_search_no_searchable_columns_returns_empty(self):
+        """L168: no searchable columns → {}"""
+        qb = self._qb()
+        result = qb.build_global_search(["hello"], [])
+        self.assertEqual(result, {})
+
+    def test_global_search_quoted_skips_date_number_cols(self):
+        """L184: quoted phrase skips date/number columns; all skipped → {}"""
+        qb = self._qb([DataField("created", "date"), DataField("amount", "number")])
+        result = qb.build_global_search(
+            ["exact"], ["created", "amount"],
+            original_search='"exact"'
+        )
+        self.assertEqual(result, {})
+
+    def test_global_search_keyword_col_skipped(self):
+        """keyword fields are excluded from global search (exact-match fields shouldn't be regex-searched)."""
+        qb = self._qb([DataField("status", "keyword"), DataField("name", "string")])
+        result = qb.build_global_search(["active"], ["status", "name"])
+        # status should not appear — only name gets the regex condition
+        self.assertIn("$or", result)
+        fields = [list(c.keys())[0] for c in result["$or"]]
+        self.assertNotIn("status", fields)
+        self.assertIn("name", fields)
+
+    def test_global_search_quoted_with_string_col(self):
+        """L183-192: quoted phrase, string col → $or with word-boundary regex"""
+        qb = self._qb([DataField("name", "string")])
+        result = qb.build_global_search(
+            ["hello"], ["name"],
+            original_search='"hello"'
+        )
+        self.assertIn("$or", result)
+        self.assertIn("\\b", result["$or"][0]["name"]["$regex"])
+
+    def test_global_search_smart_multi_term_all_number_cols_non_numeric(self):
+        """L207-220: smart multi-term, all number cols, non-numeric term → {}"""
+        qb = self._qb([DataField("price", "number")])
+        result = qb.build_global_search(
+            ["hello", "world"], ["price"],
+            search_smart=True
+        )
+        # non-numeric terms fail to_number → no conditions → {}
+        self.assertEqual(result, {})
+
+    def test_global_search_smart_multi_term_numeric_values(self):
+        """L207-220: smart multi-term with number col, numeric terms → $and"""
+        qb = self._qb([DataField("price", "number")])
+        result = qb.build_global_search(
+            ["10", "20"], ["price"],
+            search_smart=True
+        )
+        self.assertIn("$and", result)
+
+    # --- build_column_specific_search ---
+
+    def test_colon_search_empty_field_skipped(self):
+        """L261: empty field portion → skip"""
+        qb = self._qb([DataField("name", "string")])
+        result = qb.build_column_specific_search([":value"], ["name"])
+        self.assertEqual(result, {})
+
+    def test_colon_search_empty_value_skipped(self):
+        """L261: empty value portion → skip"""
+        qb = self._qb([DataField("name", "string")])
+        result = qb.build_column_specific_search(["name:"], ["name"])
+        self.assertEqual(result, {})
+
+    def test_colon_search_field_not_searchable(self):
+        """L266: field not in searchable_columns → skip"""
+        qb = self._qb([DataField("name", "string")])
+        result = qb.build_column_specific_search(["secret:value"], ["name"])
+        self.assertEqual(result, {})
+
+    def test_colon_search_lte_operator(self):
+        """L274: <= operator for number field"""
+        qb = self._qb([DataField("price", "number")])
+        result = qb.build_column_specific_search(["price:<=50"], ["price"])
+        self.assertIn("$and", result)
+        self.assertEqual(result["$and"][0]["price"], {"$lte": 50})
+
+    def test_colon_search_lt_operator(self):
+        """L278: < operator for number field"""
+        qb = self._qb([DataField("price", "number")])
+        result = qb.build_column_specific_search(["price:<50"], ["price"])
+        self.assertIn("$and", result)
+        self.assertEqual(result["$and"][0]["price"], {"$lt": 50})
+
+    def test_colon_search_eq_operator(self):
+        """L280-281: = operator for number field"""
+        qb = self._qb([DataField("price", "number")])
+        result = qb.build_column_specific_search(["price:=50"], ["price"])
+        self.assertIn("$and", result)
+        self.assertEqual(result["$and"][0]["price"], 50)
+
+    def test_colon_search_date_field(self):
+        """L288-290: date field with colon syntax"""
+        qb = self._qb([DataField("created", "date")])
+        result = qb.build_column_specific_search(["created:2024-01-01"], ["created"])
+        self.assertIn("$and", result)
+        self.assertIn("created", result["$and"][0])
+
+    def test_colon_search_keyword_field(self):
+        """L292: keyword field → exact match"""
+        qb = self._qb([DataField("status", "keyword")])
+        result = qb.build_column_specific_search(["status:active"], ["status"])
+        self.assertIn("$and", result)
+        self.assertEqual(result["$and"][0]["status"], "active")
+
+    # --- _build_column_control_condition ---
+
+    def test_cc_list_empty_dict_no_condition(self):
+        """list_data is an empty dict (falsy) → outer guard skips block → no condition"""
+        qb = self._qb()
+        result = qb._build_column_control_condition("field", "string", {"list": {}})
+        self.assertEqual(result, [])
+
+    def test_cc_list_number_all_fail_conversion(self):
+        """L312+314: number list where all values fail to_number → no $in condition"""
+        qb = self._qb()
+        result = qb._build_column_control_condition(
+            "price", "number", {"list": {"0": "notanumber", "1": "alsonot"}}
+        )
+        self.assertEqual(result, [])
+
+    def test_cc_search_empty_value_non_empty_logic_skips(self):
+        """L329: search dict value is empty, logic not empty/notEmpty → no condition"""
+        qb = self._qb()
+        result = qb._build_column_control_condition(
+            "name", "string",
+            {"search": {"value": "", "logic": "contains", "type": "text"}}
+        )
+        self.assertEqual(result, [])
+
+    def test_cc_search_num_unknown_logic(self):
+        """L343: num type with unknown logic → no condition appended"""
+        qb = self._qb()
+        result = qb._build_column_control_condition(
+            "price", "number",
+            {"search": {"value": "10", "logic": "bogusOp", "type": "num"}}
+        )
+        self.assertEqual(result, [])
+
+    def test_cc_search_date_unknown_logic(self):
+        """L357: date type with unknown logic → no condition appended"""
+        qb = self._qb()
+        result = qb._build_column_control_condition(
+            "created", "date",
+            {"search": {"value": "2024-01-01", "logic": "bogusOp", "type": "date"}}
+        )
+        self.assertEqual(result, [])
+
+    def test_cc_search_string_unknown_logic(self):
+        """L373: string type with unknown logic → no condition appended"""
+        qb = self._qb()
+        result = qb._build_column_control_condition(
+            "name", "string",
+            {"search": {"value": "foo", "logic": "bogusOp", "type": "text"}}
+        )
+        self.assertEqual(result, [])
+
+    # --- _build_number_condition ---
+
+    def test_number_condition_lt(self):
+        """L400: < operator"""
+        qb = self._qb()
+        result = qb._build_number_condition("price", "50", "<")
+        self.assertEqual(result, {"price": {"$lt": 50}})
+
+    def test_number_condition_lte(self):
+        """L404: <= operator"""
+        qb = self._qb()
+        result = qb._build_number_condition("price", "50", "<=")
+        self.assertEqual(result, {"price": {"$lte": 50}})
+
+    def test_number_condition_eq(self):
+        """L406: = operator"""
+        qb = self._qb()
+        result = qb._build_number_condition("price", "50", "=")
+        self.assertEqual(result, {"price": 50})
+
+    # --- _build_date_condition ---
+
+    def test_date_condition_non_date_string_fallback(self):
+        """L433: value doesn't look like YYYY-MM-DD → regex fallback"""
+        qb = self._qb()
+        result = qb._build_date_condition("created", "january", None)
+        self.assertIn("$regex", result["created"])
+
+    def test_date_condition_parse_exception_fallback(self):
+        """L434-435: DateHandler raises → regex fallback"""
+        from mongo_datatables.utils import DateHandler
+        qb = self._qb()
+        with patch.object(DateHandler, "get_date_range_for_comparison", side_effect=ValueError("bad")):
+            result = qb._build_date_condition("created", "2024-01-01", None)
+        self.assertIn("$regex", result["created"])
 
 
 if __name__ == "__main__":

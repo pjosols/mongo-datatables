@@ -351,3 +351,130 @@ class TestSearchPanesCountMapFix:
         options = dt.get_searchpanes_options()
 
         assert options["status"][0]["count"] == 7
+
+
+class TestSearchPanesCoverageGaps:
+    """Tests targeting previously uncovered branches in search_panes.py."""
+
+    def _make_dt(self, request_args, data_fields=None):
+        mongo = MagicMock()
+        mongo.db = MagicMock(spec=Database)
+        collection = MagicMock(spec=Collection)
+        mongo.db.__getitem__.return_value = collection
+        collection.list_indexes.return_value = []
+        collection.estimated_document_count.return_value = 0
+        self.collection = collection
+        return DataTables(mongo, "test", request_args, data_fields=data_fields or [])
+
+    # --- get_searchpanes_options ---
+
+    def test_no_eligible_columns_returns_empty(self):
+        """Line 42: all columns are non-searchable → eligible is empty → return {}."""
+        request_args = {
+            "draw": 1, "start": 0, "length": 10,
+            "columns": [{"data": "status", "searchable": False}],
+            "searchPanes": True,
+        }
+        dt = self._make_dt(request_args, [DataField("status", "string")])
+        options = dt.get_searchpanes_options()
+        assert options == {}
+
+    def test_array_field_unwind_stage(self):
+        """Line 49: array field type adds $unwind to the facet branch."""
+        from mongo_datatables.search_panes import get_searchpanes_options
+        from mongo_datatables.utils import FieldMapper
+
+        fields = [DataField("tags", "array")]
+        mapper = FieldMapper(fields)
+        columns = [{"data": "tags", "searchable": True}]
+        collection = MagicMock()
+        total_facet = [{"tags": [{"_id": "rock", "count": 3}, {"_id": "jazz", "count": 2}]}]
+        count_facet = [{"tags": [{"_id": "rock", "count": 1}]}]
+        collection.aggregate.side_effect = [total_facet, count_facet]
+
+        result = get_searchpanes_options(columns, mapper, {}, {}, collection, False)
+
+        # Verify $unwind was included in at least one pipeline call
+        calls = collection.aggregate.call_args_list
+        all_stages = str(calls)
+        assert "$unwind" in all_stages
+        assert "tags" in result
+        assert result["tags"][0]["label"] == "rock"
+
+    def test_aggregation_exception_returns_empty_lists(self):
+        """Lines 63-65: aggregation error → empty list per eligible column."""
+        from mongo_datatables.search_panes import get_searchpanes_options
+        from mongo_datatables.utils import FieldMapper
+
+        fields = [DataField("status", "string")]
+        mapper = FieldMapper(fields)
+        columns = [{"data": "status", "searchable": True}]
+        collection = MagicMock()
+        collection.aggregate.side_effect = Exception("aggregation failed")
+
+        result = get_searchpanes_options(columns, mapper, {}, {}, collection, False)
+        assert result == {"status": []}
+
+    def test_objectid_value_serialised_as_string(self):
+        """Line 77: ObjectId pane value → label/value are str(oid)."""
+        from mongo_datatables.search_panes import get_searchpanes_options
+        from mongo_datatables.utils import FieldMapper
+
+        oid = ObjectId()
+        fields = [DataField("ref", "objectid")]
+        mapper = FieldMapper(fields)
+        columns = [{"data": "ref", "searchable": True}]
+        collection = MagicMock()
+        facet = [{"ref": [{"_id": oid, "count": 2}]}]
+        collection.aggregate.side_effect = [facet, facet]
+
+        result = get_searchpanes_options(columns, mapper, {}, {}, collection, False)
+        assert result["ref"][0]["label"] == str(oid)
+        assert result["ref"][0]["value"] == str(oid)
+
+    def test_datetime_value_serialised_via_isoformat(self):
+        """Line 79: datetime pane value → label/value use .isoformat()."""
+        from mongo_datatables.search_panes import get_searchpanes_options
+        from mongo_datatables.utils import FieldMapper
+        from datetime import datetime
+
+        dt_val = datetime(2024, 6, 1, 12, 0, 0)
+        fields = [DataField("created_at", "date")]
+        mapper = FieldMapper(fields)
+        columns = [{"data": "created_at", "searchable": True}]
+        collection = MagicMock()
+        facet = [{"created_at": [{"_id": dt_val, "count": 5}]}]
+        collection.aggregate.side_effect = [facet, facet]
+
+        result = get_searchpanes_options(columns, mapper, {}, {}, collection, False)
+        assert result["created_at"][0]["label"] == dt_val.isoformat()
+
+    # --- parse_searchpanes_filters ---
+
+    def test_dict_format_selected_values_normalised(self):
+        """Line 113: {"0": "Active", "1": "Pending"} normalised to list before $in."""
+        dt = self._make_dt(
+            {"searchPanes": {"status": {"0": "Active", "1": "Pending"}}},
+            [DataField("status", "string")],
+        )
+        result = dt._parse_searchpanes_filters()
+        assert result == {"$and": [{"status": {"$in": ["Active", "Pending"]}}]}
+
+    def test_number_conversion_failure_falls_back_to_raw(self):
+        """Lines 124-125: unconvertible number value appended as-is."""
+        dt = self._make_dt(
+            {"searchPanes": {"age": ["not-a-number"]}},
+            [DataField("age", "number")],
+        )
+        result = dt._parse_searchpanes_filters()
+        assert result == {"$and": [{"age": {"$in": ["not-a-number"]}}]}
+
+    def test_empty_dict_selections_skipped(self):
+        """Line 139→107: empty dict for a column produces no condition for that column."""
+        dt = self._make_dt(
+            {"searchPanes": {"status": {}, "name": ["Alice"]}},
+            [DataField("status", "string"), DataField("name", "string")],
+        )
+        result = dt._parse_searchpanes_filters()
+        # status has no values after normalisation; only name produces a condition
+        assert result == {"$and": [{"name": {"$in": ["Alice"]}}]}

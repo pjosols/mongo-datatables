@@ -271,7 +271,7 @@ def editor_search():
 | `hooks` | `pre_create`, `pre_edit`, `pre_remove` callables — return falsy to cancel |
 | `options` | `dict` or zero-arg callable for select/radio/checkbox field options |
 | `dependent_handlers` | `dict` mapping field names to callables for dependent field Ajax |
-| `file_fields` + `storage_adapter` | file upload support |
+| `file_fields` + `storage_adapter` | file upload support (subclass `StorageAdapter`) |
 | `row_class`, `row_data`, `row_attr` | per-row metadata (static value or callable) |
 
 ---

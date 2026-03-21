@@ -1,0 +1,231 @@
+:root {
+  --warm-50: #fafaf9;
+  --warm-100: #f5f5f4;
+  --warm-200: #e6e3e1;
+  --warm-250: #e5dfdc;
+  --warm-400: #a8a29e;
+  --warm-600: #57534e;
+  --warm-800: #292524;
+  --warm-900: #1c1917;
+  --accent: #ff1800;
+  --heading-color: #55402f;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  color: var(--warm-900);
+  --bs-heading-color: var(--heading-color);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Nav */
+.navbar { border-bottom: none; background: var(--warm-200); }
+.navbar-brand {
+  font-weight: 800;
+  font-size: 1.2rem;
+  letter-spacing: -0.03em;
+  color: var(--heading-color);
+}
+.navbar-brand:hover { color: var(--heading-color); }
+.nav-link-custom {
+  color: var(--warm-600);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: color 0.15s;
+}
+.nav-link-custom:hover { color: var(--warm-900); }
+
+/* Hero */
+.hero { padding: 5rem 0 4rem; }
+.version-tag {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--warm-400);
+  vertical-align: middle;
+  margin-left: 0.2rem;
+}
+.hero h1 {
+  font-size: 3.25rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.hero .lead {
+  font-size: 1.125rem;
+  color: var(--warm-600);
+  line-height: 1.6;
+}
+
+/* Install box */
+.install-box {
+  background: var(--warm-200);
+  color: var(--warm-800);
+  border-radius: 0;
+  padding: 0.6rem 1rem;
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.install-box .copy-btn {
+  background: none;
+  border: none;
+  color: var(--warm-600);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.install-box .copy-btn:hover { color: var(--warm-900); }
+
+/* Code block */
+pre.code-sample {
+  background: var(--warm-250);
+  color: var(--warm-900);
+  border-radius: 0;
+  padding: 1.75rem;
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  overflow-x: hidden;
+  border: none;
+  margin: 0;
+}
+pre.code-sample .kw { color: var(--accent); }
+pre.code-sample .fn { color: var(--accent); }
+pre.code-sample .str { color: var(--accent); }
+pre.code-sample .cm { color: var(--warm-600); }
+
+/* Features */
+.features { padding: 2rem 0; }
+.feature-item { padding: 1rem 0; }
+.feature-item h3 {
+  font-size: 0.75rem;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.feature-item p {
+  font-size: 0.8rem;
+  color: var(--warm-600);
+  line-height: 1.55;
+  margin: 0.2rem 0 0;
+}
+.feature-item code {
+  color: var(--accent);
+}
+
+/* Demos */
+.demos { padding: 2rem 0 3.5rem; }
+.demos h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.5rem;
+  color: var(--heading-color);
+}
+.demos-lead {
+  font-size: 0.925rem;
+  color: var(--warm-600);
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+.demo-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--heading-color);
+}
+.demo-card {
+  border: none;
+  border-radius: 0;
+  padding: 1.25rem;
+  height: 100%;
+}
+.demo-card-featured {
+  border: none;
+  border-radius: 0;
+}
+.demo-card h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0.25rem 0 0.75rem;
+  color: var(--warm-400);
+}
+.demo-card-links {
+  display: flex;
+  gap: 1rem;
+}
+.demo-card-links a {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.demo-card-links a:hover { color: var(--warm-900); }
+
+/* Footer */
+footer {
+  padding: 3rem 0 2rem;
+  background: var(--warm-200);
+  color: var(--warm-400);
+  font-size: 0.8rem;
+}
+footer h6 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--warm-900);
+  margin-bottom: 0.75rem;
+}
+footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+footer ul li { margin-bottom: 0.4rem; }
+footer a { color: var(--warm-600); text-decoration: none; }
+footer a:hover { color: var(--warm-900); }
+.footer-bottom {
+  border-top: 1px solid var(--warm-250);
+  color: var(--warm-400);
+  text-transform: uppercase;
+}
+
+@media (max-width: 991px) {
+  .hero { padding: 3.5rem 0 3rem; }
+  .hero h1 { font-size: 2.5rem; }
+}
+
+/* Dark theme */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --warm-50: #1c1917;
+    --warm-100: #211f1d;
+    --warm-200: #2c2926;
+    --warm-250: #33302d;
+    --warm-400: #78716c;
+    --warm-600: #a8a29e;
+    --warm-800: #e7e5e4;
+    --warm-900: #f5f5f4;
+  }
+
+  body { background: #1c1917; --bs-heading-color: #dbc0ae; --heading-color: #dbc0ae; }
+
+  .install-box { color: var(--warm-900); }
+
+  .demos h2, footer h6 { color: var(--heading-color); }
+
+  pre.code-sample { color: #dbc0ae; }
+  pre.code-sample .cm { color: var(--warm-400); }
+
+  .install-box .copy-btn:hover { color: var(--warm-900); }
+  .demo-card-links a:hover { color: var(--warm-900); }
+}

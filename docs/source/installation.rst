@@ -7,9 +7,9 @@ Requirements
 
 The mongo-datatables package requires:
 
-* Python 3.6+
-* pymongo 3.6+
-* A MongoDB database (version 3.6+ recommended)
+* Python 3.8+
+* pymongo 3.9+
+* A MongoDB database (version 4.0+ recommended)
 
 Installation Methods
 ====================

@@ -41,10 +41,12 @@ The ``alias`` must match the ``data`` name in your DataTables column
 definition.  It defaults to the last segment of the field path, so
 ``PublisherInfo.Date`` becomes ``Date`` unless you set an alias.
 
-Valid types: ``string``, ``number``, ``date``, ``boolean``, ``array``,
-``object``, ``objectid``, ``null``.  Types ``number`` and ``date`` unlock
-comparison operators in search; ``objectid`` values are serialised as strings
-in the response.
+Valid types: ``keyword``, ``string``, ``number``, ``date``, ``boolean``,
+``array``, ``object``, ``objectid``, ``null``.  ``keyword`` fields use exact
+equality matching (no regex) and work with a regular MongoDB index — ideal for
+categorical fields like status codes or country codes.  ``number`` and ``date``
+unlock comparison operators in search.  ``objectid`` values are serialised as
+strings in the response.
 
 
 Search

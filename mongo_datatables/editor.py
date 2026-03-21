@@ -48,8 +48,21 @@ logger = logging.getLogger(__name__)
 class StorageAdapter:
     """Pluggable storage backend for Editor file uploads.
 
-    Subclass and implement `store` (and optionally `retrieve` / `files_for_field`)
-    to integrate any storage backend (filesystem, GridFS, S3, etc.).
+    Subclass and implement :meth:`store` to persist uploaded files.
+    Optionally implement :meth:`retrieve` and ``files_for_field`` to support
+    additional features.
+
+    **Optional protocol method** — ``files_for_field(field: str) -> dict``:
+    If defined on a subclass, it is called after ``create`` and ``edit``
+    operations (when ``file_fields`` is configured on :class:`Editor`) and
+    after ``upload`` operations.  The returned dict is included in the Editor
+    response as ``files[field]``, letting the client display thumbnails or
+    filenames without a separate request.  Expected return shape::
+
+        {"<file_id>": {"filename": "photo.jpg", "web_path": "/uploads/photo.jpg"}}
+
+    If the method is absent, the ``files`` key is omitted from those responses
+    (the existing ``hasattr`` check is preserved intentionally).
     """
 
     def store(self, field: str, filename: str, content_type: str, data: bytes) -> str:

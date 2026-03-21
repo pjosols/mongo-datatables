@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>mongo-datatables — Server-Side DataTables with MongoDB</title>
+  <meta name="description" content="Python library for server-side jQuery DataTables processing with MongoDB. Search, sort, paginate, SearchPanes, SearchBuilder, and Editor CRUD.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="navbar navbar-light py-3">
+  <div class="container">
+    <a class="navbar-brand" href="/">mongo-datatables <span class="version-tag">v2.0</span></a>
+    <div class="d-flex gap-4 align-items-center">
+      <a href="https://docs.mongo-datatables.com" class="nav-link-custom">Docs</a>
+      <a href="https://github.com/pjosols/mongo-datatables" class="nav-link-custom">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <div class="row align-items-center gy-4">
+      <div class="col-lg-5">
+        <h1>DataTables<br>for MongoDB</h1>
+        <p class="lead mt-3 mb-4">Connect your MongoDB collection to a DataTables front-end with a few lines of Python. Sorting, pagination, and search just work — even on millions of rows.</p>
+        <div class="install-box">
+          <span>pip install mongo-datatables</span>
+          <button class="copy-btn" onclick="navigator.clipboard.writeText('pip install mongo-datatables')" aria-label="Copy install command" title="Copy">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <pre class="code-sample"><span class="kw">from</span> flask <span class="kw">import</span> Flask, request, jsonify
+<span class="kw">from</span> pymongo <span class="kw">import</span> MongoClient
+<span class="kw">from</span> mongo_datatables <span class="kw">import</span> DataTables, DataField
+
+app = Flask(__name__)
+db = MongoClient()[<span class="str">"mydb"</span>]
+
+data_fields = [
+    DataField(<span class="str">'title'</span>, <span class="str">'string'</span>),
+    DataField(<span class="str">'artist'</span>, <span class="str">'string'</span>),
+    DataField(<span class="str">'year'</span>, <span class="str">'number'</span>),
+]
+
+@app.route(<span class="str">'/api/data'</span>, methods=[<span class="str">'POST'</span>])
+<span class="kw">def</span> <span class="fn">data</span>():
+    args = request.get_json()
+    <span class="kw">return</span> jsonify(
+        DataTables(db, <span class="str">'albums'</span>, args, data_fields).get_rows()
+    )</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="container">
+    <div class="row g-3">
+      <div class="col-md-6 col-lg-3">
+        <div class="feature-item">
+          <h3>Fast full-text search</h3>
+          <p>Search millions of rows in ~100–300ms using MongoDB text indexes.</p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="feature-item">
+          <h3>Smart search &amp; stemming</h3>
+          <p>Phrase matching, regex, colon syntax like <code>year:&gt;1990</code>, and optional stemming — search "city," find "cities."</p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="feature-item">
+          <h3>Column filtering &amp; ranges</h3>
+          <p>Independent per-column search with range queries — filter years with <code>1990|2000</code>.</p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="feature-item">
+          <h3>Inline editing &amp; CRUD</h3>
+          <p>Full DataTables Editor support — create, edit, delete with validation, hooks, and file uploads.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="demos">
+  <div class="container">
+    <h2>Any Python framework</h2>
+    <p class="demos-lead">Pass a PyMongo database and a request body — that's it. Works with Flask, FastAPI, Django, Litestar, Quart, or anything else. Clone a starter template or explore the full-featured demo.</p>
+
+    <div class="row g-3">
+      <div class="col-md-6 col-lg-3">
+        <div class="demo-card demo-card-featured">
+          <span class="demo-label">Full-featured demo</span>
+          <h4>Vinyl Archives</h4>
+          <div class="demo-card-links">
+            <a href="https://vinyl-archives.com">Live site →</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="demo-card">
+          <span class="demo-label">Starter template</span>
+          <h4>Flask</h4>
+          <div class="demo-card-links">
+            <a href="https://flask-demo.net">Live demo →</a>
+            <a href="https://github.com/pjosols/flask-demo">GitHub →</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="demo-card">
+          <span class="demo-label">Starter template</span>
+          <h4>FastAPI</h4>
+          <div class="demo-card-links">
+            <a href="https://fastapi-demo.net">Live demo →</a>
+            <a href="https://github.com/pjosols/fastapi-demo">GitHub →</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="demo-card">
+          <span class="demo-label">Starter template</span>
+          <h4>Django</h4>
+          <div class="demo-card-links">
+            <a href="https://django-demo.net">Live demo →</a>
+            <a href="https://github.com/pjosols/django-demo">GitHub →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="row gy-3">
+      <div class="col-6 col-md-3">
+        <h6>Project</h6>
+        <ul>
+          <li><a href="https://docs.mongo-datatables.com">Documentation</a></li>
+          <li><a href="https://pypi.org/project/mongo-datatables/">PyPI</a></li>
+          <li><a href="https://github.com/pjosols/mongo-datatables">GitHub</a></li>
+          <li><a href="https://github.com/pjosols/mongo-datatables/blob/main/CHANGELOG.md">Changelog</a></li>
+        </ul>
+      </div>
+      <div class="col-6 col-md-3">
+        <h6>Demos</h6>
+        <ul>
+          <li><a href="https://vinyl-archives.com">Vinyl Archives</a></li>
+          <li><a href="https://flask-demo.net">Flask</a></li>
+          <li><a href="https://fastapi-demo.net">FastAPI</a></li>
+          <li><a href="https://django-demo.net">Django</a></li>
+        </ul>
+      </div>
+      <div class="col-6 col-md-3">
+        <h6>Community</h6>
+        <ul>
+          <li><a href="https://github.com/sponsors/pjosols">Sponsor</a></li>
+          <li><a href="https://github.com/pjosols/mongo-datatables/issues">Issues</a></li>
+          <li><a href="https://github.com/pjosols/mongo-datatables/blob/main/.github/CONTRIBUTING.md">Contributing</a></li>
+        </ul>
+      </div>
+      <div class="col-6 col-md-3">
+        <h6>Legal</h6>
+        <ul>
+          <li><a href="https://github.com/pjosols/mongo-datatables/blob/main/LICENSE.txt">MIT License</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom mt-4 pt-3">
+      <span>© 2026 Wholeshoot LLC</span>
+    </div>
+  </div>
+</footer>
+
+<script data-goatcounter="https://mongo-datatables.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>

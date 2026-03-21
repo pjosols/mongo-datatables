@@ -29,7 +29,8 @@ class MongoQueryBuilder:
         self,
         field_mapper: FieldMapper,
         use_text_index: bool = True,
-        has_text_index: bool = False
+        has_text_index: bool = False,
+        stemming: bool = False,
     ):
         """Initialize the query builder.
 
@@ -37,10 +38,16 @@ class MongoQueryBuilder:
             field_mapper: FieldMapper instance for field name and type lookups
             use_text_index: Whether to use text indexes when available
             has_text_index: Whether the collection has a text index
+            stemming: Whether to allow morphological variants when using a text index
+                (default: False). When False, terms are quoted so only exact word forms
+                match — consistent with standard DataTables behavior. When True, search
+                terms use ``+term`` syntax so e.g. "City" also matches "Cities". No
+                effect when ``use_text_index`` is False or no text index exists.
         """
         self.field_mapper = field_mapper
         self.use_text_index = use_text_index
         self.has_text_index = has_text_index
+        self.stemming = stemming
 
     def build_column_search(
         self,
@@ -84,11 +91,12 @@ class MongoQueryBuilder:
                             if range_cond:
                                 conditions.append({db_field: range_cond})
                         else:
-                            try:
-                                numeric_value = TypeConverter.to_number(search_value)
-                                conditions.append({db_field: numeric_value})
-                            except (ValueError, TypeError, FieldMappingError):
-                                pass
+                            op, val = self._parse_operator(search_value)
+                            condition = self._build_number_condition(db_field, val, op)
+                            if condition:
+                                conditions.append(condition)
+                    elif field_type == "keyword":
+                        conditions.append({db_field: search_value})
                     elif field_type == "date":
                         if '|' in search_value:
                             parts = search_value.split('|', 1)
@@ -105,9 +113,8 @@ class MongoQueryBuilder:
                             if range_cond:
                                 conditions.append({db_field: range_cond})
                         else:
-                            cond = self._build_date_condition(db_field, search_value, '=')
-                            if cond:
-                                conditions.append(cond)
+                            op, val = self._parse_operator(search_value)
+                            conditions.append(self._build_date_condition(db_field, val, op))
                     else:
                         col_ci_raw = column_search.get("caseInsensitive")
                         if col_ci_raw is not None:
@@ -180,7 +187,7 @@ class MongoQueryBuilder:
             for column in searchable_columns:
                 field_type = self.field_mapper.get_field_type(column)
 
-                if field_type in ("date", "number"):
+                if field_type in ("date", "number", "keyword"):
                     continue
 
                 regex_term = search_terms[0] if search_regex else re.escape(search_terms[0])
@@ -192,14 +199,17 @@ class MongoQueryBuilder:
             return {}
 
         if self.use_text_index and self.has_text_index and not search_regex and case_insensitive:
-            text_search_query = " ".join(search_terms)
+            if self.stemming:
+                text_search_query = " ".join(f'+{t}' for t in search_terms)
+            else:
+                text_search_query = " ".join(f'"{t}"' for t in search_terms)
             return {"$text": {"$search": text_search_query}}
 
         # Pre-compute per-column metadata once (not once per search term)
         col_meta = []
         for c in searchable_columns:
             ft = self.field_mapper.get_field_type(c)
-            if ft != "date":
+            if ft not in ("date", "keyword"):
                 col_meta.append((self.field_mapper.get_db_field(c), ft))
 
         if search_smart and len(search_terms) > 1:
@@ -267,27 +277,14 @@ class MongoQueryBuilder:
 
             field_type = self.field_mapper.get_field_type(db_field)
 
-            operator = None
-            if value.startswith(">="):
-                operator, value = ">=", value[2:].strip()
-            elif value.startswith("<="):
-                operator, value = "<=", value[2:].strip()
-            elif value.startswith(">"):
-                operator, value = ">", value[1:].strip()
-            elif value.startswith("<"):
-                operator, value = "<", value[1:].strip()
-            elif value.startswith("="):
-                operator = "="
-                value = value[1:].strip()
+            operator, value = self._parse_operator(value)
 
             if field_type == "number":
                 condition = self._build_number_condition(db_field, value, operator)
                 if condition:
                     and_conditions.append(condition)
             elif field_type == "date":
-                condition = self._build_date_condition(db_field, value, operator)
-                if condition:
-                    and_conditions.append(condition)
+                and_conditions.append(self._build_date_condition(db_field, value, operator))
             elif field_type == "keyword":
                 and_conditions.append({db_field: value})
             else:
@@ -303,18 +300,17 @@ class MongoQueryBuilder:
         list_data = cc.get("list")
         if list_data and isinstance(list_data, dict):
             values = list(list_data.values())
-            if values:
-                if field_type == "number":
-                    converted = []
-                    for v in values:
-                        try:
-                            converted.append(TypeConverter.to_number(v))
-                        except (ValueError, TypeError, FieldMappingError):
-                            pass
-                    if converted:
-                        conditions.append({db_field: {"$in": converted}})
-                else:
-                    conditions.append({db_field: {"$in": values}})
+            if field_type == "number":
+                converted = []
+                for v in values:
+                    try:
+                        converted.append(TypeConverter.to_number(v))
+                    except (ValueError, TypeError, FieldMappingError):
+                        pass
+                if converted:
+                    conditions.append({db_field: {"$in": converted}})
+            else:
+                conditions.append({db_field: {"$in": values}})
 
         search = cc.get("search")
         if search and isinstance(search, dict):
@@ -374,6 +370,26 @@ class MongoQueryBuilder:
                         conditions.append({db_field: {"$regex": f"{escaped}$", "$options": "i"}})
 
         return conditions
+
+    @staticmethod
+    def _parse_operator(value: str):
+        """Parse a leading comparison operator from a value string.
+
+        Returns:
+            Tuple of (operator, stripped_value) where operator is one of
+            '>=', '<=', '>', '<', '=' or None if no operator prefix found.
+        """
+        if value.startswith(">="):
+            return ">=", value[2:].strip()
+        elif value.startswith("<="):
+            return "<=", value[2:].strip()
+        elif value.startswith(">"):
+            return ">", value[1:].strip()
+        elif value.startswith("<"):
+            return "<", value[1:].strip()
+        elif value.startswith("="):
+            return "=", value[1:].strip()
+        return None, value
 
     def _build_number_condition(
         self,
