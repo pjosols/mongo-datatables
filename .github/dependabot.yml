@@ -5,7 +5,8 @@ updates:
     schedule:
       interval: "weekly"
     ignore:
-      # Ignore transitive dependencies — only pymongo is a direct runtime dep
+      # Ignore routine version bumps for transitive dependencies.
+      # Security alerts bypass these ignore rules and will still be raised.
       - dependency-name: "urllib3"
       - dependency-name: "filelock"
       - dependency-name: "requests"
