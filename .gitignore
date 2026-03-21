@@ -20,6 +20,7 @@ docs/_build/
 
 # Testing
 .coverage
+.coveragerc
 coverage.xml
 htmlcov/
 .pytest_cache/

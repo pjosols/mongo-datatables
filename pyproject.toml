@@ -43,3 +43,22 @@ version = {attr = "mongo_datatables.__version__"}
 
 [tool.setuptools.packages.find]
 exclude = ["tests*", "docs*", "htmlcov*"]
+
+[tool.coverage.run]
+source = ["mongo_datatables"]
+omit = ["*/tests/*", "*/site-packages/*", "setup.py", "run_*.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+    "except ImportError:",
+]
+fail_under = 80
+
+[tool.coverage.html]
+directory = "htmlcov"
