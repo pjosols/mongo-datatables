@@ -1,14 +1,16 @@
 """Consolidated column search tests: ColumnControl, field mapping, range filter."""
+import json
+import re
+import unittest
 from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from mongo_datatables import DataTables
 from mongo_datatables.datatables import DataField
 from mongo_datatables.query_builder import MongoQueryBuilder
-from mongo_datatables.utils import FieldMapper
-from unittest.mock import MagicMock
-from unittest.mock import MagicMock, patch
-import pytest
-import re
-import unittest
+from mongo_datatables.utils import DateHandler, FieldMapper
 
 
 # --- from tests/test_column_control.py ---
@@ -234,7 +236,6 @@ def test_not_contains_no_compiled_regex():
 
 
 def test_not_contains_bson_serializable():
-    import json
     result = _cond("notContains", "foo")
     json.dumps(result)
 
@@ -253,7 +254,6 @@ def test_not_equal_no_compiled_regex():
 
 
 def test_not_equal_bson_serializable():
-    import json
     result = _cond("notEqual", "bar")
     json.dumps(result)
 
@@ -271,7 +271,6 @@ def test_not_equal_correct_pattern():
     ("ends",     "$regex"),
 ])
 def test_positive_logics_use_regex_dict(logic, expected_key):
-    import json
     result = _cond(logic, "baz")
     cond = result[0]["name"]
     assert expected_key in cond
@@ -829,7 +828,6 @@ class TestQueryBuilderCoverageGaps(unittest.TestCase):
 
     def test_date_condition_parse_exception_fallback(self):
         """L434-435: DateHandler raises → regex fallback"""
-        from mongo_datatables.utils import DateHandler
         qb = self._qb()
         with patch.object(DateHandler, "get_date_range_for_comparison", side_effect=ValueError("bad")):
             result = qb._build_date_condition("created", "2024-01-01", None)

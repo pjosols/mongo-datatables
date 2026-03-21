@@ -5,8 +5,10 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo.collection import Collection
 from pymongo.database import Database
+from bson import Decimal128
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables import DataTables as DT
+from mongo_datatables.search_panes import get_searchpanes_options
 from mongo_datatables.utils import FieldMapper
 from mongo_datatables.query_builder import MongoQueryBuilder
 
@@ -291,9 +293,6 @@ class TestSearchPanesCountMapFix:
     """Tests for the count_map _hashable key fix in get_searchpanes_options."""
 
     def _make_dt(self, request_args, collection, data_fields=None):
-        from mongo_datatables import DataTables
-        from unittest.mock import MagicMock
-        from pymongo.database import Database
         mongo = MagicMock()
         mongo.db = MagicMock(spec=Database)
         mongo.db.__getitem__.return_value = collection
@@ -301,8 +300,6 @@ class TestSearchPanesCountMapFix:
 
     def test_count_map_uses_hashable_key_for_decimal128(self):
         """count_map lookup must use _hashable key so Decimal128 values match."""
-        from bson import Decimal128
-        from unittest.mock import MagicMock, patch
 
         request_args = {
             "draw": 1, "start": 0, "length": 10,
@@ -332,7 +329,6 @@ class TestSearchPanesCountMapFix:
 
     def test_count_map_non_decimal128_values_unaffected(self):
         """String values (already hashable) must still resolve correctly."""
-        from unittest.mock import MagicMock
 
         request_args = {
             "draw": 1, "start": 0, "length": 10,
@@ -381,8 +377,6 @@ class TestSearchPanesCoverageGaps:
 
     def test_array_field_unwind_stage(self):
         """Line 49: array field type adds $unwind to the facet branch."""
-        from mongo_datatables.search_panes import get_searchpanes_options
-        from mongo_datatables.utils import FieldMapper
 
         fields = [DataField("tags", "array")]
         mapper = FieldMapper(fields)
@@ -403,8 +397,6 @@ class TestSearchPanesCoverageGaps:
 
     def test_aggregation_exception_returns_empty_lists(self):
         """Lines 63-65: aggregation error → empty list per eligible column."""
-        from mongo_datatables.search_panes import get_searchpanes_options
-        from mongo_datatables.utils import FieldMapper
 
         fields = [DataField("status", "string")]
         mapper = FieldMapper(fields)
@@ -417,8 +409,6 @@ class TestSearchPanesCoverageGaps:
 
     def test_objectid_value_serialised_as_string(self):
         """Line 77: ObjectId pane value → label/value are str(oid)."""
-        from mongo_datatables.search_panes import get_searchpanes_options
-        from mongo_datatables.utils import FieldMapper
 
         oid = ObjectId()
         fields = [DataField("ref", "objectid")]
@@ -434,10 +424,6 @@ class TestSearchPanesCoverageGaps:
 
     def test_datetime_value_serialised_via_isoformat(self):
         """Line 79: datetime pane value → label/value use .isoformat()."""
-        from mongo_datatables.search_panes import get_searchpanes_options
-        from mongo_datatables.utils import FieldMapper
-        from datetime import datetime
-
         dt_val = datetime(2024, 6, 1, 12, 0, 0)
         fields = [DataField("created_at", "date")]
         mapper = FieldMapper(fields)

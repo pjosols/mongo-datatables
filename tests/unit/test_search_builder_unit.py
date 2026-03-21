@@ -9,6 +9,7 @@ from mongo_datatables import DataTables, DataField
 from mongo_datatables.query_builder import MongoQueryBuilder
 from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.search_builder import _sb_date, _sb_number, _sb_string
+from mongo_datatables.utils import DateHandler
 
 
 # ---------------------------------------------------------------------------
@@ -509,7 +510,6 @@ class TestSbValue2:
         assert result == {"$or": [{"age": {"$lt": 20}}, {"age": {"$gt": 30}}]}
 
     def test_date_between_value2(self):
-        from datetime import datetime
         result = _sb_dt({"criteria": [_criterion("between", "created", "date",
                                                   ["2024-01-01"], value2="2024-01-31")],
                          "logic": "AND"})._parse_search_builder()
@@ -587,14 +587,12 @@ class TestSearchBuilderCoverageGaps:
 
     def test_number_unknown_condition_returns_empty(self):
         """Line 110->113: unrecognised condition in _sb_number → {}."""
-        from mongo_datatables.search_builder import _sb_number
         assert _sb_number("age", "unknown", "30", None) == {}
 
     # --- _sb_date: != condition (lines 125-126) ---
 
     def test_date_not_equals(self):
         """Lines 125-126: date != condition returns $or excluding the day."""
-        from mongo_datatables.search_builder import _sb_date
         result = _sb_date("created_at", "!=", "2024-06-01", None)
         d = datetime(2024, 6, 1)
         assert result == {"$or": [
@@ -606,21 +604,18 @@ class TestSearchBuilderCoverageGaps:
 
     def test_date_unknown_condition_returns_empty(self):
         """Line 132->135: unrecognised condition in _sb_date → {}."""
-        from mongo_datatables.search_builder import _sb_date
         assert _sb_date("created_at", "unknown", "2024-06-01", None) == {}
 
     # --- _sb_string: v0 is None → return {} (line 141) ---
 
     def test_string_none_value_returns_empty(self):
         """Line 141: v0 is None in _sb_string → {}."""
-        from mongo_datatables.search_builder import _sb_string
         assert _sb_string("name", "contains", None) == {}
 
     # --- _sb_string: unknown condition → return {} (line 151) ---
 
     def test_string_unknown_condition_returns_empty(self):
         """Line 151: unrecognised condition in _sb_string → {}."""
-        from mongo_datatables.search_builder import _sb_string
         assert _sb_string("name", "unknown", "Alice") == {}
 
 
@@ -628,7 +623,6 @@ class TestDateHandlerGetDateRange:
     """Direct tests for DateHandler.get_date_range_for_comparison (utils.py lines 199, 202, 213)."""
 
     def setup_method(self):
-        from mongo_datatables.utils import DateHandler
         self.dh = DateHandler
 
     def test_gt_operator_uses_next_day_gte(self):
@@ -644,6 +638,5 @@ class TestDateHandlerGetDateRange:
 
     def test_invalid_operator_raises_field_mapping_error(self):
         """Line 213: unrecognised operator raises FieldMappingError."""
-        from mongo_datatables.exceptions import FieldMappingError
         with pytest.raises(FieldMappingError, match="Invalid date comparison operator"):
             self.dh.get_date_range_for_comparison("2024-06-01", "!!")

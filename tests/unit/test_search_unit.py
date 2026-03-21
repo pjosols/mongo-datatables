@@ -24,6 +24,7 @@ from pymongo.database import Database
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables import DataField as DFAlias
 from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.search_fixed import parse_column_search_fixed, parse_search_fixed
 from mongo_datatables.utils import FieldMapper
 from tests.base_test import BaseDataTablesTest
 
@@ -983,8 +984,7 @@ def test_global_fixed_regex_false_escapes_term():
     dt = _make_dt_flags(search_extra={"fixed": [{"name": "f", "term": "a.b"}], "regex": False})
     result = dt._parse_search_fixed()
     # In the dict the $regex value is 'a\\.b'; str() repr doubles the backslash
-    import re as _re
-    regex_vals = _re.findall(r"\$regex['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
+    regex_vals = re.findall(r"\$regex['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
     assert any("\\." in v for v in regex_vals)
 
 
@@ -1017,7 +1017,6 @@ def test_global_fixed_case_insensitive_true_adds_i_option():
     result_str = str(result)
     assert "$options" in result_str
     # Find options value — should be 'i'
-    import re
     opts = re.findall(r"\$options['\"]?\s*:\s*['\"]([^'\"]*)['\"]", result_str)
     assert any(o == "i" for o in opts)
 
@@ -1026,7 +1025,6 @@ def test_global_fixed_case_insensitive_false_no_i_option():
     """search.caseInsensitive=False: regex uses no 'i' option."""
     dt = _make_dt_flags(search_extra={"fixed": [{"name": "f", "term": "alice"}], "caseInsensitive": False})
     result = dt._parse_search_fixed()
-    import re
     opts = re.findall(r"\$options['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
     assert all(o == "" for o in opts)
 
@@ -1035,7 +1033,6 @@ def test_global_fixed_case_insensitive_string_false_treated_as_falsy():
     """search.caseInsensitive='false' (string): treated as falsy, no 'i' option."""
     dt = _make_dt_flags(search_extra={"fixed": [{"name": "f", "term": "alice"}], "caseInsensitive": "false"})
     result = dt._parse_search_fixed()
-    import re
     opts = re.findall(r"\$options['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
     assert all(o == "" for o in opts)
 
@@ -1059,8 +1056,7 @@ def test_column_fixed_smart_false_single_phrase():
     dt = _make_dt_flags(col0_search_extra={"fixed": [{"name": "f", "term": "hello world"}], "smart": False})
     result = dt._parse_column_search_fixed()
     # Inspect the actual regex value in the dict — should contain the escaped space
-    import re as _re
-    regex_vals = _re.findall(r"\$regex['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
+    regex_vals = re.findall(r"\$regex['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
     assert any("hello" in v and "world" in v for v in regex_vals)
     # Should NOT have a nested $and splitting the words
     and_count = str(result).count("'$and'") + str(result).count('"$and"')
@@ -1075,7 +1071,6 @@ def test_column_fixed_case_insensitive_true_adds_i_option():
     """Column search.caseInsensitive=True (default): regex uses 'i' option."""
     dt = _make_dt_flags(col0_search_extra={"fixed": [{"name": "f", "term": "alice"}], "caseInsensitive": True})
     result = dt._parse_column_search_fixed()
-    import re
     opts = re.findall(r"\$options['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
     assert any(o == "i" for o in opts)
 
@@ -1084,7 +1079,6 @@ def test_column_fixed_case_insensitive_false_no_i_option():
     """Column search.caseInsensitive=False: regex uses no 'i' option."""
     dt = _make_dt_flags(col0_search_extra={"fixed": [{"name": "f", "term": "alice"}], "caseInsensitive": False})
     result = dt._parse_column_search_fixed()
-    import re
     opts = re.findall(r"\$options['\"]?\s*:\s*['\"]([^'\"]*)['\"]", str(result))
     assert all(o == "" for o in opts)
 
@@ -1482,7 +1476,6 @@ def test_colon_search_case_sensitive(qb):
 # --- datatables.py integration ---
 
 def _make_dt(search_dict):
-    from mongo_datatables import DataTables
     collection = MagicMock()
     collection.aggregate.return_value = iter([])
     request_args = {
@@ -1517,7 +1510,6 @@ class TestSearchFixedCoverageGaps(unittest.TestCase):
 
     def test_parse_search_fixed_non_list_fixed_falls_through_to_legacy(self):
         """L23->28: search.fixed is not a list — skip array loop, process legacy dict."""
-        from mongo_datatables.search_fixed import parse_search_fixed
         qb, _ = self._qb([DataField("name", "string")])
         request_args = {
             "search": {"fixed": "not-a-list"},
@@ -1528,7 +1520,6 @@ class TestSearchFixedCoverageGaps(unittest.TestCase):
 
     def test_parse_search_fixed_empty_cond_skipped(self):
         """L43->37: build_global_search returns {} (no searchable cols) — if cond: false."""
-        from mongo_datatables.search_fixed import parse_search_fixed
         qb, _ = self._qb([DataField("name", "string")])
         request_args = {"searchFixed": {"key": "alice"}}
         result = parse_search_fixed(request_args, qb, [])  # empty searchable columns
@@ -1536,7 +1527,6 @@ class TestSearchFixedCoverageGaps(unittest.TestCase):
 
     def test_parse_column_search_fixed_skips_column_with_no_data(self):
         """L65: column missing 'data' key → db_field is empty → continue."""
-        from mongo_datatables.search_fixed import parse_column_search_fixed
         qb, fm = self._qb([DataField("name", "string")])
         columns = [{"search": {"value": "", "regex": False}, "searchFixed": {"k": "alice"}}]
         result = parse_column_search_fixed(columns, fm, qb)
@@ -1544,7 +1534,6 @@ class TestSearchFixedCoverageGaps(unittest.TestCase):
 
     def test_parse_column_search_fixed_non_list_fixed_falls_through_to_legacy(self):
         """L73->78: col search.fixed is not a list — skip array loop, process col searchFixed dict."""
-        from mongo_datatables.search_fixed import parse_column_search_fixed
         qb, fm = self._qb([DataField("name", "string")])
         columns = [{
             "data": "name",
@@ -1558,7 +1547,6 @@ class TestSearchFixedCoverageGaps(unittest.TestCase):
 
     def test_parse_column_search_fixed_empty_cond_skipped(self):
         """L93->84: build_column_search returns {} (searchable=False) — if cond: false."""
-        from mongo_datatables.search_fixed import parse_column_search_fixed
         qb, fm = self._qb([DataField("name", "string")])
         columns = [{
             "data": "name",
