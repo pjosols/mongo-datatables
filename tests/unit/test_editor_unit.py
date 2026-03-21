@@ -3,6 +3,7 @@ import unittest
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
+from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -1390,7 +1391,7 @@ class TestEditorSearchAction(unittest.TestCase):
 
     def test_search_by_values_coerces_number_type(self):
         """values list with string numbers should be coerced to int for number fields."""
-        from mongo_datatables.editor import DataField
+
         mongo = MagicMock()
         mongo.db = MagicMock(spec=Database)
         col = MagicMock(spec=Collection)
@@ -1404,7 +1405,7 @@ class TestEditorSearchAction(unittest.TestCase):
 
     def test_search_by_values_coerces_boolean_type(self):
         """values list with string booleans should be coerced to bool for boolean fields."""
-        from mongo_datatables.editor import DataField
+
         mongo = MagicMock()
         mongo.db = MagicMock(spec=Database)
         col = MagicMock(spec=Collection)
@@ -1476,7 +1477,6 @@ class TestEditorUpload(unittest.TestCase):
         self.assertIn('error', result)
 
     def test_upload_calls_adapter_store(self):
-        from mongo_datatables.editor import StorageAdapter
         adapter = MagicMock(spec=StorageAdapter)
         adapter.store.return_value = 'file-id-123'
         file_data = {'filename': 'photo.png', 'content_type': 'image/png', 'data': b'imgdata'}
@@ -1969,7 +1969,6 @@ class TestEditorCoverageGaps(unittest.TestCase):
 
     # Line 495 — create() re-raises InvalidDataError
     def test_create_reraises_invalid_data_error(self):
-        from unittest.mock import patch
         editor = Editor(self.mongo, 'test', {"action": "create", "data": {"0": {"name": "x"}}})
         with patch.object(editor, '_preprocess_document', side_effect=InvalidDataError("bad")):
             with self.assertRaises(InvalidDataError):
@@ -1985,7 +1984,6 @@ class TestEditorCoverageGaps(unittest.TestCase):
 
     # Line 595 — edit() raises InvalidDataError for bad ObjectId during update_one
     def test_edit_raises_for_invalid_objectid_on_update(self):
-        from bson.errors import InvalidId
         doc_id = str(ObjectId())
         self.collection.update_one.side_effect = InvalidId("bad id")
         self.collection.find_one.return_value = {"_id": ObjectId(doc_id), "name": "x"}

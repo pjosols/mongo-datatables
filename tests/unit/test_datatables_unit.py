@@ -1,4 +1,5 @@
 """Consolidated DataTables core and utility tests."""
+import copy
 import json
 import os
 import pymongo
@@ -289,9 +290,6 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         )
         
         # Create a complex result dictionary with various MongoDB types
-        from bson.objectid import ObjectId
-        from datetime import datetime
-        
         result_dict = {
             '_id': ObjectId('5f50c31e8a91e8c9c8d5c5d5'),
             'title': 'Test Title',
@@ -307,7 +305,6 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         }
         
         # Make a copy of the dictionary to avoid modifying the original
-        import copy
         result_copy = copy.deepcopy(result_dict)
         
         # Format the result values (the method modifies the dictionary in place)
@@ -1596,7 +1593,6 @@ class TestCountOptimization:
 
     def test_count_operations_handle_errors_gracefully(self):
         """Test that count operations handle MongoDB errors gracefully."""
-        from pymongo.errors import PyMongoError
         
         # Mock collection that raises errors
         mock_collection = Mock()
@@ -2179,7 +2175,6 @@ def test_global_search_quoted_phrase_word_boundary():
 
 def test_global_search_skips_date_columns():
     """Date-typed columns are excluded from global search results."""
-    from mongo_datatables.datatables import DataField
     fields = [DataField("created", "date"), DataField("name", "string")]
     fm = FieldMapper(fields)
     qb = MongoQueryBuilder(fm, use_text_index=False, has_text_index=False)
