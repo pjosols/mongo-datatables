@@ -7,7 +7,7 @@ name = "mongo-datatables"
 dynamic = ["version"]
 description = "Server-side processing for DataTables and Editor with MongoDB"
 readme = "README.md"
-license = "MIT"
+license = {text = "MIT"}
 authors = [{name = "Paul Olsen", email = "pjosols@wholeshoot.com"}]
 keywords = ["datatables", "editor", "mongodb", "pymongo", "flask", "django", "server-side"]
 classifiers = [
