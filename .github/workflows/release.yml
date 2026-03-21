@@ -3,22 +3,40 @@ name: Create Release and Publish
 on:
   push:
     tags:
-      - 'v*'  # This will trigger the workflow when you push a tag that starts with "v"
+      - 'v*'
 
 jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+      - name: Run tests
+        run: |
+          python -m pytest tests/unit/ -q
+
   release:
     name: Create Release and Publish to PyPI
+    needs: test
     permissions:
       contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 

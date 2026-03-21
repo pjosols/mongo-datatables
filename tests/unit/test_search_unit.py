@@ -137,7 +137,7 @@ class TestSearchTerms(unittest.TestCase):
             dt = DataTables(self.mongo, "users", _base_request("John"), use_text_index=True)
             result = dt.global_search_condition
         self.assertIn("$text", result)
-        self.assertEqual(result["$text"]["$search"], "John")
+        self.assertEqual(result["$text"]["$search"], '"John"')
 
     def test_global_search_without_text_index(self):
         with patch.object(DataTables, "has_text_index", return_value=False):
@@ -185,7 +185,21 @@ class TestTextSearch(unittest.TestCase):
             dt = DataTables(self.mongo, "users", _base_request("John"))
             cond = dt.global_search_condition
         self.assertIn("$text", cond)
-        self.assertEqual(cond["$text"]["$search"], "John")
+        self.assertEqual(cond["$text"]["$search"], '"John"')
+
+    def test_text_index_stemming_true_uses_plus_prefix(self):
+        with patch.object(DataTables, "has_text_index", return_value=True):
+            dt = DataTables(self.mongo, "users", _base_request("City"), stemming=True)
+            cond = dt.global_search_condition
+        self.assertIn("$text", cond)
+        self.assertEqual(cond["$text"]["$search"], "+City")
+
+    def test_text_index_stemming_true_multiple_terms(self):
+        with patch.object(DataTables, "has_text_index", return_value=True):
+            dt = DataTables(self.mongo, "users", _base_request("New York"), stemming=True)
+            cond = dt.global_search_condition
+        self.assertIn("$text", cond)
+        self.assertEqual(cond["$text"]["$search"], "+New +York")
 
     def test_text_index_quoted_phrase(self):
         with patch.object(DataTables, "has_text_index", return_value=True):
@@ -1492,4 +1506,66 @@ def test_datatables_global_search_case_insensitive_default():
     dt = _make_dt({"value": "Alice", "regex": False})
     cond = dt.global_search_condition
     assert cond["$or"][0]["name"]["$options"] == "i"
+
+
+class TestSearchFixedCoverageGaps(unittest.TestCase):
+    """Cover the 5 uncovered branches in search_fixed.py."""
+
+    def _qb(self, data_fields=None):
+        fm = FieldMapper(data_fields or [])
+        return MongoQueryBuilder(fm, use_text_index=False, has_text_index=False), fm
+
+    def test_parse_search_fixed_non_list_fixed_falls_through_to_legacy(self):
+        """L23->28: search.fixed is not a list — skip array loop, process legacy dict."""
+        from mongo_datatables.search_fixed import parse_search_fixed
+        qb, _ = self._qb([DataField("name", "string")])
+        request_args = {
+            "search": {"fixed": "not-a-list"},
+            "searchFixed": {"key": "alice"},
+        }
+        result = parse_search_fixed(request_args, qb, ["name"])
+        self.assertIn("$or", result)
+
+    def test_parse_search_fixed_empty_cond_skipped(self):
+        """L43->37: build_global_search returns {} (no searchable cols) — if cond: false."""
+        from mongo_datatables.search_fixed import parse_search_fixed
+        qb, _ = self._qb([DataField("name", "string")])
+        request_args = {"searchFixed": {"key": "alice"}}
+        result = parse_search_fixed(request_args, qb, [])  # empty searchable columns
+        self.assertEqual(result, {})
+
+    def test_parse_column_search_fixed_skips_column_with_no_data(self):
+        """L65: column missing 'data' key → db_field is empty → continue."""
+        from mongo_datatables.search_fixed import parse_column_search_fixed
+        qb, fm = self._qb([DataField("name", "string")])
+        columns = [{"search": {"value": "", "regex": False}, "searchFixed": {"k": "alice"}}]
+        result = parse_column_search_fixed(columns, fm, qb)
+        self.assertEqual(result, {})
+
+    def test_parse_column_search_fixed_non_list_fixed_falls_through_to_legacy(self):
+        """L73->78: col search.fixed is not a list — skip array loop, process col searchFixed dict."""
+        from mongo_datatables.search_fixed import parse_column_search_fixed
+        qb, fm = self._qb([DataField("name", "string")])
+        columns = [{
+            "data": "name",
+            "searchable": True,
+            "search": {"value": "", "regex": False, "fixed": "not-a-list"},
+            "searchFixed": {"key": "alice"},
+        }]
+        result = parse_column_search_fixed(columns, fm, qb)
+        self.assertNotEqual(result, {})
+        self.assertIn("name", str(result))
+
+    def test_parse_column_search_fixed_empty_cond_skipped(self):
+        """L93->84: build_column_search returns {} (searchable=False) — if cond: false."""
+        from mongo_datatables.search_fixed import parse_column_search_fixed
+        qb, fm = self._qb([DataField("name", "string")])
+        columns = [{
+            "data": "name",
+            "searchable": False,
+            "search": {"value": "", "regex": False},
+            "searchFixed": {"key": "alice"},
+        }]
+        result = parse_column_search_fixed(columns, fm, qb)
+        self.assertEqual(result, {})
 

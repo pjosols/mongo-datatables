@@ -2,7 +2,7 @@
 
 All notable changes to mongo-datatables are documented here.
 
-## [2.0.0] - 2026-03-17
+## [2.0.0] - 2026-03-21
 
 Major release. Significant new functionality, correctness fixes, and a full
 documentation and packaging overhaul since the last published version (1.1.1).
@@ -16,6 +16,8 @@ documentation and packaging overhaul since the last published version (1.1.1).
 - Regex mode: `search[regex]` and `columns[i][search][regex]` pass raw MongoDB regex patterns
 - Colon syntax comparison operators: `field:>N`, `field:>=N`, `field:<N`, `field:<=N`, `field:=N` for `number` and `date` fields
 - `keyword` DataField type: exact equality match (`{field: value}`) instead of regex — uses a regular MongoDB index, ideal for categorical/code fields
+- Column search inputs now support comparison operators (`>`, `>=`, `<`, `<=`, `=`) for `number` and `date` fields via prefix syntax (e.g. `>=2024-01-01`), consistent with colon syntax; `keyword` column search uses exact equality
+- `stemming` parameter on `DataTables` (default `False`): set `True` when using a text index to match morphological variants — "City" also matches "Cities", "run" matches "running"
 - Pipe-delimited range syntax for column search: `min|max` on `number` and `date` fields
 - Quoted phrase search via word-boundary regex (and `$text` phrase when using text index)
 - `columns[i][name]` lookup in column search alongside `columns[i][data]`
@@ -60,6 +62,8 @@ documentation and packaging overhaul since the last published version (1.1.1).
 
 ### Fixed
 
+- **Global text search**: multi-term `$text` search used OR semantics — adding more search terms broadened results instead of narrowing them; now uses AND semantics (quoted terms by default, `+term` prefix when `stemming=True`)
+- **Global search**: `keyword` fields were incorrectly included in global search as regex; now excluded — exact-match fields are not appropriate for free-text search
 - **SearchBuilder**: `searchBuilder` payload delivered as a JSON string (rather than a decoded object) is now parsed before processing. Occurs when DataTables `submitAs:'json'` interacts with certain extension `preXhr` handler orderings.
 - **SearchPanes**: filter selections sent as `{"0": "val"}` (numeric-keyed object) rather than `["val"]` (array) are now correctly normalised before building the `$in` query. Fixes zero results when clicking a pane value.
 - **SearchPanes**: array-type fields (e.g. `genre`) now appear correctly in pane options. A `$unwind` stage is prepended to the `$facet` branch for array fields so individual elements are counted as distinct options rather than the whole array being excluded.
@@ -84,8 +88,70 @@ documentation and packaging overhaul since the last published version (1.1.1).
 - Field mapper lookups in `build_global_search` pre-computed outside the term loop (O(N×M) → O(M))
 - Full documentation rewrite: README, readthedocs API reference, and narrative guides
 
----
+## [1.1.1] - 2025-03-16
 
-## [1.1.1] - prior release
+- Added new `DataField` class for improved field type management, nested field support, and UI-to-database field mapping
+- Implemented index-optimized fast text searches that automatically utilize MongoDB text indexes when available
+- Added advanced date filtering with comparison operators (`>`, `<`, `>=`, `<=`, `=`) for date fields
+- Added support for quoted string searches (preserves phrases as single search terms)
+- Enhanced search implementation with exact phrase matching for quoted terms
+- Improved handling of complex search queries with multiple terms
+- Added comparison operators (`>`, `<`, `>=`, `<=`, `=`) for numeric field-specific searches
+
+## [1.0.1] - 2025-03-13
+
+- Fixed path collision error when using dotted notation for nested fields in projection
+
+## [1.0.0] - 2025-03-11 [YANKED]
+
+> Yanked from PyPI due to a critical bug with nested document field handling that could cause path collision errors. Use 1.0.1 or later.
+
+- First stable release of the rewritten package
+- Basic support for regex-based searches
+- Added support for nested document field handling
+- Improved error handling and validation
+
+## [0.3.0] - 2019-07-17
+
+- Added native DataTables column search functionality
+- Implemented support for column-specific regex or exact matching
+
+## [0.2.6] - 2018-08-23
+
+- Improved type handling with explicit checks for lists, dictionaries, and floats
+- Enhanced JSON serialization for specific data types
+
+## [0.2.5] - 2017-09-26
+
+- Improved error handling in Editor by catching TypeError exceptions
+- Enhanced JSON parsing resilience for complex data types
+
+## [0.2.4] - 2017-09-23
+
+- Documentation updates and minor code refinements
+
+## [0.2.3] - 2017-09-23
+
+- Major performance improvement: switched to MongoDB aggregation pipeline for results
+- Enhanced projection to use `$ifNull` to handle missing fields gracefully
+- Editor now filters out keys with empty values before insert/update
+
+## [0.2.2] - 2017-09-18
+
+- Documentation improvement for `request_args` parameter
+
+## [0.2.1] - 2017-09-17
+
+- Improved validation of search terms with colon syntax
+
+## [0.2.0] - 2017-09-17
+
+- Added JSON handling for complex data types and MongoDB ObjectId
+- Added support for Flask integration
+
+## [0.1.4] - 2017-09-14
+
+- Initial implementation with basic DataTables server-side processing
+- Basic Editor implementation for CRUD operations
 
 Last published version on PyPI.

@@ -1,0 +1,84 @@
+/* mongo-datatables Furo theme — matched to mongo-datatables.com */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* Announcement wrapper reset */
+.announcement { background: var(--navbar-bg) !important; padding: 0 !important; height: 70px !important; }
+.announcement-content { max-width: none !important; padding: 0 !important; width: 100% !important; text-align: left !important; height: 100% !important; }
+
+/* Navbar — exact match to mongo-datatables.com */
+:root { --navbar-bg: #e6e3e1; --navbar-brand: #55402f; --navbar-link: #57534e; --navbar-link-hover: #1c1917; }
+
+.site-navbar {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  height: 70px;
+  display: flex;
+  align-items: center;
+}
+.site-navbar-inner {
+  width: 100%;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.site-navbar-brand {
+  font-weight: 800;
+  font-size: 1.2rem;
+  letter-spacing: -0.03em;
+  color: var(--navbar-brand) !important;
+  text-decoration: none;
+}
+.site-navbar-brand:hover { color: var(--navbar-brand) !important; }
+.site-version-tag {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #a8a29e;
+  vertical-align: middle;
+  margin-left: 0.2rem;
+}
+.site-navbar-links { display: flex; gap: 1.5rem; align-items: center; }
+.site-nav-link {
+  color: var(--navbar-link) !important;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: color 0.15s;
+}
+.site-nav-link:hover { color: var(--navbar-link-hover) !important; }
+
+/* Code blocks & admonitions — sharp corners like the site */
+.highlight pre { border-radius: 0; }
+.admonition { border-radius: 0; }
+code.literal { color: #ff1800; }
+
+/* Headings — match site */
+h1, h2, h3, h4, h5, h6 { color: var(--heading-color, #55402f) !important; letter-spacing: -0.03em; }
+
+/* Features list — stacked blocks */
+.features-list { display: flex; flex-direction: column; gap: 1.5rem; padding: 1rem 0; }
+.features-list .feature-item h3 {
+  font-size: 0.75rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.features-list .feature-item p { font-size: 0.8rem; color: var(--color-foreground-secondary); line-height: 1.55; margin: 0.2rem 0 0; }
+.features-list .feature-item code { color: #ff1800; }
+
+/* Remove bullets from content lists */
+article ul:not(.toc-tree ul) { list-style: none; }
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  :root { --navbar-bg: #2c2926; --navbar-brand: #dbc0ae; --navbar-link: #a8a29e; --navbar-link-hover: #f5f5f4; --heading-color: #dbc0ae; }
+  .site-version-tag { color: #78716c; }
+}
+body[data-theme="dark"] { --navbar-bg: #2c2926; --navbar-brand: #dbc0ae; --navbar-link: #a8a29e; --navbar-link-hover: #f5f5f4; --heading-color: #dbc0ae; }
+body[data-theme="dark"] .site-version-tag { color: #78716c; }
+body[data-theme="light"] { --navbar-bg: #e6e3e1; --navbar-brand: #55402f; --navbar-link: #57534e; --navbar-link-hover: #1c1917; --heading-color: #55402f; }

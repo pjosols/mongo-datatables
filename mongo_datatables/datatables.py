@@ -34,8 +34,11 @@ class DataField:
     regex search is performed.
     
     Data type handling:
+        - 'keyword': Exact equality match — no regex, works with a regular MongoDB index.
+          Ideal for categorical fields (status codes, country codes, tags).
         - 'number': Supports exact matching and comparison operators (>, <, >=, <=, =)
         - 'date': Supports date parsing and comparison operators for ISO format dates
+        - 'objectid': Serialised as a string in the response
         - All other types: Treated as text with case-insensitive regex search
     
     Attributes:
@@ -84,15 +87,38 @@ class DataField:
 class DataTables:
     """Server-side processor for jQuery DataTables with MongoDB integration.
 
-    Handles pagination, sorting, filtering, and search operations for DataTables
-    using MongoDB as the backend. Supports text indexes for efficient searching
-    and provides detailed query statistics.
+    Translates a DataTables server-side Ajax request into MongoDB aggregation
+    pipelines and returns the standard DataTables JSON response.  Handles
+    pagination, multi-column sorting, global search (text index, smart AND,
+    phrase, regex, colon-syntax field-specific), per-column search with range
+    queries, SearchPanes, SearchBuilder, and named fixed searches.
+
+    Pass extra keyword arguments as a custom MongoDB filter applied to every
+    query (e.g. ``status="active"``).  Use ``pipeline_stages`` to inject
+    ``$lookup`` or ``$addFields`` stages before the ``$match``.
+
+    Example::
+
+        from mongo_datatables import DataTables, DataField
+
+        fields = [
+            DataField("title", "string"),
+            DataField("PublisherInfo.Date", "date", alias="published"),
+            DataField("pages", "number"),
+        ]
+
+        result = DataTables(
+            db, "books", request.get_json(),
+            data_fields=fields,
+            status="published",
+        ).get_rows()
 
     Attributes:
-        collection: MongoDB collection to query
-        request_args: DataTables request parameters
-        data_fields: List of DataField objects defining the data schema
-        use_text_index: Whether to use text indexes when available
+        collection: MongoDB collection being queried.
+        request_args: DataTables request parameters as received from the client.
+        data_fields: List of :class:`DataField` objects defining the schema.
+        use_text_index: Whether to prefer a MongoDB text index for global search.
+        allow_disk_use: Whether aggregation pipelines may spill to disk.
     """
 
     def __init__(
@@ -102,6 +128,7 @@ class DataTables:
         request_args: Dict[str, Any],
         data_fields: Optional[List['DataField']] = None,
         use_text_index: bool = True,
+        stemming: bool = False,
         allow_disk_use: bool = False,
         row_class=None,
         row_data=None,
@@ -120,6 +147,12 @@ class DataTables:
             use_text_index: Whether to use text indexes when available (default: True).
                             When True, uses MongoDB text index for fast whole-word search.
                             Set False to use regex for substring matching.
+            stemming: Whether to allow morphological variants when searching with a text
+                            index (default: False). When False, only exact word forms match —
+                            consistent with standard DataTables behavior. Set to True to
+                            enable stemming: "City" also matches "Cities", "run" matches
+                            "running", "ran", etc. No effect when ``use_text_index=False``
+                            or when no text index exists on the collection.
             allow_disk_use: Pass allowDiskUse=True to all aggregation pipelines (default: False).
                             Enables MongoDB to write temporary files when the 100 MB in-memory
                             aggregation limit is exceeded. Useful for large datasets with complex
@@ -139,15 +172,13 @@ class DataTables:
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
         self.use_text_index = use_text_index
+        self.stemming = stemming
         self.allow_disk_use = allow_disk_use
         self.row_class = row_class
         self.row_data = row_data
         self.row_attr = row_attr
         self.row_id = row_id
         self.pipeline_stages = list(pipeline_stages) if pipeline_stages else []
-
-        if 'data_fields' in custom_filter:
-            del custom_filter['data_fields']
 
         self.custom_filter = custom_filter
 
@@ -163,7 +194,8 @@ class DataTables:
         self.query_builder = MongoQueryBuilder(
             field_mapper=self.field_mapper,
             use_text_index=self.use_text_index,
-            has_text_index=self.has_text_index
+            has_text_index=self.has_text_index,
+            stemming=self.stemming,
         )
 
     def _get_collection(self, pymongo_object: Any, collection_name: str) -> Collection:
@@ -575,8 +607,7 @@ class DataTables:
             pipeline.extend(self.pipeline_stages)
             if current_filter:
                 pipeline.append({"$match": current_filter})
-        if self.sort_specification:
-            pipeline.append({"$sort": self.sort_specification})
+        pipeline.append({"$sort": self.sort_specification})
         if paginate:
             if self.start > 0:
                 pipeline.append({"$skip": self.start})

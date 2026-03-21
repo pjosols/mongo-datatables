@@ -85,14 +85,12 @@ def remap_aliases(doc: Dict[str, Any], field_mapper) -> Dict[str, Any]:
                 doc[ui_alias] = val
                 # Remove top-level parent key only if it's no longer needed
                 top = parts[0]
-                if top in doc and isinstance(doc[top], dict):
-                    # Check if any other db_field uses this same top-level key
-                    other_uses = any(
-                        f != db_field and f.startswith(top + '.')
-                        for f in field_mapper.db_to_ui
-                    )
-                    if not other_uses:
-                        del doc[top]
+                other_uses = any(
+                    f != db_field and f.startswith(top + '.')
+                    for f in field_mapper.db_to_ui
+                )
+                if not other_uses:
+                    del doc[top]
         else:
             # Simple rename: db_field key -> ui_alias key
             if db_field in doc:

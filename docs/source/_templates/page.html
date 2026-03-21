@@ -1,0 +1,19 @@
+{% extends "furo/page.html" %}
+
+{% block announcement %}
+<nav class="site-navbar">
+  <div class="site-navbar-inner">
+    <a class="site-navbar-brand" href="https://mongo-datatables.com">mongo-datatables <span class="site-version-tag">v{{ release.rsplit('.', 1)[0] }}</span></a>
+    <div class="site-navbar-links">
+      <a href="https://pypi.org/project/mongo-datatables/" class="site-nav-link">PyPI</a>
+      <a href="https://github.com/pjosols/mongo-datatables" class="site-nav-link">GitHub</a>
+    </div>
+  </div>
+</nav>
+{% endblock %}
+
+{% block footer %}
+{{ super() }}
+<script data-goatcounter="https://mongo-datatables.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+{% endblock %}

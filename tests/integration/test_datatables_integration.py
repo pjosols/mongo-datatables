@@ -136,3 +136,45 @@ class TestDataTablesIntegration:
         resp = DataTables(mongo_db, "books", req).get_rows()
         assert resp["recordsTotal"] == 10
         assert "error" not in resp
+
+    # --- Search path parity: column search vs colon syntax ---
+
+    def test_parity_string_column_vs_colon(self, mongo_db, books_col):
+        """Column search and colon syntax return same rows for a string field."""
+        cols_col = [
+            {"data": "Title", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+            {"data": "Author", "searchable": "true", "orderable": "true", "search": {"value": "Orwell"}},
+            {"data": "Pages", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+            {"data": "Genre", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+        ]
+        resp_col = DataTables(mongo_db, "books", make_request(columns=cols_col), use_text_index=False).get_rows()
+        resp_colon = DataTables(mongo_db, "books", make_request(search_value="Author:Orwell"), use_text_index=False).get_rows()
+        assert resp_col["recordsFiltered"] == resp_colon["recordsFiltered"] == 2
+
+    def test_parity_number_operator_column_vs_colon(self, mongo_db, books_col):
+        """Column search with >= operator and colon syntax return same rows for a number field."""
+        data_fields = [DataField("Pages", "number")]
+        cols_col = [
+            {"data": "Title", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+            {"data": "Author", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+            {"data": "Pages", "searchable": "true", "orderable": "true", "search": {"value": ">=300"}},
+            {"data": "Genre", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+        ]
+        resp_col = DataTables(mongo_db, "books", make_request(columns=cols_col), data_fields=data_fields, use_text_index=False).get_rows()
+        resp_colon = DataTables(mongo_db, "books", make_request(search_value="Pages:>=300"), data_fields=data_fields, use_text_index=False).get_rows()
+        assert resp_col["recordsFiltered"] == resp_colon["recordsFiltered"]
+        assert all(row["Pages"] >= 300 for row in resp_col["data"])
+
+    def test_parity_keyword_column_vs_colon(self, mongo_db, books_col):
+        """Column search and colon syntax return same rows for a keyword field."""
+        data_fields = [DataField("Genre", "keyword")]
+        cols_col = [
+            {"data": "Title", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+            {"data": "Author", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+            {"data": "Pages", "searchable": "true", "orderable": "true", "search": {"value": ""}},
+            {"data": "Genre", "searchable": "true", "orderable": "true", "search": {"value": "Dystopia"}},
+        ]
+        resp_col = DataTables(mongo_db, "books", make_request(columns=cols_col), data_fields=data_fields, use_text_index=False).get_rows()
+        resp_colon = DataTables(mongo_db, "books", make_request(search_value="Genre:Dystopia"), data_fields=data_fields, use_text_index=False).get_rows()
+        assert resp_col["recordsFiltered"] == resp_colon["recordsFiltered"] == 3
+        assert all(row["Genre"] == "Dystopia" for row in resp_col["data"])

@@ -3153,3 +3153,111 @@ class TestGetRowgroupData:
         dt, col = _make_p2_dt(args)
         col.aggregate = MagicMock(side_effect=PyMongoError("db error"))
         assert dt._get_rowgroup_data() is None
+
+    # Line 746 — mongo_field is falsy (column data maps to empty string)
+    def test_empty_field_name_returns_none(self):
+        args = {**_P2_BASE_ARGS, "rowGroup": {"dataSrc": ""}}
+        dt, _ = _make_p2_dt(args)
+        assert dt._get_rowgroup_data() is None
+
+    # Line 754 — filter active so $match is prepended in rowgroup pipeline
+    def test_rowgroup_with_active_filter(self):
+        args = {**_P2_BASE_ARGS, "rowGroup": {"dataSrc": "Title"},
+                "search": {"value": "foo", "regex": False}}
+        dt, col = _make_p2_dt(args)
+        col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
+        result = dt._get_rowgroup_data()
+        pipeline_arg = col.aggregate.call_args[0][0]
+        assert any("$match" in stage for stage in pipeline_arg)
+
+
+class TestDataTablesCoverageGaps:
+    """Tests targeting remaining coverage gaps in datatables.py."""
+
+    # Branches 492->487, 494->487 — orderData sort path
+    def test_orderdata_column_with_no_data_skipped(self):
+        """Branch 492->487: orderData points to column with empty 'data' field."""
+        args = {
+            **_P2_BASE_ARGS,
+            "order": [{"column": 0, "dir": "asc"}],
+            "columns": [{"data": "Title", "searchable": True, "orderable": True,
+                          "search": {"value": "", "regex": False},
+                          "orderData": 1},
+                         {"data": "", "searchable": False, "orderable": True,
+                          "search": {"value": "", "regex": False}}],
+        }
+        dt, _ = _make_p2_dt(args)
+        spec = dt.sort_specification
+        # Column 1 has empty data so its db_field is skipped; _id tiebreaker added
+        assert "_id" in spec
+
+    def test_orderdata_duplicate_field_skipped(self):
+        """Branch 491->484 and 494->487: orderData resolves to field already in sort_spec."""
+        # Two order entries both pointing (via orderData) to the same target column
+        args = {
+            **_P2_BASE_ARGS,
+            "order": [{"column": 0, "dir": "asc"}, {"column": 1, "dir": "desc"}],
+            "columns": [
+                {"data": "Title", "searchable": True, "orderable": True,
+                 "search": {"value": "", "regex": False}, "orderData": [0, 1]},
+                {"data": "Title", "searchable": True, "orderable": True,
+                 "search": {"value": "", "regex": False}, "orderData": [0]},
+            ],
+        }
+        dt, _ = _make_p2_dt(args)
+        spec = dt.sort_specification
+        # Title should appear only once despite being referenced multiple times
+        assert list(spec.keys()).count("Title") == 1
+
+    # Branch 557->556 — column with no 'data' key skipped in _build_projection
+    def test_projection_skips_column_without_data(self):
+        args = {
+            **_P2_BASE_ARGS,
+            "columns": [
+                {"data": "Title", "searchable": True, "orderable": True,
+                 "search": {"value": "", "regex": False}},
+                {"searchable": False, "orderable": False,
+                 "search": {"value": "", "regex": False}},  # no 'data' key
+            ],
+        }
+        dt, _ = _make_p2_dt(args)
+        proj = dt.projection
+        assert "Title" in proj
+        assert "_id" in proj
+
+    # Line 582 — _filter_has_text finds $text nested inside a list
+    def test_filter_has_text_nested_in_list(self):
+        f = {"$and": [{"$text": {"$search": "hello"}}, {"status": "active"}]}
+        assert DataTables._filter_has_text(f) is True
+
+    def test_filter_has_text_not_nested(self):
+        f = {"$and": [{"status": "active"}]}
+        assert DataTables._filter_has_text(f) is False
+
+    # Line 621 — results cached: second call returns without re-querying
+    def test_results_cached_on_second_call(self):
+        dt, col = _make_p2_dt(_P2_BASE_ARGS)
+        col.aggregate.return_value = iter([])
+        _ = dt.results()        # first call — populates cache
+        _ = dt.results()        # second call — should hit cached branch
+        assert col.aggregate.call_count == 1  # only called once despite two accesses
+
+    # Branch 674->690 — count_filtered cached: second call skips recompute
+    def test_count_filtered_cached_on_second_call(self):
+        dt, col = _make_p2_dt({**_P2_BASE_ARGS, "search": {"value": "x", "regex": False}})
+        col.aggregate.return_value = iter([{"total": 5}])
+        first = dt.count_filtered()
+        col.aggregate.return_value = iter([{"total": 99}])
+        second = dt.count_filtered()
+        assert first == second  # second call returns cached value, not 99
+
+    # Lines 794-799 — get_export_data error handling
+    def test_get_export_data_pymongo_error_returns_empty(self):
+        dt, col = _make_p2_dt(_P2_BASE_ARGS)
+        col.aggregate.side_effect = PyMongoError("db error")
+        assert dt.get_export_data() == []
+
+    def test_get_export_data_unexpected_exception_returns_empty(self):
+        dt, col = _make_p2_dt(_P2_BASE_ARGS)
+        col.aggregate.side_effect = RuntimeError("unexpected")
+        assert dt.get_export_data() == []

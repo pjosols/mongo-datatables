@@ -534,3 +534,116 @@ class TestSbValue2:
                                                   ["100"], value2="200")],
                          "logic": "AND"})._parse_search_builder()
         assert result == {"price": {"$gte": 100.0, "$lte": 200.0}}
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests
+# ---------------------------------------------------------------------------
+
+class TestSearchBuilderCoverageGaps:
+    """Targets previously uncovered branches in search_builder.py."""
+
+    # --- parse_search_builder: JSON-string input (lines 38-43) ---
+
+    def test_json_string_payload_parsed(self):
+        """Lines 38-41: searchBuilder delivered as a JSON string is decoded."""
+        sb = json.dumps({
+            "criteria": [{"condition": "=", "origData": "status", "type": "string", "value": ["active"]}],
+            "logic": "AND",
+        })
+        result = _dt(sb)._parse_search_builder()
+        assert result == {"status": {"$regex": "^active$", "$options": "i"}}
+
+    def test_invalid_json_string_returns_empty(self):
+        """Lines 40-41: invalid JSON string → return {}."""
+        result = _dt("not-valid-json")._parse_search_builder()
+        assert result == {}
+
+    def test_non_dict_json_string_returns_empty(self):
+        """Line 43: valid JSON but not a dict (e.g. array) → return {}."""
+        result = _dt(json.dumps(["a", "b"]))._parse_search_builder()
+        assert result == {}
+
+    # --- _sb_group: empty nested group skipped (line 55->52) ---
+
+    def test_empty_nested_group_skipped(self):
+        """Line 55->52: nested group with no valid criteria evaluates to {} and is skipped."""
+        sb = {
+            "logic": "AND",
+            "criteria": [
+                # inner group with no origData → all criteria return {}
+                {
+                    "logic": "OR",
+                    "criteria": [{"condition": "=", "origData": "", "type": "string", "value": ["x"]}],
+                },
+                {"condition": "=", "origData": "name", "type": "string", "value": ["Alice"]},
+            ],
+        }
+        result = _dt(sb)._parse_search_builder()
+        # empty inner group is dropped; only the name criterion remains
+        assert result == {"name": {"$regex": "^Alice$", "$options": "i"}}
+
+    # --- _sb_number: unknown condition → return {} (line 110->113) ---
+
+    def test_number_unknown_condition_returns_empty(self):
+        """Line 110->113: unrecognised condition in _sb_number → {}."""
+        from mongo_datatables.search_builder import _sb_number
+        assert _sb_number("age", "unknown", "30", None) == {}
+
+    # --- _sb_date: != condition (lines 125-126) ---
+
+    def test_date_not_equals(self):
+        """Lines 125-126: date != condition returns $or excluding the day."""
+        from mongo_datatables.search_builder import _sb_date
+        result = _sb_date("created_at", "!=", "2024-06-01", None)
+        d = datetime(2024, 6, 1)
+        assert result == {"$or": [
+            {"created_at": {"$lt": d}},
+            {"created_at": {"$gte": d + timedelta(days=1)}},
+        ]}
+
+    # --- _sb_date: unknown condition → return {} (line 132->135) ---
+
+    def test_date_unknown_condition_returns_empty(self):
+        """Line 132->135: unrecognised condition in _sb_date → {}."""
+        from mongo_datatables.search_builder import _sb_date
+        assert _sb_date("created_at", "unknown", "2024-06-01", None) == {}
+
+    # --- _sb_string: v0 is None → return {} (line 141) ---
+
+    def test_string_none_value_returns_empty(self):
+        """Line 141: v0 is None in _sb_string → {}."""
+        from mongo_datatables.search_builder import _sb_string
+        assert _sb_string("name", "contains", None) == {}
+
+    # --- _sb_string: unknown condition → return {} (line 151) ---
+
+    def test_string_unknown_condition_returns_empty(self):
+        """Line 151: unrecognised condition in _sb_string → {}."""
+        from mongo_datatables.search_builder import _sb_string
+        assert _sb_string("name", "unknown", "Alice") == {}
+
+
+class TestDateHandlerGetDateRange:
+    """Direct tests for DateHandler.get_date_range_for_comparison (utils.py lines 199, 202, 213)."""
+
+    def setup_method(self):
+        from mongo_datatables.utils import DateHandler
+        self.dh = DateHandler
+
+    def test_gt_operator_uses_next_day_gte(self):
+        """Line 199: '>' → $gte next day (strictly after the date)."""
+        result = self.dh.get_date_range_for_comparison("2024-06-01", ">")
+        assert "$gte" in result
+        assert result["$gte"] == datetime(2024, 6, 2)
+
+    def test_lt_operator_uses_start_date(self):
+        """Line 202: '<' → $lt start date (strictly before the date)."""
+        result = self.dh.get_date_range_for_comparison("2024-06-01", "<")
+        assert result == {"$lt": datetime(2024, 6, 1)}
+
+    def test_invalid_operator_raises_field_mapping_error(self):
+        """Line 213: unrecognised operator raises FieldMappingError."""
+        from mongo_datatables.exceptions import FieldMappingError
+        with pytest.raises(FieldMappingError, match="Invalid date comparison operator"):
+            self.dh.get_date_range_for_comparison("2024-06-01", "!!")

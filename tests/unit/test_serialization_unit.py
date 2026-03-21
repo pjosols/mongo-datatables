@@ -257,3 +257,54 @@ class TestRegexSerialization:
         result = json.dumps(doc)
         assert "/a/i" in result
         assert "plain_string" in result
+
+
+class TestFormattingCoverageGaps(unittest.TestCase):
+    """Cover the 5 uncovered branches in formatting.py."""
+
+    def test_format_result_values_empty_dict_returns_early(self):
+        """L21: empty dict → early return, no error."""
+        from mongo_datatables.formatting import format_result_values
+        d = {}
+        format_result_values(d)
+        self.assertEqual(d, {})
+
+    def test_format_result_values_list_containing_dict(self):
+        """L32: list item is a dict → recursive call on it."""
+        from mongo_datatables.formatting import format_result_values
+        from bson import ObjectId
+        oid = ObjectId()
+        d = {"items": [{"_id": oid, "name": "x"}]}
+        format_result_values(d)
+        self.assertEqual(d["items"][0]["_id"], str(oid))
+
+    def test_remap_aliases_dotted_top_key_missing_from_doc(self):
+        """L88->71: dotted db_field but top-level key absent → no del, loop continues."""
+        from mongo_datatables.formatting import remap_aliases
+        from mongo_datatables.utils import FieldMapper
+        from mongo_datatables.datatables import DataField
+        fm = FieldMapper([DataField("meta.date", "date", alias="pub_date")])
+        doc = {"name": "Alice"}  # "meta" key not present
+        result = remap_aliases(doc, fm)
+        self.assertNotIn("meta", result)
+
+    def test_remap_aliases_simple_rename_field_absent(self):
+        """L98->71: simple rename but db_field not in doc → no-op, loop continues."""
+        from mongo_datatables.formatting import remap_aliases
+        from mongo_datatables.utils import FieldMapper
+        from mongo_datatables.datatables import DataField
+        fm = FieldMapper([DataField("full_name", "string", alias="display_name")])
+        doc = {"age": 30}  # "full_name" not present
+        result = remap_aliases(doc, fm)
+        self.assertNotIn("display_name", result)
+        self.assertEqual(result["age"], 30)
+
+    def test_process_cursor_row_without_id_fields(self):
+        """L117->119: row has neither row_id nor _id → no DT_RowId set."""
+        from mongo_datatables.formatting import process_cursor
+        from mongo_datatables.utils import FieldMapper
+        fm = FieldMapper([])
+        cursor = [{"name": "Alice", "age": 30}]
+        result = process_cursor(cursor, row_id=None, field_mapper=fm)
+        self.assertNotIn("DT_RowId", result[0])
+        self.assertEqual(result[0]["name"], "Alice")

@@ -62,7 +62,7 @@ def get_searchpanes_options(
         count_result = count_docs[0] if count_docs else {}
     except Exception as e:
         logger.error(f"Error generating SearchPanes options: {str(e)}")
-        return {col_name: [] for col_name, _ in eligible}
+        return {col_name: [] for col_name, *_ in eligible}
 
     def _hashable(v):
         return str(v.to_decimal()) if isinstance(v, Decimal128) else v
@@ -121,7 +121,7 @@ def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper) -> Dic
             if field_type == "number":
                 try:
                     converted_values.append(TypeConverter.to_number(value))
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, FieldMappingError):
                     converted_values.append(value)
             elif field_type == "objectid":
                 try:
@@ -136,8 +136,7 @@ def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper) -> Dic
             else:
                 converted_values.append(value)
 
-        if converted_values:
-            conditions.append({db_field: {"$in": converted_values}})
+        conditions.append({db_field: {"$in": converted_values}})
 
     if conditions:
         return {"$and": conditions}

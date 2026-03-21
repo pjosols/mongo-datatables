@@ -163,6 +163,8 @@ list:
 
 .. code-block:: python
 
+    from mongo_datatables import StorageAdapter
+
     class MyStorage(StorageAdapter):
         def store(self, field, filename, content_type, data):
             # save to S3, GridFS, filesystem, etc.
