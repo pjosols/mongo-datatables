@@ -11,7 +11,12 @@ Server-side processing for jQuery DataTables with MongoDB.
 
 Translates DataTables Ajax requests into MongoDB aggregation pipelines, handling pagination, sorting, filtering, search, SearchPanes, SearchBuilder, and Editor (full CRUD).
 
-[mongo-datatables.com](https://mongo-datatables.com) · [docs.mongo-datatables.com](https://docs.mongo-datatables.com) · [Full-featured demo at Vinyl Archives](https://vinyl-archives.com) · [Flask Demo](https://flask-demo.com) · [Django Demo](https://django-demo.com) · [FastAPI Demo](https://fastapi-demo.com)
+## Links
+
+- [mongo-datatables.com](https://mongo-datatables.com) — project homepage
+- [docs.mongo-datatables.com](https://docs.mongo-datatables.com) — full documentation with configuration details, examples, and API reference
+- [Vinyl Archives](https://vinyl-archives.com) — full-featured showcase app with CRUD, cover art, SearchPanes, SearchBuilder, and Editor
+- [Flask Demo](https://flask-demo.com) · [Django Demo](https://django-demo.com) · [FastAPI Demo](https://fastapi-demo.com) — minimal starter apps showing framework integration
 
 ## Installation
 
