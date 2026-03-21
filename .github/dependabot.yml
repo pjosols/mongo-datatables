@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Ignore transitive dependencies — only pymongo is a direct runtime dep
+      - dependency-name: "urllib3"
+      - dependency-name: "filelock"
+      - dependency-name: "requests"
+      - dependency-name: "certifi"
+      - dependency-name: "charset-normalizer"
+      - dependency-name: "idna"
