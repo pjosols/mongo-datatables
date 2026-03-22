@@ -16,7 +16,7 @@ Translates DataTables Ajax requests into MongoDB aggregation pipelines, handling
 - [mongo-datatables.com](https://mongo-datatables.com) — project homepage
 - [docs.mongo-datatables.com](https://docs.mongo-datatables.com) — full documentation with configuration details, examples, and API reference
 - [Vinyl Archives](https://vinyl-archives.com) — full-featured showcase app with CRUD, cover art, SearchPanes, SearchBuilder, and Editor
-- [Flask Demo](https://flask-demo.com) · [Django Demo](https://django-demo.com) · [FastAPI Demo](https://fastapi-demo.com) — minimal starter apps showing framework integration
+- [Flask Demo](https://flask-demo.net) · [Django Demo](https://django-demo.net) · [FastAPI Demo](https://fastapi-demo.net) — minimal starter apps showing framework integration
 
 ## Installation
 
