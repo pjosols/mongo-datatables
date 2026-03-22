@@ -64,7 +64,9 @@ result = DataTables(db, 'albums', args, data_fields).get_rows()
 ```python
 @app.route('/api/data', methods=['POST'])
 def data():
-    return jsonify(DataTables(db, 'albums', request.get_json(), data_fields).get_rows())
+    args = request.get_json()
+    dt = DataTables(db, 'albums', args, data_fields)
+    return jsonify(dt.get_rows())
 ```
 
 ### FastAPI
@@ -72,7 +74,9 @@ def data():
 ```python
 @app.post('/api/data')
 async def data(request: Request):
-    return JSONResponse(DataTables(db, 'albums', await request.json(), data_fields).get_rows())
+    args = await request.json()
+    dt = DataTables(db, 'albums', args, data_fields)
+    return JSONResponse(dt.get_rows())
 ```
 
 ### Django
@@ -80,7 +84,9 @@ async def data(request: Request):
 ```python
 class DataView(View):
     def post(self, request):
-        return JsonResponse(DataTables(db, 'albums', json.loads(request.body), data_fields).get_rows())
+        args = json.loads(request.body)
+        dt = DataTables(db, 'albums', args, data_fields)
+        return JsonResponse(dt.get_rows())
 ```
 
 ### Litestar
@@ -88,7 +94,8 @@ class DataView(View):
 ```python
 @post('/api/data')
 async def data(request: Request) -> dict:
-    return DataTables(db, 'albums', await request.json(), data_fields).get_rows()
+    args = await request.json()
+    return DataTables(db, 'albums', args, data_fields).get_rows()
 ```
 
 ### Quart
@@ -96,7 +103,9 @@ async def data(request: Request) -> dict:
 ```python
 @app.route('/api/data', methods=['POST'])
 async def data():
-    return jsonify(DataTables(db, 'albums', await request.get_json(), data_fields).get_rows())
+    args = await request.get_json()
+    dt = DataTables(db, 'albums', args, data_fields)
+    return jsonify(dt.get_rows())
 ```
 
 ---
@@ -106,11 +115,11 @@ async def data():
 `DataField(name, data_type, alias=None)` maps a MongoDB field to a DataTables column.
 
 ```python
-DataField('title', 'string')                          # basic field
-DataField('release_date', 'date')                     # enables date comparison search
-DataField('track_count', 'number')                    # enables numeric comparison search
-DataField('PublisherInfo.label', 'string', 'label')   # nested field with UI alias
-DataField('_id', 'objectid')                          # serialized as string in response
+DataField('title', 'string')               # basic field
+DataField('release_date', 'date')          # date comparison
+DataField('track_count', 'number')         # numeric comparison
+DataField('PublisherInfo.label', 'string', 'label')  # nested + alias
+DataField('_id', 'objectid')              # string in response
 ```
 
 **Valid types:**
@@ -128,12 +137,18 @@ DataField('_id', 'objectid')                          # serialized as string in 
 Use `keyword` for categorical/code fields (country codes, status values, tags) where exact matching is always intended and index performance matters. Use `string` for free-text fields where substring and partial matching is useful.
 
 ```python
-DataField('country_code', 'keyword')   # country:US  →  {"country_code": "US"}  — uses index
-DataField('name',         'string')    # name:york   →  regex, finds "New York", "Yorkshire"
-DataField('year',         'number')    # year:>1990  →  {"year": {"$gt": 1990}}  — uses index
-DataField('released',     'date')      # released:>=2020-01-01  — uses index
-DataField('_id',          'objectid')  # serialized as string in response
-DataField('PublisherInfo.label', 'string', 'label')  # nested field with UI alias
+# country:US  →  {"country_code": "US"}  — uses index
+DataField('country_code', 'keyword')
+# name:york   →  regex, finds "New York", "Yorkshire"
+DataField('name',         'string')
+# year:>1990  →  {"year": {"$gt": 1990}}  — uses index
+DataField('year',         'number')
+# released:>=2020-01-01  — uses index
+DataField('released',     'date')
+# serialized as string in response
+DataField('_id',          'objectid')
+# nested field with UI alias
+DataField('PublisherInfo.label', 'string', 'label')
 ```
 
 The `alias` is the name DataTables uses for the column (`columns[i][data]`). Defaults to the last segment of the field path (`PublisherInfo.label` → `label`).
@@ -149,7 +164,11 @@ Search is where this library earns its keep. The global search box supports seve
 When a MongoDB text index exists, global search uses `$text` — fast even on multi-million-row collections:
 
 ```python
-db.albums.create_index([("title", "text"), ("artist", "text"), ("genre", "text")])
+db.albums.create_index([
+    ("title", "text"),
+    ("artist", "text"),
+    ("genre", "text"),
+])
 ```
 
 Without a text index, the library falls back to per-column regex (much slower on large collections).
@@ -175,13 +194,13 @@ pink floyd 1973   →  all three terms must appear across the row
 Target a specific field without needing a separate input:
 
 ```
-artist:Bowie                 →  artist contains "Bowie" (string — regex)
-artist:"David Bowie"         →  exact phrase in artist field
-country_code:US              →  country_code equals "US" (keyword — exact, uses index)
-year:1972                    →  year equals 1972 (number — exact, uses index)
-year:>1990                   →  greater than
-year:>=1990 year:<2000       →  combine multiple conditions (ANDed)
-release_date:>2020-01-01     →  date comparison
+artist:Bowie                →  artist contains "Bowie" (regex)
+artist:"David Bowie"        →  exact phrase in artist field
+country_code:US             →  equals "US" (keyword, uses index)
+year:1972                   →  equals 1972 (number, uses index)
+year:>1990                  →  greater than
+year:>=1990 year:<2000      →  combine conditions (ANDed)
+release_date:>2020-01-01    →  date comparison
 ```
 
 ### Column search with ranges
@@ -239,7 +258,10 @@ Multi-column sorting, ColReorder (`order[i][name]` name-based ordering), and `or
 Scope all queries to a subset of the collection by passing extra filter criteria as keyword arguments:
 
 ```python
-DataTables(db, 'albums', args, data_fields, status='active', label='Merge Records')
+DataTables(
+    db, 'albums', args, data_fields,
+    status='active', label='Merge Records',
+)
 ```
 
 ---
@@ -267,7 +289,9 @@ Editor also handles `action=search` for `autocomplete` and `tags` field types:
 ```python
 @app.route('/editor/search', methods=['POST'])
 def editor_search():
-    return jsonify(Editor(db, 'albums', request.get_json(), data_fields=data_fields).search())
+    data = request.get_json()
+    editor = Editor(db, 'albums', data, data_fields=data_fields)
+    return jsonify(editor.search())
 ```
 
 **Optional Editor parameters:**
@@ -345,7 +369,8 @@ python -m pytest tests/
 Run with coverage:
 
 ```bash
-python -m pytest --cov=mongo_datatables tests/ --cov-report=term --cov-report=html
+python -m pytest --cov=mongo_datatables tests/ \
+    --cov-report=term --cov-report=html
 ```
 
 ## License
