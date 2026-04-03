@@ -1,4 +1,4 @@
-"""Document processing helpers for Editor: formatting, preprocessing, and update building."""
+"""Format, preprocess, and build updates for Editor documents."""
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -8,7 +8,7 @@ from datetime import datetime
 
 from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
-from mongo_datatables.editor_validator import validate_field_name
+from mongo_datatables.editor.validator import validate_field_name
 
 logger = logging.getLogger(__name__)
 

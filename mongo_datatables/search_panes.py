@@ -4,10 +4,11 @@ from typing import Any, Dict, List
 
 from bson import Decimal128, ObjectId
 from bson.errors import InvalidId as ObjectIdError
+from pymongo.errors import PyMongoError
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
-from mongo_datatables.exceptions import FieldMappingError
-from mongo_datatables.editor_validator import validate_field_name
+from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
+from mongo_datatables.editor.validator import validate_field_name
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def get_searchpanes_options(
         total_result = total_docs[0] if total_docs else {}
         count_docs = list(collection.aggregate(count_pipeline, allowDiskUse=allow_disk_use))
         count_result = count_docs[0] if count_docs else {}
-    except Exception as e:
+    except PyMongoError as e:
         logger.error(f"Error generating SearchPanes options: {str(e)}")
         return {col_name: [] for col_name, *_ in eligible}
 
@@ -111,7 +112,7 @@ def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper: FieldM
 
         try:
             validate_field_name(column_name)
-        except Exception:
+        except InvalidDataError:
             continue
 
         # DataTables SearchPanes may send selections as {"0": "val"} instead of ["val"]

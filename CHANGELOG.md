@@ -7,6 +7,8 @@ All notable changes to mongo-datatables are documented here.
 ### Changed
 
 - Refactored `datatables` module into a subpackage with focused modules: `filter.py` for query building and `results.py` for result fetching and counting — no behaviour changes
+- Refactored `editor` module into a subpackage with focused modules: `core.py` for the main Editor class, `crud.py` for create/edit/remove operations, `document.py` for document formatting and preprocessing, `search.py` for search/dependent/upload handlers, `storage.py` for the pluggable StorageAdapter, and `validator.py` for request validation — no behaviour changes
+- Updated module docstrings to follow Wholeshoot convention (one sentence, imperative)
 
 ## [2.0.0] - 2026-03-21
 

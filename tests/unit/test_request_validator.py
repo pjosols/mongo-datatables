@@ -13,7 +13,7 @@ from mongo_datatables.request_validator import (
     _validate_order,
     _validate_search_dict,
 )
-from mongo_datatables.editor_validator import (
+from mongo_datatables.editor.validator import (
     validate_editor_request_args,
     validate_doc_id,
     validate_field_name,

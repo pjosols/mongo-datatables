@@ -1,4 +1,4 @@
-"""Validation helpers for Editor request_args and file uploads."""
+"""Validation for Editor request_args, document IDs, and file uploads."""
 
 import re
 from typing import Any

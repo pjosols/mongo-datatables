@@ -1,4 +1,4 @@
-"""Process DataTables Editor CRUD operations with MongoDB."""
+"""Server-side processor for DataTables Editor with MongoDB."""
 import logging
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -9,13 +9,13 @@ from pymongo.errors import PyMongoError
 from mongo_datatables.data_field import DataField
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
 from mongo_datatables.utils import FieldMapper
-from mongo_datatables.editor_validator import (
+from mongo_datatables.editor.validator import (
     validate_editor_request_args,
     validate_doc_id,
     validate_data_fields_whitelist,
 )
-from mongo_datatables.editor_storage import StorageAdapter
-from mongo_datatables.editor_crud import (
+from mongo_datatables.editor.storage import StorageAdapter
+from mongo_datatables.editor.crud import (
     run_create,
     run_edit,
     run_remove,
@@ -23,7 +23,7 @@ from mongo_datatables.editor_crud import (
     resolve_collection,
     resolve_db,
 )
-from mongo_datatables.editor_search import handle_search, handle_dependent, handle_upload
+from mongo_datatables.editor.search import handle_search, handle_dependent, handle_upload
 
 logger = logging.getLogger(__name__)
 

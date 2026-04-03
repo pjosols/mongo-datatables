@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from mongo_datatables.exceptions import InvalidDataError
-from mongo_datatables.editor_validator import validate_upload_data
+from mongo_datatables.editor.validator import validate_upload_data
 from mongo_datatables.utils import FieldMapper
 
 logger = logging.getLogger(__name__)

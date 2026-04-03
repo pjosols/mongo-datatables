@@ -3,7 +3,7 @@
 from typing import Any, Dict
 
 from mongo_datatables.exceptions import InvalidDataError
-from mongo_datatables.editor_validator import validate_field_name
+from mongo_datatables.editor.validator import validate_field_name
 
 # Keys that must be present in a valid DataTables request
 _REQUIRED_KEYS = ("draw", "start", "length", "columns", "order", "search")

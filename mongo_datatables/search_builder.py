@@ -4,8 +4,8 @@ from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper
-from mongo_datatables.exceptions import FieldMappingError
-from mongo_datatables.editor_validator import validate_field_name
+from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
+from mongo_datatables.editor.validator import validate_field_name
 
 
 _MAX_SB_DEPTH = 10
@@ -124,7 +124,7 @@ def _sb_criterion(criterion: Dict[str, Any], field_mapper: FieldMapper) -> Dict[
 
     try:
         validate_field_name(orig_data)
-    except Exception:
+    except (ValueError, TypeError, InvalidDataError):
         return {}
 
     db_field = field_mapper.get_db_field(orig_data)

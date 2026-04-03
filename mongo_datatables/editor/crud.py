@@ -1,4 +1,4 @@
-"""CRUD operation implementations for Editor (create, edit, remove)."""
+"""Create, edit, and remove operations for Editor."""
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -7,7 +7,7 @@ from bson.errors import InvalidId as ObjectIdError
 from pymongo.errors import PyMongoError
 
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
-from mongo_datatables.editor_document import (
+from mongo_datatables.editor.document import (
     format_response_document,
     collect_files,
     preprocess_document,
