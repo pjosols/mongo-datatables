@@ -55,11 +55,12 @@ def build_global_search(
             text_query = " ".join(f'"{t}"' for t in search_terms)
         return {"$text": {"$search": text_query}}
 
-    col_meta = [
-        (field_mapper.get_db_field(c), field_mapper.get_field_type(c))
-        for c in searchable_columns
-        if field_mapper.get_field_type(c) not in ("date", "keyword")
-    ]
+    col_meta = []
+    for c in searchable_columns:
+        ft = field_mapper.get_field_type(c)
+        db = field_mapper.get_db_field(c)
+        if ft not in ("date", "keyword"):
+            col_meta.append((db, ft))
 
     if search_smart and len(search_terms) > 1:
         return _build_smart_search(search_terms, col_meta, search_regex, case_insensitive)

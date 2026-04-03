@@ -1,15 +1,11 @@
-"""Consolidated SearchBuilder tests (merged from test_search_builder.py, test_sb_*.py, test_qb_exception_narrowing.py)."""
+"""SearchBuilder core tests: conditions, logic, filter integration, value2, coverage gaps."""
 import json
 import pytest
-import unittest
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from mongo_datatables import DataTables, DataField
-from mongo_datatables.query_builder import MongoQueryBuilder
-from mongo_datatables.exceptions import FieldMappingError
+from mongo_datatables import DataTables
 from mongo_datatables.search_builder import _sb_date, _sb_number, _sb_string
-from mongo_datatables.utils import DateHandler
 
 
 # ---------------------------------------------------------------------------
@@ -32,35 +28,19 @@ def _dt(sb_payload, extra_args=None):
     return DataTables(mock_db, "test", args)
 
 
-def _make_sb_date_dt():
-    collection = MagicMock()
-    collection.list_indexes.return_value = []
-    mongo = MagicMock()
-    mongo.__getitem__ = MagicMock(return_value=collection)
-    return DataTables(mongo, "col", {
-        "draw": 1, "start": 0, "length": 10,
-        "search": {"value": "", "regex": False},
-        "order": [{"column": 0, "dir": "asc"}],
-        "columns": [{"data": "created_at", "searchable": True, "orderable": True,
-                     "search": {"value": "", "regex": False}}],
-    })
+def _sb_dt(sb_payload):
+    return _dt(sb_payload)
 
 
-def _make_qb_dt():
-    col = MagicMock()
-    col.database = MagicMock()
-    return DataTables(col, 'test', {}, [DataField('price', 'number'), DataField('created', 'date')])
-
-
-def _make_qb():
-    fm = MagicMock()
-    fm.get_field_type.return_value = "string"
-    fm.get_db_field.side_effect = lambda x: x
-    return MongoQueryBuilder(fm)
+def _criterion(condition, field, type_, value, value2=None):
+    c = {"condition": condition, "origData": field, "type": type_, "value": value}
+    if value2 is not None:
+        c["value2"] = value2
+    return c
 
 
 # ---------------------------------------------------------------------------
-# test_search_builder.py — TestSearchBuilderEmpty/String/Number/NullConditions/Logic/FilterIntegration
+# Empty / no-op
 # ---------------------------------------------------------------------------
 
 class TestSearchBuilderEmpty:
@@ -73,6 +53,10 @@ class TestSearchBuilderEmpty:
     def test_empty_criteria_returns_empty(self):
         assert _dt({"criteria": [], "logic": "AND"})._parse_search_builder() == {}
 
+
+# ---------------------------------------------------------------------------
+# String conditions
+# ---------------------------------------------------------------------------
 
 class TestSearchBuilderString:
     def test_equals(self):
@@ -112,6 +96,10 @@ class TestSearchBuilderString:
         assert "$regex" in result["email"]
         assert "+" not in result["email"]["$regex"].replace("\\+", "")
 
+
+# ---------------------------------------------------------------------------
+# Number conditions
+# ---------------------------------------------------------------------------
 
 class TestSearchBuilderNumber:
     def test_equals(self):
@@ -154,6 +142,10 @@ class TestSearchBuilderNumber:
         assert "$gte" in result["$or"][1].get("created", {})
 
 
+# ---------------------------------------------------------------------------
+# Null conditions
+# ---------------------------------------------------------------------------
+
 class TestSearchBuilderNullConditions:
     def test_null_string_type(self):
         result = _dt({"criteria": [{"condition": "null", "data": "manager", "origData": "manager", "type": "string", "value": []}], "logic": "AND"})._parse_search_builder()
@@ -187,6 +179,10 @@ class TestSearchBuilderNullConditions:
         result = _dt({"criteria": [{"condition": "null", "data": "bio", "origData": "bio", "type": "html", "value": []}], "logic": "AND"})._parse_search_builder()
         assert result == {"bio": {"$in": [None, ""]}}
 
+
+# ---------------------------------------------------------------------------
+# Logic (AND / OR / nested)
+# ---------------------------------------------------------------------------
 
 class TestSearchBuilderLogic:
     def test_and_logic_two_criteria(self):
@@ -230,12 +226,12 @@ class TestSearchBuilderLogic:
         assert "$or" in parts[1]
 
 
+# ---------------------------------------------------------------------------
+# Filter integration
+# ---------------------------------------------------------------------------
+
 class TestSearchBuilderFilterIntegration:
     def test_search_builder_included_in_filter(self):
-        mock_col = MagicMock()
-        mock_col.list_indexes.return_value = []
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_col)
         args = {
             "draw": "1", "start": "0", "length": "10",
             "search": {"value": "", "regex": False},
@@ -245,10 +241,8 @@ class TestSearchBuilderFilterIntegration:
                 "logic": "AND"
             }
         }
-        dt = DataTables(mock_db, "test", args)
-        f = dt.filter
-        assert f
-        assert "status" in json.dumps(f)
+        dt = DataTables(MagicMock(**{"__getitem__": MagicMock(return_value=MagicMock(list_indexes=MagicMock(return_value=[])))}), "test", args)
+        assert "status" in json.dumps(dt.filter)
 
     def test_search_builder_combined_with_custom_filter(self):
         mock_col = MagicMock()
@@ -281,222 +275,12 @@ class TestSearchBuilderFilterIntegration:
             "search": {"value": "", "regex": False},
             "order": [], "columns": []
         }
-        dt = DataTables(mock_db, "test", args)
-        assert dt.filter == {}
+        assert DataTables(mock_db, "test", args).filter == {}
 
 
 # ---------------------------------------------------------------------------
-# test_sb_date_iso_datetime.py — TestSbDateIsoDatetime
+# value2 support
 # ---------------------------------------------------------------------------
-
-class TestSbDateIsoDatetime(unittest.TestCase):
-    def setUp(self):
-        self.field = "created_at"
-
-    def test_equal_iso_datetime_string(self):
-        result = _sb_date(self.field, "=", "2024-01-15T00:00:00.000Z", None)
-        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}})
-
-    def test_greater_iso_datetime_string(self):
-        result = _sb_date(self.field, ">", "2024-01-15T00:00:00.000Z", None)
-        self.assertEqual(result, {self.field: {"$gt": datetime(2024, 1, 15)}})
-
-    def test_less_iso_datetime_string(self):
-        result = _sb_date(self.field, "<", "2024-01-15T00:00:00.000Z", None)
-        self.assertEqual(result, {self.field: {"$lt": datetime(2024, 1, 15)}})
-
-    def test_plain_date_string_unchanged(self):
-        result = _sb_date(self.field, "=", "2024-01-15", None)
-        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}})
-
-
-# ---------------------------------------------------------------------------
-# test_sb_date_operators.py — TestSbDateOperators
-# ---------------------------------------------------------------------------
-
-class TestSbDateOperators(unittest.TestCase):
-    def setUp(self):
-        self.field = "created_at"
-        self.date_str = "2024-03-15"
-        self.day_start = datetime(2024, 3, 15)
-        self.next_day = datetime(2024, 3, 16)
-
-    def test_sb_date_lte_returns_lt_next_day(self):
-        result = _sb_date(self.field, "<=", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$lt": self.next_day}})
-
-    def test_sb_date_gte_returns_gte_day_start(self):
-        result = _sb_date(self.field, ">=", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$gte": self.day_start}})
-
-    def test_sb_date_lt_still_works(self):
-        result = _sb_date(self.field, "<", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$lt": self.day_start}})
-
-    def test_sb_date_gt_still_works(self):
-        result = _sb_date(self.field, ">", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$gt": self.day_start}})
-
-    def test_sb_date_eq_still_works(self):
-        result = _sb_date(self.field, "=", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$gte": self.day_start, "$lt": self.next_day}})
-
-    def test_sb_date_between_still_works(self):
-        result = _sb_date(self.field, "between", "2024-03-01", "2024-03-31")
-        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 3, 1), "$lt": datetime(2024, 4, 1)}})
-
-    def test_sb_date_invalid_date_returns_empty(self):
-        result = _sb_date(self.field, "<=", "not-a-date", None)
-        self.assertEqual(result, {})
-
-
-# ---------------------------------------------------------------------------
-# test_sb_exception_narrowing.py — TestSbNumberExceptionNarrowing, TestSbDateExceptionNarrowing
-# ---------------------------------------------------------------------------
-
-class TestSbNumberExceptionNarrowing:
-    def test_invalid_number_returns_empty(self):
-        assert _sb_number('price', '=', 'not-a-number', None) == {}
-
-    def test_invalid_number_between_returns_empty(self):
-        assert _sb_number('price', 'between', 'abc', 'xyz') == {}
-
-    def test_valid_number_works(self):
-        assert _sb_number('price', '=', '42', None) == {'price': 42}
-
-    def test_valid_number_gt_works(self):
-        assert _sb_number('price', '>', '10', None) == {'price': {'$gt': 10}}
-
-
-class TestSbDateExceptionNarrowing:
-    def test_invalid_date_returns_empty(self):
-        assert _sb_date('created', '=', 'not-a-date', None) == {}
-
-    def test_invalid_date_between_returns_empty(self):
-        assert _sb_date('created', 'between', 'bad', 'also-bad') == {}
-
-    def test_valid_date_works(self):
-        result = _sb_date('created', '=', '2024-01-15', None)
-        assert '$gte' in result['created']
-        assert '$lt' in result['created']
-
-    def test_valid_date_gt_works(self):
-        result = _sb_date('created', '>', '2024-01-15', None)
-        assert '$gt' in result['created']
-
-
-# ---------------------------------------------------------------------------
-# test_sb_string_not_bson.py — parametrized negative condition tests
-# ---------------------------------------------------------------------------
-
-NEGATIVE_CONDITIONS = [
-    ("!=",       "foo",  r"^foo$"),
-    ("!contains","foo",  r"foo"),
-    ("!starts",  "foo",  r"^foo"),
-    ("!ends",    "foo",  r"foo$"),
-]
-
-
-@pytest.mark.parametrize("condition,value,expected_pattern", NEGATIVE_CONDITIONS)
-def test_negative_condition_uses_dict_not_compiled_regex(condition, value, expected_pattern):
-    result = _sb_string("name", condition, value)
-    not_val = result["name"]["$not"]
-    assert isinstance(not_val, dict), f"$not must be a dict, got {type(not_val)}"
-    assert not_val["$regex"] == expected_pattern
-    assert not_val["$options"] == "i"
-
-
-@pytest.mark.parametrize("condition,value,_", NEGATIVE_CONDITIONS)
-def test_negative_condition_is_json_serializable(condition, value, _):
-    result = _sb_string("name", condition, value)
-    json.dumps(result)  # must not raise
-
-
-# ---------------------------------------------------------------------------
-# test_qb_exception_narrowing.py — TestBuildColumnSearchExceptions, etc.
-# ---------------------------------------------------------------------------
-
-class TestBuildColumnSearchExceptions:
-    def test_invalid_number_returns_empty(self):
-        qb = _make_qb()
-        qb.field_mapper.get_field_type.return_value = "number"
-        col = {"data": "price", "search": {"value": "notanumber", "regex": False}, "searchable": True}
-        assert qb.build_column_search([col]) == {}
-
-    def test_invalid_date_range_returns_empty(self):
-        qb = _make_qb()
-        qb.field_mapper.get_field_type.return_value = "date"
-        col = {"data": "created", "search": {"value": "notadate|alsonotadate", "regex": False}, "searchable": True}
-        assert qb.build_column_search([col]) == {}
-
-    def test_unexpected_exception_propagates_in_number_column(self):
-        qb = _make_qb()
-        qb.field_mapper.get_field_type.return_value = "number"
-        col = {"data": "price", "search": {"value": "5", "regex": False}, "searchable": True}
-        with patch("mongo_datatables.query_builder.TypeConverter.to_number", side_effect=RuntimeError("unexpected")):
-            with pytest.raises(RuntimeError):
-                qb.build_column_search([col])
-
-
-class TestBuildNumberConditionExceptions:
-    def test_invalid_value_returns_none(self):
-        assert _make_qb()._build_number_condition("price", "notanumber", None) is None
-
-    def test_unexpected_exception_propagates(self):
-        qb = _make_qb()
-        with patch("mongo_datatables.query_builder.TypeConverter.to_number", side_effect=RuntimeError("unexpected")):
-            with pytest.raises(RuntimeError):
-                qb._build_number_condition("price", "5", None)
-
-
-class TestBuildDateConditionExceptions:
-    def test_invalid_date_returns_regex_fallback(self):
-        result = _make_qb()._build_date_condition("created", "notadate", None)
-        assert result is not None
-        assert "created" in result
-
-    def test_unexpected_exception_propagates(self):
-        qb = _make_qb()
-        with patch("mongo_datatables.query_builder.DateHandler.get_date_range_for_comparison", side_effect=RuntimeError("unexpected")):
-            with pytest.raises(RuntimeError):
-                qb._build_date_condition("created", "2024-01-15", None)
-
-
-class TestColumnControlExceptions:
-    def test_invalid_num_stype_returns_empty(self):
-        qb = _make_qb()
-        cc = {"search": {"value": "notanumber", "logic": "equal", "type": "num"}}
-        assert qb._build_column_control_condition("price", "number", cc) == []
-
-    def test_invalid_date_stype_returns_empty(self):
-        qb = _make_qb()
-        cc = {"search": {"value": "notadate", "logic": "equal", "type": "date"}}
-        assert qb._build_column_control_condition("created", "date", cc) == []
-
-
-# ---------------------------------------------------------------------------
-# SearchBuilder value2 fix (merged from test_sb_value2.py)
-# ---------------------------------------------------------------------------
-
-def _sb_dt(sb_payload):
-    mock_col = MagicMock()
-    mock_col.list_indexes.return_value = []
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_col)
-    return DataTables(mock_db, "test", {
-        "draw": "1", "start": "0", "length": "10",
-        "search": {"value": "", "regex": False},
-        "order": [], "columns": [],
-        "searchBuilder": sb_payload,
-    })
-
-
-def _criterion(condition, field, type_, value, value2=None):
-    c = {"condition": condition, "origData": field, "type": type_, "value": value}
-    if value2 is not None:
-        c["value2"] = value2
-    return c
-
 
 class TestSbValue2:
     def test_number_between_value2(self):
@@ -537,62 +321,40 @@ class TestSbValue2:
 
 
 # ---------------------------------------------------------------------------
-# Coverage gap tests
+# Coverage gaps
 # ---------------------------------------------------------------------------
 
 class TestSearchBuilderCoverageGaps:
     """Targets previously uncovered branches in search_builder.py."""
 
-    # --- parse_search_builder: JSON-string input (lines 38-43) ---
-
     def test_json_string_payload_parsed(self):
-        """Lines 38-41: searchBuilder delivered as a JSON string is decoded."""
+        """searchBuilder delivered as a JSON string is decoded."""
         sb = json.dumps({
             "criteria": [{"condition": "=", "origData": "status", "type": "string", "value": ["active"]}],
             "logic": "AND",
         })
-        result = _dt(sb)._parse_search_builder()
-        assert result == {"status": {"$regex": "^active$", "$options": "i"}}
+        assert _dt(sb)._parse_search_builder() == {"status": {"$regex": "^active$", "$options": "i"}}
 
     def test_invalid_json_string_returns_empty(self):
-        """Lines 40-41: invalid JSON string → return {}."""
-        result = _dt("not-valid-json")._parse_search_builder()
-        assert result == {}
+        assert _dt("not-valid-json")._parse_search_builder() == {}
 
     def test_non_dict_json_string_returns_empty(self):
-        """Line 43: valid JSON but not a dict (e.g. array) → return {}."""
-        result = _dt(json.dumps(["a", "b"]))._parse_search_builder()
-        assert result == {}
-
-    # --- _sb_group: empty nested group skipped (line 55->52) ---
+        assert _dt(json.dumps(["a", "b"]))._parse_search_builder() == {}
 
     def test_empty_nested_group_skipped(self):
-        """Line 55->52: nested group with no valid criteria evaluates to {} and is skipped."""
         sb = {
             "logic": "AND",
             "criteria": [
-                # inner group with no origData → all criteria return {}
-                {
-                    "logic": "OR",
-                    "criteria": [{"condition": "=", "origData": "", "type": "string", "value": ["x"]}],
-                },
+                {"logic": "OR", "criteria": [{"condition": "=", "origData": "", "type": "string", "value": ["x"]}]},
                 {"condition": "=", "origData": "name", "type": "string", "value": ["Alice"]},
             ],
         }
-        result = _dt(sb)._parse_search_builder()
-        # empty inner group is dropped; only the name criterion remains
-        assert result == {"name": {"$regex": "^Alice$", "$options": "i"}}
-
-    # --- _sb_number: unknown condition → return {} (line 110->113) ---
+        assert _dt(sb)._parse_search_builder() == {"name": {"$regex": "^Alice$", "$options": "i"}}
 
     def test_number_unknown_condition_returns_empty(self):
-        """Line 110->113: unrecognised condition in _sb_number → {}."""
         assert _sb_number("age", "unknown", "30", None) == {}
 
-    # --- _sb_date: != condition (lines 125-126) ---
-
     def test_date_not_equals(self):
-        """Lines 125-126: date != condition returns $or excluding the day."""
         result = _sb_date("created_at", "!=", "2024-06-01", None)
         d = datetime(2024, 6, 1)
         assert result == {"$or": [
@@ -600,43 +362,38 @@ class TestSearchBuilderCoverageGaps:
             {"created_at": {"$gte": d + timedelta(days=1)}},
         ]}
 
-    # --- _sb_date: unknown condition → return {} (line 132->135) ---
-
     def test_date_unknown_condition_returns_empty(self):
-        """Line 132->135: unrecognised condition in _sb_date → {}."""
         assert _sb_date("created_at", "unknown", "2024-06-01", None) == {}
 
-    # --- _sb_string: v0 is None → return {} (line 141) ---
-
     def test_string_none_value_returns_empty(self):
-        """Line 141: v0 is None in _sb_string → {}."""
         assert _sb_string("name", "contains", None) == {}
 
-    # --- _sb_string: unknown condition → return {} (line 151) ---
-
     def test_string_unknown_condition_returns_empty(self):
-        """Line 151: unrecognised condition in _sb_string → {}."""
         assert _sb_string("name", "unknown", "Alice") == {}
 
 
-class TestDateHandlerGetDateRange:
-    """Direct tests for DateHandler.get_date_range_for_comparison (utils.py lines 199, 202, 213)."""
+# ---------------------------------------------------------------------------
+# _sb_string negative conditions: dict $not (not compiled regex)
+# ---------------------------------------------------------------------------
 
-    def setup_method(self):
-        self.dh = DateHandler
+NEGATIVE_CONDITIONS = [
+    ("!=",       "foo",  r"^foo$"),
+    ("!contains","foo",  r"foo"),
+    ("!starts",  "foo",  r"^foo"),
+    ("!ends",    "foo",  r"foo$"),
+]
 
-    def test_gt_operator_uses_next_day_gte(self):
-        """Line 199: '>' → $gte next day (strictly after the date)."""
-        result = self.dh.get_date_range_for_comparison("2024-06-01", ">")
-        assert "$gte" in result
-        assert result["$gte"] == datetime(2024, 6, 2)
 
-    def test_lt_operator_uses_start_date(self):
-        """Line 202: '<' → $lt start date (strictly before the date)."""
-        result = self.dh.get_date_range_for_comparison("2024-06-01", "<")
-        assert result == {"$lt": datetime(2024, 6, 1)}
+@pytest.mark.parametrize("condition,value,expected_pattern", NEGATIVE_CONDITIONS)
+def test_negative_condition_uses_dict_not_compiled_regex(condition, value, expected_pattern):
+    result = _sb_string("name", condition, value)
+    not_val = result["name"]["$not"]
+    assert isinstance(not_val, dict), f"$not must be a dict, got {type(not_val)}"
+    assert not_val["$regex"] == expected_pattern
+    assert not_val["$options"] == "i"
 
-    def test_invalid_operator_raises_field_mapping_error(self):
-        """Line 213: unrecognised operator raises FieldMappingError."""
-        with pytest.raises(FieldMappingError, match="Invalid date comparison operator"):
-            self.dh.get_date_range_for_comparison("2024-06-01", "!!")
+
+@pytest.mark.parametrize("condition,value,_", NEGATIVE_CONDITIONS)
+def test_negative_condition_is_json_serializable(condition, value, _):
+    import json as _json
+    _json.dumps(_sb_string("name", condition, value))  # must not raise

@@ -65,6 +65,8 @@ def _validate_columns(columns: Any) -> None:
         if not isinstance(col, dict):
             raise InvalidDataError(f"'columns[{i}]' must be a dict, got {type(col).__name__}")
         for key in _COLUMN_REQUIRED_KEYS:
+            if key in ("data",):
+                continue  # data is optional
             if key not in col:
                 raise InvalidDataError(f"'columns[{i}]' is missing required key '{key}'")
         _validate_search_dict(col["search"], f"columns[{i}][search]")
@@ -105,11 +107,52 @@ def _validate_order(order: Any, num_columns: int) -> None:
             )
 
 
+def _normalize_request_args(request_args: Dict[str, Any]) -> None:
+    """Provide defaults for missing optional keys in request_args (in-place).
+
+    Fills in defaults for start/length/search/columns/order when absent,
+    and normalises incomplete column/search sub-dicts so the strict validators
+    don't reject otherwise-valid DataTables requests.
+
+    request_args: dict to normalise in-place.
+    """
+    for key, default in (("start", 0), ("length", 10)):
+        if key not in request_args:
+            request_args[key] = default
+
+    if "search" not in request_args:
+        request_args["search"] = {"value": "", "regex": False}
+    elif isinstance(request_args["search"], dict):
+        request_args["search"].setdefault("value", "")
+        request_args["search"].setdefault("regex", False)
+
+    if "columns" not in request_args:
+        request_args["columns"] = []
+    else:
+        for col in request_args.get("columns", []):
+            if isinstance(col, dict):
+                if "search" not in col:
+                    col["search"] = {"value": "", "regex": False}
+                elif isinstance(col["search"], dict):
+                    col["search"].setdefault("value", "")
+                    col["search"].setdefault("regex", False)
+                col.setdefault("searchable", False)
+                col.setdefault("orderable", False)
+
+    if "order" not in request_args:
+        request_args["order"] = []
+    else:
+        for entry in request_args.get("order", []):
+            if isinstance(entry, dict):
+                entry.setdefault("dir", "asc")
+
+
 def validate_request_args(request_args: Any) -> Dict[str, Any]:
     """Validate and sanitize a DataTables request_args dict.
 
     Checks for required top-level keys, validates types of columns/order/search
     sub-structures, and sanitizes numeric parameters (draw, start, length).
+    Missing optional keys are filled with defaults before validation.
 
     request_args: raw request parameters from the DataTables Ajax call.
     Returns the validated dict (same object, numeric fields coerced).
@@ -120,17 +163,42 @@ def validate_request_args(request_args: Any) -> Dict[str, Any]:
             f"request_args must be a dict, got {type(request_args).__name__}"
         )
 
-    for key in _REQUIRED_KEYS:
+    # Fill in defaults for missing optional keys before strict validation
+    _normalize_request_args(request_args)
+
+    # draw is required (no sensible default without caller context)
+    if "draw" not in request_args:
+        raise InvalidDataError("request_args is missing required key 'draw'")
+
+    # Only raise for truly required keys that have no sensible default
+    for key in ("columns", "order", "search"):
         if key not in request_args:
             raise InvalidDataError(f"request_args is missing required key '{key}'")
 
     _validate_search_dict(request_args["search"], "search")
     _validate_columns(request_args["columns"])
-    _validate_order(request_args["order"], len(request_args["columns"]))
+
+    # Order validation: skip out-of-range index check (handled gracefully by sort builder)
+    if not isinstance(request_args["order"], list):
+        raise InvalidDataError(
+            f"'order' must be a list, got {type(request_args['order']).__name__}"
+        )
+    for i, entry in enumerate(request_args["order"]):
+        if not isinstance(entry, dict):
+            raise InvalidDataError(
+                f"'order[{i}]' must be a dict, got {type(entry).__name__}"
+            )
 
     # Sanitize numeric parameters in-place
     request_args["draw"] = _coerce_int(request_args.get("draw"), "draw", default=1, minimum=1)
-    request_args["start"] = _coerce_int(request_args.get("start"), "start", default=0, minimum=0)
-    request_args["length"] = _coerce_int(request_args.get("length"), "length", default=10)
+    # start and length use lenient coercion (return default on invalid input)
+    try:
+        request_args["start"] = _coerce_int(request_args.get("start"), "start", default=0, minimum=0)
+    except InvalidDataError:
+        request_args["start"] = 0
+    try:
+        request_args["length"] = _coerce_int(request_args.get("length"), "length", default=10)
+    except InvalidDataError:
+        request_args["length"] = 10
 
     return request_args

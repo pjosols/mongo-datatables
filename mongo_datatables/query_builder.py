@@ -1,9 +1,9 @@
 """MongoDB query builder for DataTables requests."""
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from mongo_datatables.utils import FieldMapper, is_truthy
+from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler, is_truthy
 from mongo_datatables.query_conditions import (
     parse_operator,
     build_number_condition,
@@ -14,6 +14,9 @@ from mongo_datatables.query_conditions import (
 )
 from mongo_datatables.column_control import build_column_control_conditions
 from mongo_datatables.query_global_search import build_global_search as _build_global_search
+
+# Re-export for backward compatibility
+__all__ = ["MongoQueryBuilder", "TypeConverter", "DateHandler"]
 
 
 class MongoQueryBuilder:
@@ -149,6 +152,42 @@ class MongoQueryBuilder:
                 and_conditions.append({db_field: {"$regex": re.escape(value), "$options": opts}})
 
         return {"$and": and_conditions} if and_conditions else {}
+
+    def _build_number_condition(
+        self, field: str, value: str, operator: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Build a number condition (backward-compatible shim).
+
+        field: Database field name.
+        value: String value to compare.
+        operator: Comparison operator or None.
+        Returns MongoDB condition dict or None if value is invalid.
+        """
+        return build_number_condition(field, value, operator)
+
+    def _build_date_condition(
+        self, field: str, value: str, operator: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Build a date condition (backward-compatible shim).
+
+        field: Database field name.
+        value: Date string.
+        operator: Comparison operator or None.
+        Returns MongoDB condition dict or None if value is invalid.
+        """
+        return build_date_condition(field, value, operator)
+
+    def _build_column_control_condition(
+        self, field: str, field_type: str, cc: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Build column control conditions (backward-compatible shim).
+
+        field: Database field name.
+        field_type: Field type string.
+        cc: Column control configuration dict.
+        Returns list of MongoDB condition dicts.
+        """
+        return build_column_control_conditions(field, field_type, cc)
 
 
 def _build_single_column_conditions(

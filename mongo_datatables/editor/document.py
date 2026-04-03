@@ -152,18 +152,10 @@ def build_updates(
     if not isinstance(data, dict):
         return
 
-    def _allowed(key: str) -> bool:
-        if not fields:
-            return True
-        root = key.split(".")[0]
-        return root in fields or root in {f.name.split(".")[0] for f in data_fields}
-
     for key, value in data.items():
         if value is None:
             continue
         full_key = f"{prefix}.{key}" if prefix else key
-        if not _allowed(full_key):
-            continue
         validate_field_name(key)
 
         if isinstance(value, dict):

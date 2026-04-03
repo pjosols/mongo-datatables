@@ -136,9 +136,17 @@ def validate_data_fields_whitelist(
     if not isinstance(data, dict):
         return
     allowed_roots = set(fields.keys()) | {f.name.split(".")[0] for f in data_fields}
+    # Also allow any field that is a prefix of a declared nested field
+    declared_prefixes = {
+        part
+        for f in data_fields
+        for part in f.name.split(".")
+    }
     for key in data:
+        if key.startswith("DT_Row"):
+            continue  # DT_Row* metadata keys are always allowed
         root = key.split(".")[0]
-        if root not in allowed_roots:
+        if root not in allowed_roots and root not in declared_prefixes:
             raise InvalidDataError(
                 f"Field {key!r} is not in the allowed data_fields whitelist."
             )

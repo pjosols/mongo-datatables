@@ -31,10 +31,15 @@ class TestSearchPanes:
         request_args = {
             "draw": 1, "start": 0, "length": 10,
             "columns": [
-                {"data": "name", "searchable": True},
-                {"data": "age", "searchable": True},
-                {"data": "status", "searchable": True},
+                {"data": "name", "searchable": True, "orderable": True,
+                 "search": {"value": "", "regex": False}},
+                {"data": "age", "searchable": True, "orderable": True,
+                 "search": {"value": "", "regex": False}},
+                {"data": "status", "searchable": True, "orderable": True,
+                 "search": {"value": "", "regex": False}},
             ],
+            "order": [],
+            "search": {"value": "", "regex": False},
             "searchPanes": True
         }
         facet_doc = {
@@ -53,7 +58,10 @@ class TestSearchPanes:
     def test_searchpanes_filtering(self):
         request_args = {
             "draw": 1, "start": 0, "length": 10,
-            "columns": [{"data": "status", "searchable": True}],
+            "columns": [{"data": "status", "searchable": True, "orderable": True,
+                         "search": {"value": "", "regex": False}}],
+            "order": [],
+            "search": {"value": "", "regex": False},
             "searchPanes": {"status": ["Active", "Pending"]}
         }
         dt = DataTables(self.mongo, "test_collection", request_args, data_fields=self.data_fields)
@@ -63,7 +71,10 @@ class TestSearchPanes:
     def test_searchpanes_in_response(self):
         request_args = {
             "draw": 1, "start": 0, "length": 10,
-            "columns": [{"data": "status", "searchable": True}],
+            "columns": [{"data": "status", "searchable": True, "orderable": True,
+                         "search": {"value": "", "regex": False}}],
+            "order": [],
+            "search": {"value": "", "regex": False},
             "searchPanes": True
         }
         self.collection.count_documents.return_value = 10
@@ -76,7 +87,10 @@ class TestSearchPanes:
     def test_searchpanes_number_conversion(self):
         request_args = {
             "draw": 1, "start": 0, "length": 10,
-            "columns": [{"data": "age", "searchable": True}],
+            "columns": [{"data": "age", "searchable": True, "orderable": True,
+                         "search": {"value": "", "regex": False}}],
+            "order": [],
+            "search": {"value": "", "regex": False},
             "searchPanes": {"age": ["25", "30"]}
         }
         dt = DataTables(self.mongo, "test_collection", request_args, data_fields=self.data_fields)
@@ -303,8 +317,10 @@ class TestSearchPanesCountMapFix:
 
         request_args = {
             "draw": 1, "start": 0, "length": 10,
-            "columns": [{"data": "price", "searchable": "true"}],
-            "search": {"value": ""},
+            "columns": [{"data": "price", "searchable": "true", "orderable": True,
+                         "search": {"value": "", "regex": False}}],
+            "order": [],
+            "search": {"value": "", "regex": False},
             "searchPanes": True,
         }
         collection = MagicMock()
@@ -332,8 +348,10 @@ class TestSearchPanesCountMapFix:
 
         request_args = {
             "draw": 1, "start": 0, "length": 10,
-            "columns": [{"data": "status", "searchable": "true"}],
-            "search": {"value": ""},
+            "columns": [{"data": "status", "searchable": "true", "orderable": True,
+                         "search": {"value": "", "regex": False}}],
+            "order": [],
+            "search": {"value": "", "regex": False},
             "searchPanes": True,
         }
         collection = MagicMock()
@@ -368,7 +386,10 @@ class TestSearchPanesCoverageGaps:
         """Line 42: all columns are non-searchable → eligible is empty → return {}."""
         request_args = {
             "draw": 1, "start": 0, "length": 10,
-            "columns": [{"data": "status", "searchable": False}],
+            "columns": [{"data": "status", "searchable": False, "orderable": False,
+                         "search": {"value": "", "regex": False}}],
+            "order": [],
+            "search": {"value": "", "regex": False},
             "searchPanes": True,
         }
         dt = self._make_dt(request_args, [DataField("status", "string")])
@@ -397,12 +418,13 @@ class TestSearchPanesCoverageGaps:
 
     def test_aggregation_exception_returns_empty_lists(self):
         """Lines 63-65: aggregation error → empty list per eligible column."""
+        from pymongo.errors import OperationFailure
 
         fields = [DataField("status", "string")]
         mapper = FieldMapper(fields)
         columns = [{"data": "status", "searchable": True}]
         collection = MagicMock()
-        collection.aggregate.side_effect = Exception("aggregation failed")
+        collection.aggregate.side_effect = OperationFailure("aggregation failed")
 
         result = get_searchpanes_options(columns, mapper, {}, {}, collection, False)
         assert result == {"status": []}
@@ -440,7 +462,9 @@ class TestSearchPanesCoverageGaps:
     def test_dict_format_selected_values_normalised(self):
         """Line 113: {"0": "Active", "1": "Pending"} normalised to list before $in."""
         dt = self._make_dt(
-            {"searchPanes": {"status": {"0": "Active", "1": "Pending"}}},
+            {"draw": 1, "start": 0, "length": 10,
+             "search": {"value": "", "regex": False}, "order": [], "columns": [],
+             "searchPanes": {"status": {"0": "Active", "1": "Pending"}}},
             [DataField("status", "string")],
         )
         result = dt._parse_searchpanes_filters()
@@ -449,7 +473,9 @@ class TestSearchPanesCoverageGaps:
     def test_number_conversion_failure_falls_back_to_raw(self):
         """Lines 124-125: unconvertible number value appended as-is."""
         dt = self._make_dt(
-            {"searchPanes": {"age": ["not-a-number"]}},
+            {"draw": 1, "start": 0, "length": 10,
+             "search": {"value": "", "regex": False}, "order": [], "columns": [],
+             "searchPanes": {"age": ["not-a-number"]}},
             [DataField("age", "number")],
         )
         result = dt._parse_searchpanes_filters()
@@ -458,7 +484,9 @@ class TestSearchPanesCoverageGaps:
     def test_empty_dict_selections_skipped(self):
         """Line 139→107: empty dict for a column produces no condition for that column."""
         dt = self._make_dt(
-            {"searchPanes": {"status": {}, "name": ["Alice"]}},
+            {"draw": 1, "start": 0, "length": 10,
+             "search": {"value": "", "regex": False}, "order": [], "columns": [],
+             "searchPanes": {"status": {}, "name": ["Alice"]}},
             [DataField("status", "string"), DataField("name", "string")],
         )
         result = dt._parse_searchpanes_filters()

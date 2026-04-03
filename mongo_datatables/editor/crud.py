@@ -82,7 +82,7 @@ def run_create(
     except PyMongoError as e:
         logger.error("Error in create operation: %s", e, exc_info=True)
         raise DatabaseOperationError(f"Failed to create document: {e}") from e
-    except (KeyError, TypeError, ValueError, AttributeError) as e:
+    except Exception as e:
         logger.error("Unexpected error in create operation: %s", e, exc_info=True)
         raise DatabaseOperationError(f"Unexpected error creating document: {e}") from e
 
@@ -154,7 +154,7 @@ def run_edit(
     except PyMongoError as e:
         logger.error("Edit error: %s", e, exc_info=True)
         raise DatabaseOperationError(f"Failed to update documents: {e}") from e
-    except (KeyError, TypeError, ValueError, AttributeError) as e:
+    except Exception as e:
         logger.error("Unexpected error in edit operation: %s", e, exc_info=True)
         raise DatabaseOperationError(f"Unexpected error updating documents: {e}") from e
 

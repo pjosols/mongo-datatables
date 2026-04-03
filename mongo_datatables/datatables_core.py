@@ -64,6 +64,16 @@ class DataTables:
         **custom_filter: Additional MongoDB filter criteria.
         """
         self.collection = self._get_collection(pymongo_object, collection_name)
+        # Pre-sanitize draw: coerce invalid/None values to 1 when draw is present
+        if isinstance(request_args, dict) and "draw" in request_args:
+            draw_val = request_args.get("draw")
+            if draw_val is None:
+                request_args["draw"] = 1
+            else:
+                try:
+                    request_args["draw"] = max(1, int(draw_val))
+                except (ValueError, TypeError):
+                    request_args["draw"] = 1
         self.request_args = validate_request_args(request_args)
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
@@ -249,10 +259,92 @@ class DataTables:
             self.filter, self.pipeline_stages, self.sort_specification,
             self.projection, self.start, self.limit, paginate=False,
         )
-        return fetch_results(
-            self.collection, pipeline, self.row_id, self.field_mapper,
-            self.row_class, self.row_data, self.row_attr, self.allow_disk_use,
+        try:
+            return fetch_results(
+                self.collection, pipeline, self.row_id, self.field_mapper,
+                self.row_class, self.row_data, self.row_attr, self.allow_disk_use,
+            )
+        except Exception as e:
+            logger.error("DataTables get_export_data error: %s", e)
+            return []
+
+    # ------------------------------------------------------------------
+    # Backward-compatible instance method shims (delegate to module fns)
+    # ------------------------------------------------------------------
+
+    def _build_pipeline(self, paginate: bool = True) -> List[Dict[str, Any]]:
+        """Build the aggregation pipeline (backward-compatible shim)."""
+        return build_pipeline(
+            self.filter, self.pipeline_stages, self.sort_specification,
+            self.projection, self.start, self.limit, paginate=paginate,
         )
+
+    def _build_filter(self) -> Dict[str, Any]:
+        """Build the combined MongoDB filter (backward-compatible shim)."""
+        return build_filter(
+            self.custom_filter, self.query_builder, self.request_args,
+            self.field_mapper, self.columns, self.searchable_columns,
+            self.search_terms_without_a_colon, self.search_terms_with_a_colon,
+            self.search_value,
+        )
+
+    def _process_cursor(self, cursor: Any) -> List[Dict[str, Any]]:
+        """Process a cursor into formatted rows (backward-compatible shim)."""
+        from mongo_datatables.formatting import process_cursor
+        return process_cursor(cursor, self.row_id, self.field_mapper,
+                              self.row_class, self.row_data, self.row_attr)
+
+    def _remap_aliases(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Remap aliased fields in a document (backward-compatible shim)."""
+        from mongo_datatables.formatting import remap_aliases
+        return remap_aliases(doc, self.field_mapper)
+
+    def _get_rowgroup_data(self) -> Optional[Dict[str, Any]]:
+        """Get RowGroup aggregation data (backward-compatible shim)."""
+        return get_rowgroup_data(
+            self.collection, self.columns, self.field_mapper,
+            self.filter, self.request_args, self.allow_disk_use,
+        )
+
+    def _parse_search_builder(self) -> Dict[str, Any]:
+        """Parse SearchBuilder payload (backward-compatible shim)."""
+        from mongo_datatables.search_builder import parse_search_builder
+        return parse_search_builder(self.request_args, self.field_mapper)
+
+    def _parse_searchpanes_filters(self) -> Dict[str, Any]:
+        """Parse SearchPanes filters (backward-compatible shim)."""
+        from mongo_datatables.search_panes import parse_searchpanes_filters
+        return parse_searchpanes_filters(self.request_args, self.field_mapper)
+
+    @staticmethod
+    def _filter_has_text(f: Dict[str, Any]) -> bool:
+        """Return True if filter contains a $text operator (backward-compatible shim)."""
+        from mongo_datatables.datatables.results import filter_has_text
+        return filter_has_text(f)
+
+    @property
+    def global_search_condition(self) -> Dict[str, Any]:
+        """Global search condition (backward-compatible property)."""
+        return self.query_builder.build_global_search(
+            self.search_terms_without_a_colon,
+            self.searchable_columns,
+            original_search=self.search_value,
+        )
+
+    @property
+    def column_specific_search_condition(self) -> Dict[str, Any]:
+        """Column-specific search condition (backward-compatible property)."""
+        colon_result = self.query_builder.build_column_specific_search(
+            self.search_terms_with_a_colon, self.searchable_columns
+        )
+        if colon_result:
+            return colon_result
+        return self.query_builder.build_column_search(self.columns)
+
+    def _format_result_values(self, doc: Dict[str, Any]) -> None:
+        """Format result values in-place (backward-compatible shim)."""
+        from mongo_datatables.formatting import format_result_values
+        format_result_values(doc)
 
     def _parse_extension_config(self, key: str) -> Optional[Dict[str, Any]]:
         """Return extension config dict for the given request key, or None."""
@@ -296,4 +388,7 @@ class DataTables:
             return {"draw": self.draw, "error": str(e), "recordsTotal": 0, "recordsFiltered": 0, "data": []}
         except (ValueError, TypeError, KeyError) as e:
             logger.error("DataTables get_rows invalid data: %s", e)
+            return {"draw": self.draw, "error": str(e), "recordsTotal": 0, "recordsFiltered": 0, "data": []}
+        except Exception as e:
+            logger.error("DataTables get_rows unexpected error: %s", e)
             return {"draw": self.draw, "error": str(e), "recordsTotal": 0, "recordsFiltered": 0, "data": []}

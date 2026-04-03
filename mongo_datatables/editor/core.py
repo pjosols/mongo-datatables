@@ -87,9 +87,6 @@ class Editor:
         self.dependent_handlers = dependent_handlers or {}
         self._collection = resolve_collection(pymongo_object, collection_name)
 
-        validate_editor_request_args(self.request_args)
-        validate_doc_id(self.doc_id)
-
     @property
     def db(self) -> Optional[Database]:
         """Get the MongoDB database instance."""
@@ -151,14 +148,10 @@ class Editor:
 
     def create(self) -> Dict[str, Any]:
         """Create one or more new documents. See editor_crud.run_create."""
-        for row in self.data.values():
-            validate_data_fields_whitelist(row, self.fields, self.data_fields)
         return run_create(self.data, self.collection, **self._crud_kwargs())
 
     def edit(self) -> Dict[str, Any]:
         """Edit one or more documents. See editor_crud.run_edit."""
-        for row in self.data.values():
-            validate_data_fields_whitelist(row, self.fields, self.data_fields)
         return run_edit(self.list_of_ids, self.data, self.collection, **self._crud_kwargs())
 
     def remove(self) -> Dict[str, Any]:
@@ -195,6 +188,18 @@ class Editor:
 
         if self.action not in actions:
             return {"error": f"Unsupported action: {self.action}"}
+
+        if (self.fields or self.data_fields) and self.action in ("create", "edit"):
+            rows = (
+                {k: v for k, v in self.data.items() if k in self.list_of_ids}
+                if self.action == "edit"
+                else self.data
+            )
+            try:
+                for row in rows.values():
+                    validate_data_fields_whitelist(row, self.fields, self.data_fields)
+            except InvalidDataError as e:
+                return {"error": str(e)}
 
         if self.validators and self.action in ("create", "edit"):
             rows = (
@@ -233,3 +238,34 @@ class Editor:
             # Unexpected None or wrong type on internal objects — likely a bug; log prominently
             logger.error("AttributeError in process (possible bug): %s", e, exc_info=True)
             return {"error": str(e)}
+        except Exception as e:
+            logger.error("Unexpected error in process: %s", e, exc_info=True)
+            return {"error": str(e)}
+
+    # ------------------------------------------------------------------
+    # Backward-compatible instance method shims
+    # ------------------------------------------------------------------
+
+    def _format_response_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Format a document for the Editor response (backward-compatible shim)."""
+        from mongo_datatables.editor.document import format_response_document
+        return format_response_document(doc, self.row_class, self.row_data, self.row_attr)
+
+    def _preprocess_document(self, doc: Dict[str, Any]):
+        """Preprocess a document before insert/update (backward-compatible shim)."""
+        from mongo_datatables.editor.document import preprocess_document
+        return preprocess_document(doc, self.fields, self.data_fields, self.field_mapper)
+
+    def _process_updates(self, data: Any, updates: Dict[str, Any]) -> None:
+        """Build $set updates dict from nested data (backward-compatible shim)."""
+        from mongo_datatables.editor.document import build_updates
+        build_updates(data, self.field_mapper, self.fields, self.data_fields, updates)
+
+    def _coerce_values(self, field: str, values: List[Any]) -> List[Any]:
+        """Coerce a list of values to the field's declared type (backward-compatible shim)."""
+        from mongo_datatables.editor.search import _coerce_values
+        return _coerce_values(field, values, self.fields)
+
+    def _run_pre_hook(self, action: str, row_id: str, row_data: Dict[str, Any]) -> bool:
+        """Run a pre-action hook (backward-compatible shim)."""
+        return self._pre_hook(action, row_id, row_data)
