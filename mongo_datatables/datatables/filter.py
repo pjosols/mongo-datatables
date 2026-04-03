@@ -1,4 +1,4 @@
-"""Filter and query building logic for DataTables MongoDB integration."""
+"""Build MongoDB filters and sort specifications for DataTables queries."""
 
 import logging
 from typing import Any, Dict, List

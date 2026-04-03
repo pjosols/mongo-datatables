@@ -1,4 +1,7 @@
-"""Server-side processing for jQuery DataTables with MongoDB."""
+"""Server-side processing for jQuery DataTables with MongoDB.
+
+Public classes: DataTables, DataField.
+"""
 
 import logging
 from typing import Any, Dict, List, Optional
@@ -11,10 +14,10 @@ from mongo_datatables.data_field import DataField
 from mongo_datatables.utils import FieldMapper, SearchTermParser, is_truthy
 from mongo_datatables.query_builder import MongoQueryBuilder
 from mongo_datatables.request_validator import validate_request_args
-from mongo_datatables.dt_filter import build_filter, build_sort_specification, build_projection
-from mongo_datatables.dt_filter import get_searchpanes_options as _get_searchpanes_options
-from mongo_datatables.dt_results import build_pipeline, fetch_results, get_rowgroup_data
-from mongo_datatables.dt_results import count_total as _count_total, count_filtered as _count_filtered
+from mongo_datatables.datatables.filter import build_filter, build_sort_specification, build_projection
+from mongo_datatables.datatables.filter import get_searchpanes_options as _get_searchpanes_options
+from mongo_datatables.datatables.results import build_pipeline, fetch_results, get_rowgroup_data
+from mongo_datatables.datatables.results import count_total as _count_total, count_filtered as _count_filtered
 
 logger = logging.getLogger(__name__)
 

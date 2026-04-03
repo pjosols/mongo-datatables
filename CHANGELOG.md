@@ -2,6 +2,12 @@
 
 All notable changes to mongo-datatables are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Refactored `datatables` module into a subpackage with focused modules: `filter.py` for query building and `results.py` for result fetching and counting — no behaviour changes
+
 ## [2.0.0] - 2026-03-21
 
 Major release. Significant new functionality, correctness fixes, and a full

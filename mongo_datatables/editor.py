@@ -1,16 +1,12 @@
-"""MongoDB server-side processor for DataTables Editor.
-
-CRUD operations for DataTables Editor backed by MongoDB.
-Helpers live in editor_storage, editor_document, editor_search, editor_crud.
-"""
+"""Process DataTables Editor CRUD operations with MongoDB."""
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from mongo_datatables.datatables import DataField
+from mongo_datatables.data_field import DataField
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
 from mongo_datatables.utils import FieldMapper
 from mongo_datatables.editor_validator import (
@@ -46,7 +42,7 @@ class Editor:
         data_fields: Optional[List[DataField]] = None,
         validators: Optional[Dict[str, Any]] = None,
         storage_adapter: Optional[StorageAdapter] = None,
-        options=None,
+        options: Optional[Union[Dict[str, Any], Callable[[], Dict[str, Any]]]] = None,
         hooks: Optional[Dict[str, Any]] = None,
         row_class=None,
         row_data=None,
@@ -129,12 +125,12 @@ class Editor:
             return []
         return [id_.strip() for id_ in self.doc_id.split(",") if id_.strip()]
 
-    def _resolve_options(self):
+    def _resolve_options(self) -> Optional[Any]:
         if self._options is None:
             return None
         return self._options() if callable(self._options) else self._options
 
-    def _pre_hook(self, action: str, row_id: str, row_data: dict) -> bool:
+    def _pre_hook(self, action: str, row_id: str, row_data: Dict[str, Any]) -> bool:
         """Run a pre-action hook; returns False to cancel the row."""
         hook = self.hooks.get(f"pre_{action}")
         return bool(hook(row_id, row_data)) if hook else True

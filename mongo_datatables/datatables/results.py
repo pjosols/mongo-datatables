@@ -1,4 +1,4 @@
-"""Result fetching, counting, pipeline building, and export for DataTables."""
+"""Fetch and count DataTables results from MongoDB aggregation pipelines."""
 
 import logging
 from typing import Any, Dict, List, Optional
