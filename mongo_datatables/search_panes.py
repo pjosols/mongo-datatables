@@ -5,15 +5,16 @@ from typing import Any, Dict, List
 from bson import Decimal128, ObjectId
 from bson.errors import InvalidId as ObjectIdError
 
-from mongo_datatables.utils import TypeConverter, DateHandler, is_truthy
+from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
 from mongo_datatables.exceptions import FieldMappingError
+from mongo_datatables.editor_validator import validate_field_name
 
 logger = logging.getLogger(__name__)
 
 
 def get_searchpanes_options(
     columns: List[Dict[str, Any]],
-    field_mapper,
+    field_mapper: FieldMapper,
     custom_filter: Dict[str, Any],
     current_filter: Dict[str, Any],
     collection,
@@ -64,7 +65,7 @@ def get_searchpanes_options(
         logger.error(f"Error generating SearchPanes options: {str(e)}")
         return {col_name: [] for col_name, *_ in eligible}
 
-    def _hashable(v):
+    def _hashable(v: Any) -> Any:
         return str(v.to_decimal()) if isinstance(v, Decimal128) else v
 
     options = {}
@@ -89,7 +90,7 @@ def get_searchpanes_options(
     return options
 
 
-def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper) -> Dict[str, Any]:
+def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper: FieldMapper) -> Dict[str, Any]:
     """Parse SearchPanes filter parameters from request.
 
     Returns:
@@ -108,9 +109,23 @@ def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper) -> Dic
         if not selected_values:
             continue
 
+        try:
+            validate_field_name(column_name)
+        except Exception:
+            continue
+
         # DataTables SearchPanes may send selections as {"0": "val"} instead of ["val"]
         if isinstance(selected_values, dict):
             selected_values = list(selected_values.values())
+        elif not isinstance(selected_values, list):
+            continue
+
+        # Reject non-scalar values; cap list length
+        selected_values = [
+            v for v in selected_values if isinstance(v, (str, int, float, bool)) or v is None
+        ][:1000]
+        if not selected_values:
+            continue
 
         db_field = field_mapper.get_db_field(column_name)
         field_type = field_mapper.get_field_type(column_name)

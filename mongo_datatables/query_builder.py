@@ -1,28 +1,27 @@
-"""MongoDB query builder for DataTables requests.
+"""MongoDB query builder for DataTables requests."""
 
-This module provides the MongoQueryBuilder class that constructs MongoDB
-queries from DataTables request parameters, handling global search, column
-search, and field-specific search with comparison operators.
-"""
-
-import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from mongo_datatables.exceptions import QueryBuildError, FieldMappingError
-from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
-
-logger = logging.getLogger(__name__)
+from mongo_datatables.utils import FieldMapper, is_truthy
+from mongo_datatables.query_conditions import (
+    parse_operator,
+    build_number_condition,
+    build_date_condition,
+    build_number_column_conditions,
+    build_date_column_conditions,
+    build_text_column_conditions,
+)
+from mongo_datatables.column_control import build_column_control_conditions
+from mongo_datatables.query_global_search import build_global_search as _build_global_search
 
 
 class MongoQueryBuilder:
     """Builds MongoDB queries from DataTables request parameters.
 
-    This class handles:
-    - Global search across multiple columns (with text index support)
-    - Column-specific searches
-    - Field:value syntax for targeted searches
-    - Comparison operators (>, <, >=, <=, =) for numbers and dates
+    Handles global search across multiple columns (with text index support),
+    column-specific searches, field:value colon syntax, and comparison operators
+    (>, <, >=, <=, =) for numbers and dates.
     """
 
     def __init__(
@@ -31,18 +30,13 @@ class MongoQueryBuilder:
         use_text_index: bool = True,
         has_text_index: bool = False,
         stemming: bool = False,
-    ):
+    ) -> None:
         """Initialize the query builder.
 
-        Args:
-            field_mapper: FieldMapper instance for field name and type lookups
-            use_text_index: Whether to use text indexes when available
-            has_text_index: Whether the collection has a text index
-            stemming: Whether to allow morphological variants when using a text index
-                (default: False). When False, terms are quoted so only exact word forms
-                match — consistent with standard DataTables behavior. When True, search
-                terms use ``+term`` syntax so e.g. "City" also matches "Cities". No
-                effect when ``use_text_index`` is False or no text index exists.
+        field_mapper: FieldMapper instance for field name and type lookups.
+        use_text_index: Whether to use text indexes when available.
+        has_text_index: Whether the collection has a text index.
+        stemming: Allow morphological variants when using a text index.
         """
         self.field_mapper = field_mapper
         self.use_text_index = use_text_index
@@ -56,14 +50,11 @@ class MongoQueryBuilder:
     ) -> Dict[str, Any]:
         """Build search conditions for individual column searches.
 
-        Args:
-            columns: List of column configurations from DataTables request
-            case_insensitive: Whether to perform case-insensitive regex searches (default: True)
-
-        Returns:
-            MongoDB query condition for column-specific searches
+        columns: List of column configurations from DataTables request.
+        case_insensitive: Whether to perform case-insensitive regex searches.
+        Returns MongoDB query condition for column-specific searches.
         """
-        conditions = []
+        conditions: List[Dict[str, Any]] = []
 
         for column in columns:
             column_search = column.get("search", {})
@@ -77,70 +68,16 @@ class MongoQueryBuilder:
                 db_field = self.field_mapper.get_db_field(column_name)
 
                 if search_value and is_truthy(column.get("searchable")):
-                    if field_type == "number":
-                        if '|' in search_value:
-                            parts = search_value.split('|', 1)
-                            range_cond: Dict[str, Any] = {}
-                            try:
-                                if parts[0].strip():
-                                    range_cond['$gte'] = TypeConverter.to_number(parts[0].strip())
-                                if parts[1].strip():
-                                    range_cond['$lte'] = TypeConverter.to_number(parts[1].strip())
-                            except (ValueError, TypeError, FieldMappingError):
-                                pass
-                            if range_cond:
-                                conditions.append({db_field: range_cond})
-                        else:
-                            op, val = self._parse_operator(search_value)
-                            condition = self._build_number_condition(db_field, val, op)
-                            if condition:
-                                conditions.append(condition)
-                    elif field_type == "keyword":
-                        conditions.append({db_field: search_value})
-                    elif field_type == "date":
-                        if '|' in search_value:
-                            parts = search_value.split('|', 1)
-                            range_cond = {}
-                            try:
-                                if parts[0].strip():
-                                    date_range = DateHandler.get_date_range_for_comparison(parts[0].strip(), '>=')
-                                    range_cond['$gte'] = date_range.get('$gte')
-                                if parts[1].strip():
-                                    date_range = DateHandler.get_date_range_for_comparison(parts[1].strip(), '<=')
-                                    range_cond['$lt'] = date_range.get('$lt')
-                            except (ValueError, TypeError, FieldMappingError):
-                                pass
-                            if range_cond:
-                                conditions.append({db_field: range_cond})
-                        else:
-                            op, val = self._parse_operator(search_value)
-                            conditions.append(self._build_date_condition(db_field, val, op))
-                    else:
-                        col_ci_raw = column_search.get("caseInsensitive")
-                        if col_ci_raw is not None:
-                            col_ci = is_truthy(col_ci_raw)
-                        else:
-                            col_ci = case_insensitive
-                        regex_flag = is_truthy(column_search.get("regex"))
-                        col_smart = is_truthy(column_search.get("smart", True))
-                        opts = "i" if col_ci else ""
-                        if col_smart and not regex_flag:
-                            words = search_value.split()
-                            if len(words) > 1:
-                                and_terms = [{db_field: {"$regex": re.escape(w), "$options": opts}} for w in words]
-                                conditions.append({"$and": and_terms})
-                            else:
-                                conditions.append({db_field: {"$regex": re.escape(search_value), "$options": opts}})
-                        else:
-                            pattern = search_value if regex_flag else re.escape(search_value)
-                            conditions.append({db_field: {"$regex": pattern, "$options": opts}})
+                    conditions.extend(
+                        _build_single_column_conditions(
+                            db_field, field_type, search_value, column_search, case_insensitive
+                        )
+                    )
 
                 if has_cc:
-                    conditions.extend(self._build_column_control_condition(db_field, field_type, cc))
+                    conditions.extend(build_column_control_conditions(db_field, field_type, cc))
 
-        if conditions:
-            return {"$and": conditions}
-        return {}
+        return {"$and": conditions} if conditions else {}
 
     def build_global_search(
         self,
@@ -151,96 +88,21 @@ class MongoQueryBuilder:
         search_smart: bool = True,
         case_insensitive: bool = True,
     ) -> Dict[str, Any]:
-        """Build global search conditions.
+        """Build global search conditions across all searchable columns.
 
-        This method uses text indexes when available for better performance.
-        For quoted terms, it performs exact phrase matching.
-        For non-quoted terms, it uses OR semantics to match any of the terms.
-
-        Args:
-            search_terms: List of parsed search terms (without colons)
-            searchable_columns: List of searchable column names
-            original_search: Original search string before parsing (for quote detection)
-            search_regex: Whether to treat search terms as regex patterns
-            search_smart: Whether to use smart (AND) multi-term search
-            case_insensitive: Whether to perform case-insensitive regex searches (default: True)
-
-        Returns:
-            MongoDB query condition for global search
+        search_terms: Parsed search terms (without colons).
+        searchable_columns: List of searchable column names.
+        original_search: Original search string before parsing.
+        search_regex: Whether to treat search terms as regex patterns.
+        search_smart: Whether to use smart (AND) multi-term search.
+        case_insensitive: Whether to perform case-insensitive regex searches.
+        Returns MongoDB query condition for global search.
         """
-        if not search_terms:
-            return {}
-
-        if not searchable_columns:
-            return {}
-
-        was_quoted = False
-        if original_search:
-            if re.match(r'^".*"$', original_search) or re.match(r"^'.*'$", original_search):
-                was_quoted = True
-
-        if was_quoted and len(search_terms) == 1:
-            if self.use_text_index and self.has_text_index and not search_regex and case_insensitive:
-                return {"$text": {"$search": original_search}}
-
-            or_conditions = []
-            for column in searchable_columns:
-                field_type = self.field_mapper.get_field_type(column)
-
-                if field_type in ("date", "number", "keyword"):
-                    continue
-
-                regex_term = search_terms[0] if search_regex else re.escape(search_terms[0])
-                pattern = regex_term if search_regex else f"\\b{regex_term}\\b"
-                or_conditions.append({self.field_mapper.get_db_field(column): {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
-
-            if or_conditions:
-                return {"$or": or_conditions}
-            return {}
-
-        if self.use_text_index and self.has_text_index and not search_regex and case_insensitive:
-            if self.stemming:
-                text_search_query = " ".join(f'+{t}' for t in search_terms)
-            else:
-                text_search_query = " ".join(f'"{t}"' for t in search_terms)
-            return {"$text": {"$search": text_search_query}}
-
-        # Pre-compute per-column metadata once (not once per search term)
-        col_meta = []
-        for c in searchable_columns:
-            ft = self.field_mapper.get_field_type(c)
-            if ft not in ("date", "keyword"):
-                col_meta.append((self.field_mapper.get_db_field(c), ft))
-
-        if search_smart and len(search_terms) > 1:
-            per_term = []
-            for term in search_terms:
-                term_conds = []
-                for db_field, field_type in col_meta:
-                    if field_type == "number":
-                        try:
-                            term_conds.append({db_field: TypeConverter.to_number(term)})
-                        except (ValueError, TypeError, FieldMappingError):
-                            pass
-                    else:
-                        pattern = term if search_regex else re.escape(term)
-                        term_conds.append({db_field: {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
-                if term_conds:
-                    per_term.append({"$or": term_conds} if len(term_conds) > 1 else term_conds[0])
-            return {"$and": per_term} if per_term else {}
-
-        or_conditions = []
-        for term in search_terms:
-            for db_field, field_type in col_meta:
-                if field_type == "number":
-                    try:
-                        or_conditions.append({db_field: TypeConverter.to_number(term)})
-                    except (ValueError, TypeError, FieldMappingError):
-                        pass
-                else:
-                    pattern = term if search_regex else re.escape(term)
-                    or_conditions.append({db_field: {"$regex": pattern, "$options": "i" if case_insensitive else ""}})
-        return {"$or": or_conditions} if or_conditions else {}
+        return _build_global_search(
+            self.field_mapper, self.use_text_index, self.has_text_index, self.stemming,
+            search_terms, searchable_columns, original_search, search_regex,
+            search_smart, case_insensitive,
+        )
 
     def build_column_specific_search(
         self,
@@ -248,17 +110,12 @@ class MongoQueryBuilder:
         searchable_columns: List[str],
         case_insensitive: bool = True,
     ) -> Dict[str, Any]:
-        """Build search conditions for column-specific searches using colon syntax.
+        """Build search conditions for field:value colon-syntax terms.
 
-        Handles search terms in the format "field:value" for targeted column searching.
-        Also supports comparison operators: >, <, >=, <=, = for numeric and date fields.
-
-        Args:
-            colon_terms: List of search terms containing exactly one colon
-            searchable_columns: List of searchable column names
-
-        Returns:
-            MongoDB query condition for column-specific searches
+        colon_terms: List of search terms containing exactly one colon.
+        searchable_columns: List of searchable column names.
+        case_insensitive: Whether to use case-insensitive matching.
+        Returns MongoDB query condition for column-specific searches.
         """
         and_conditions = []
 
@@ -271,181 +128,49 @@ class MongoQueryBuilder:
                 continue
 
             db_field = self.field_mapper.get_db_field(field)
-
             if field not in searchable_columns and db_field not in searchable_columns:
                 continue
 
             field_type = self.field_mapper.get_field_type(db_field)
-
-            operator, value = self._parse_operator(value)
+            operator, value = parse_operator(value)
 
             if field_type == "number":
-                condition = self._build_number_condition(db_field, value, operator)
-                if condition:
-                    and_conditions.append(condition)
+                cond = build_number_condition(db_field, value, operator)
+                if cond:
+                    and_conditions.append(cond)
             elif field_type == "date":
-                and_conditions.append(self._build_date_condition(db_field, value, operator))
+                cond = build_date_condition(db_field, value, operator)
+                if cond:
+                    and_conditions.append(cond)
             elif field_type == "keyword":
                 and_conditions.append({db_field: value})
             else:
-                and_conditions.append({db_field: {"$regex": re.escape(value), "$options": "i" if case_insensitive else ""}})
+                opts = "i" if case_insensitive else ""
+                and_conditions.append({db_field: {"$regex": re.escape(value), "$options": opts}})
 
-        if and_conditions:
-            return {"$and": and_conditions}
-        return {}
+        return {"$and": and_conditions} if and_conditions else {}
 
-    def _build_column_control_condition(self, db_field: str, field_type: str, cc: Dict[str, Any]) -> List[Dict[str, Any]]:
-        conditions = []
 
-        list_data = cc.get("list")
-        if list_data and isinstance(list_data, dict):
-            values = list(list_data.values())
-            if field_type == "number":
-                converted = []
-                for v in values:
-                    try:
-                        converted.append(TypeConverter.to_number(v))
-                    except (ValueError, TypeError, FieldMappingError):
-                        pass
-                if converted:
-                    conditions.append({db_field: {"$in": converted}})
-            else:
-                conditions.append({db_field: {"$in": values}})
+def _build_single_column_conditions(
+    db_field: str,
+    field_type: str,
+    search_value: str,
+    column_search: Dict[str, Any],
+    case_insensitive: bool,
+) -> List[Dict[str, Any]]:
+    """Build conditions for a single column's search value.
 
-        search = cc.get("search")
-        if search and isinstance(search, dict):
-            value = search.get("value", "")
-            logic = search.get("logic", "")
-            stype = search.get("type", field_type or "text")
-
-            if logic in ("empty",):
-                conditions.append({db_field: {"$in": [None, ""]}})
-            elif logic in ("notEmpty",):
-                conditions.append({db_field: {"$nin": [None, ""]}})
-            elif value:
-                if stype == "num":
-                    try:
-                        num = TypeConverter.to_number(value)
-                        if logic == "equal":
-                            conditions.append({db_field: num})
-                        elif logic == "notEqual":
-                            conditions.append({db_field: {"$ne": num}})
-                        elif logic == "greater":
-                            conditions.append({db_field: {"$gt": num}})
-                        elif logic == "greaterOrEqual":
-                            conditions.append({db_field: {"$gte": num}})
-                        elif logic == "less":
-                            conditions.append({db_field: {"$lt": num}})
-                        elif logic == "lessOrEqual":
-                            conditions.append({db_field: {"$lte": num}})
-                    except (ValueError, TypeError, FieldMappingError):
-                        pass
-                elif stype == "date":
-                    try:
-                        parsed = DateHandler.parse_iso_date(value.split('T')[0])
-                        next_day = DateHandler.get_next_day(parsed)
-                        if logic == "equal":
-                            conditions.append({db_field: {"$gte": parsed, "$lt": next_day}})
-                        elif logic == "notEqual":
-                            conditions.append({"$or": [{db_field: {"$lt": parsed}}, {db_field: {"$gte": next_day}}]})
-                        elif logic == "greater":
-                            conditions.append({db_field: {"$gt": parsed}})
-                        elif logic == "less":
-                            conditions.append({db_field: {"$lt": parsed}})
-                    except (ValueError, TypeError, FieldMappingError):
-                        pass
-                else:
-                    escaped = re.escape(value)
-                    if logic == "contains":
-                        conditions.append({db_field: {"$regex": escaped, "$options": "i"}})
-                    elif logic == "notContains":
-                        conditions.append({db_field: {"$not": {"$regex": escaped, "$options": "i"}}})
-                    elif logic == "equal":
-                        conditions.append({db_field: {"$regex": f"^{escaped}$", "$options": "i"}})
-                    elif logic == "notEqual":
-                        conditions.append({db_field: {"$not": {"$regex": f"^{escaped}$", "$options": "i"}}})
-                    elif logic == "starts":
-                        conditions.append({db_field: {"$regex": f"^{escaped}", "$options": "i"}})
-                    elif logic == "ends":
-                        conditions.append({db_field: {"$regex": f"{escaped}$", "$options": "i"}})
-
-        return conditions
-
-    @staticmethod
-    def _parse_operator(value: str):
-        """Parse a leading comparison operator from a value string.
-
-        Returns:
-            Tuple of (operator, stripped_value) where operator is one of
-            '>=', '<=', '>', '<', '=' or None if no operator prefix found.
-        """
-        if value.startswith(">="):
-            return ">=", value[2:].strip()
-        elif value.startswith("<="):
-            return "<=", value[2:].strip()
-        elif value.startswith(">"):
-            return ">", value[1:].strip()
-        elif value.startswith("<"):
-            return "<", value[1:].strip()
-        elif value.startswith("="):
-            return "=", value[1:].strip()
-        return None, value
-
-    def _build_number_condition(
-        self,
-        field: str,
-        value: str,
-        operator: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
-        """Build a MongoDB condition for a number field.
-
-        Args:
-            field: Database field name
-            value: String value to convert to number
-            operator: Comparison operator (>, <, >=, <=, =, or None)
-
-        Returns:
-            MongoDB condition dict, or None if conversion fails
-        """
-        try:
-            numeric_value = TypeConverter.to_number(value)
-
-            if operator == ">":
-                return {field: {"$gt": numeric_value}}
-            elif operator == "<":
-                return {field: {"$lt": numeric_value}}
-            elif operator == ">=":
-                return {field: {"$gte": numeric_value}}
-            elif operator == "<=":
-                return {field: {"$lte": numeric_value}}
-            elif operator == "=":
-                return {field: numeric_value}
-            else:
-                return {field: numeric_value}
-        except (ValueError, TypeError, FieldMappingError):
-            return None
-
-    def _build_date_condition(
-        self,
-        field: str,
-        value: str,
-        operator: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
-        """Build a MongoDB condition for a date field.
-
-        Args:
-            field: Database field name
-            value: Date string in YYYY-MM-DD format
-            operator: Comparison operator (>, <, >=, <=, =, or None)
-
-        Returns:
-            MongoDB condition dict, or None if parsing fails
-        """
-        try:
-            if '-' in value and len(value.split('-')) == 3:
-                date_condition = DateHandler.get_date_range_for_comparison(value, operator)
-                return {field: date_condition}
-            else:
-                return {field: {"$regex": re.escape(value), "$options": "i"}}
-        except (ValueError, TypeError, FieldMappingError):
-            return {field: {"$regex": re.escape(value), "$options": "i"}}
+    db_field: Database field name.
+    field_type: Field type string.
+    search_value: The search value.
+    column_search: The column search config dict.
+    case_insensitive: Whether to use case-insensitive matching.
+    Returns list of MongoDB condition dicts.
+    """
+    if field_type == "number":
+        return build_number_column_conditions(db_field, search_value)
+    if field_type == "keyword":
+        return [{db_field: search_value}]
+    if field_type == "date":
+        return build_date_column_conditions(db_field, search_value)
+    return build_text_column_conditions(db_field, search_value, column_search, case_insensitive)

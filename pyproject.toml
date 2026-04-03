@@ -13,7 +13,6 @@ keywords = ["datatables", "editor", "mongodb", "pymongo", "flask", "django", "se
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -24,8 +23,8 @@ classifiers = [
     "Framework :: Flask",
     "Framework :: Django",
 ]
-requires-python = ">=3.8"
-dependencies = ["pymongo>=3.9.0"]
+requires-python = ">=3.9"
+dependencies = ["pymongo>=3.9.0", "urllib3>=2.6.3"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "coverage", "tox", "sphinx", "sphinx-rtd-theme"]
@@ -62,3 +61,6 @@ fail_under = 80
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+[tool.uv]
+constraint-dependencies = ["filelock>=3.20.3", "pygments>=2.20.0", "virtualenv>=20.36.1"]
