@@ -363,13 +363,13 @@ See the [full documentation](https://mongo-datatables.readthedocs.io/) for detai
 Run tests:
 
 ```bash
-python -m pytest tests/
+uv run pytest tests/
 ```
 
 Run with coverage:
 
 ```bash
-python -m pytest --cov=mongo_datatables tests/ \
+uv run pytest --cov=mongo_datatables tests/ \
     --cov-report=term --cov-report=html
 ```
 
