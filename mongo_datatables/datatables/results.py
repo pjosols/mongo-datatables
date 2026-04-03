@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
-from mongo_datatables.formatting import process_cursor
+from mongo_datatables.datatables.formatting import process_cursor
 
 logger = logging.getLogger(__name__)
 
