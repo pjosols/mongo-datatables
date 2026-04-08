@@ -6,6 +6,8 @@ All notable changes to mongo-datatables are documented here.
 
 ### Changed
 
+- Restructured test suite to mirror source subpackage layout: `tests/unit/datatables/` for DataTables tests, `tests/unit/datatables/query/` for query builder tests, `tests/unit/editor/` for Editor tests — improves maintainability and discoverability
+- Added module docstrings to test package `__init__.py` files following Wholeshoot convention
 - Updated module and function docstrings to follow Wholeshoot convention (one sentence, imperative, no filler)
 - Enhanced docstrings in `datatables/response.py` to clarify return value structure and purpose
 - Enhanced docstrings in `editor/core.py` to clarify protocol-compliant error handling

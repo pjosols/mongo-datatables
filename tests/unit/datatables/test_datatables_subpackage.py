@@ -328,9 +328,10 @@ def test_fetch_results_returns_empty_list_on_value_error():
     from mongo_datatables.utils import FieldMapper
 
     col = MagicMock()
-    col.aggregate.side_effect = ValueError("bad data")
+    col.aggregate.return_value = iter([])
     fm = FieldMapper([])
-    result = fetch_results(col, [], None, fm, None, None, None, False)
+    with patch("mongo_datatables.datatables.results.process_cursor", side_effect=ValueError("bad data")):
+        result = fetch_results(col, [], None, fm, None, None, None, False)
     assert result == []
 
 

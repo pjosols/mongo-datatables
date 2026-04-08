@@ -258,7 +258,7 @@ class TestEditorOptions(unittest.TestCase):
     def test_options_on_remove_action(self):
         oid = str(ObjectId())
         opts = {'type': [{'label': 'X', 'value': 'x'}]}
-        editor = self._make_editor({'action': 'remove'}, doc_id=oid, options=opts)
+        editor = self._make_editor({'action': 'remove', 'data': {}}, doc_id=oid, options=opts)
         result = editor.process()
         self.assertEqual(result['options'], opts)
 

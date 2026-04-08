@@ -228,7 +228,7 @@ class TestEditor(unittest.TestCase):
             self.assertEqual(result, {"data": [{"result": "ok"}]})
 
     def test_process_method_remove(self):
-        editor = Editor(self.mongo, 'users', self.remove_args, self.sample_id)
+        editor = Editor(self.mongo, 'users', {**self.remove_args, "data": {}}, self.sample_id)
         with patch.object(Editor, 'remove', return_value={}) as mock_remove:
             result = editor.process()
             mock_remove.assert_called_once()
@@ -242,24 +242,24 @@ class TestEditor(unittest.TestCase):
 
     def test_run_pre_hook_no_hook_returns_true(self):
         editor = Editor(self.mongo, 'users', self.create_args)
-        self.assertTrue(editor._run_pre_hook("create", "0", {"name": "x"}))
+        self.assertTrue(editor._pre_hook("create", "0", {"name": "x"}))
 
     def test_run_pre_hook_truthy_proceeds(self):
         hook = MagicMock(return_value=True)
         editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
-        result = editor._run_pre_hook("create", "0", {"name": "x"})
+        result = editor._pre_hook("create", "0", {"name": "x"})
         self.assertTrue(result)
         hook.assert_called_once_with("0", {"name": "x"})
 
     def test_run_pre_hook_falsy_cancels(self):
         hook = MagicMock(return_value=False)
         editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
-        self.assertFalse(editor._run_pre_hook("create", "0", {"name": "x"}))
+        self.assertFalse(editor._pre_hook("create", "0", {"name": "x"}))
 
     def test_run_pre_hook_none_return_cancels(self):
         hook = MagicMock(return_value=None)
         editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
-        self.assertFalse(editor._run_pre_hook("create", "0", {}))
+        self.assertFalse(editor._pre_hook("create", "0", {}))
 
     def test_create_with_hook_all_proceed(self):
         hook = MagicMock(return_value=True)

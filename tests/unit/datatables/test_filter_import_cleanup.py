@@ -7,7 +7,7 @@ Verifies that:
 """
 from pathlib import Path
 
-_ROOT = Path(__file__).parent.parent.parent / "mongo_datatables" / "datatables"
+_ROOT = Path(__file__).parent.parent.parent.parent / "mongo_datatables" / "datatables"
 
 
 def test_filter_module_has_no_get_searchpanes_options():
@@ -30,7 +30,7 @@ def test_filter_module_source_does_not_import_get_searchpanes_options():
 
 def test_search_panes_exposes_get_searchpanes_options():
     """get_searchpanes_options must be defined in mongo_datatables.search_panes."""
-    source = (Path(__file__).parent.parent.parent / "mongo_datatables" / "search_panes.py").read_text()
+    source = (Path(__file__).parent.parent.parent.parent / "mongo_datatables" / "search_panes.py").read_text()
     assert "def get_searchpanes_options" in source
 
 
