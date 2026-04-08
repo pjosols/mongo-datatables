@@ -4,11 +4,13 @@ from typing import Any, Dict, List
 
 from bson import Decimal128, ObjectId
 from bson.errors import InvalidId as ObjectIdError
+from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
 from mongo_datatables.editor.validator import validate_field_name
+from mongo_datatables.datatables._limits import MAX_FACET_BRANCHES, MAX_PANE_OPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -18,20 +20,18 @@ def get_searchpanes_options(
     field_mapper: FieldMapper,
     custom_filter: Dict[str, Any],
     current_filter: Dict[str, Any],
-    collection,
+    collection: Collection,
     allow_disk_use: bool,
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Generate SearchPanes options with both ``total`` and ``count`` per value.
+    """Generate SearchPanes options with total and count per value.
 
-    Uses a single ``$facet`` aggregation for all columns, reducing MongoDB
-    round-trips from 2N to exactly 2 regardless of column count.
-
-    DataTables SearchPanes server-side protocol requires two counts per option:
-    - ``total``: count across the base dataset (custom_filter only, no search/pane filters)
-    - ``count``: count with all current filters applied
-
-    Returns:
-        Dictionary mapping column names to their option lists
+    columns: searchable column definitions.
+    field_mapper: maps column names to database fields and types.
+    custom_filter: base dataset filter (no search/pane filters).
+    current_filter: filter with all search and pane selections applied.
+    collection: MongoDB collection.
+    allow_disk_use: allow aggregation to spill to disk.
+    Returns dict mapping column names to option lists with label, value, total, and count.
     """
     eligible = [
         (col.get("data"), field_mapper.get_db_field(col.get("data")), field_mapper.get_field_type(col.get("data")))
@@ -42,6 +42,14 @@ def get_searchpanes_options(
     ]
     if not eligible:
         return {}
+
+    if len(eligible) > MAX_FACET_BRANCHES:
+        logger.warning(
+            "SearchPanes eligible columns truncated from %d to %d",
+            len(eligible),
+            MAX_FACET_BRANCHES,
+        )
+        eligible = eligible[:MAX_FACET_BRANCHES]
 
     # Array fields need $unwind before $group so individual elements become pane options
     facet_branches = {}
@@ -63,7 +71,7 @@ def get_searchpanes_options(
         count_docs = list(collection.aggregate(count_pipeline, allowDiskUse=allow_disk_use))
         count_result = count_docs[0] if count_docs else {}
     except PyMongoError as e:
-        logger.error(f"Error generating SearchPanes options: {str(e)}")
+        logger.error("Error generating SearchPanes options: %s", str(e))
         return {col_name: [] for col_name, *_ in eligible}
 
     def _hashable(v: Any) -> Any:
@@ -74,7 +82,7 @@ def get_searchpanes_options(
         total_map = {_hashable(r["_id"]): r["count"] for r in total_result.get(col_name, [])}
         count_map = {_hashable(r["_id"]): r["count"] for r in count_result.get(col_name, [])}
         column_options = []
-        for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:1000]:
+        for raw_value, total in sorted(total_map.items(), key=lambda x: -x[1])[:MAX_PANE_OPTIONS]:
             if isinstance(raw_value, ObjectId):
                 display_value = str(raw_value)
             elif hasattr(raw_value, 'isoformat'):
@@ -92,10 +100,11 @@ def get_searchpanes_options(
 
 
 def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper: FieldMapper) -> Dict[str, Any]:
-    """Parse SearchPanes filter parameters from request.
+    """Parse SearchPanes filter selections into MongoDB query conditions.
 
-    Returns:
-        MongoDB query conditions for SearchPanes filters
+    request_args: DataTables request parameters.
+    field_mapper: maps column names to database fields and types.
+    Returns MongoDB $and query or empty dict if no filters selected.
     """
     conditions = []
 
@@ -112,7 +121,8 @@ def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper: FieldM
 
         try:
             validate_field_name(column_name)
-        except InvalidDataError:
+        except InvalidDataError as e:
+            logger.debug("SearchPanes field validation failed for %r: %s", column_name, e)
             continue
 
         # DataTables SearchPanes may send selections as {"0": "val"} instead of ["val"]
@@ -124,7 +134,7 @@ def parse_searchpanes_filters(request_args: Dict[str, Any], field_mapper: FieldM
         # Reject non-scalar values; cap list length
         selected_values = [
             v for v in selected_values if isinstance(v, (str, int, float, bool)) or v is None
-        ][:1000]
+        ][:MAX_PANE_OPTIONS]
         if not selected_values:
             continue
 

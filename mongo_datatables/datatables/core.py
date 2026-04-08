@@ -25,18 +25,13 @@ from mongo_datatables.datatables.results import (
 )
 from mongo_datatables.datatables.compat import DataTablesMixin
 from mongo_datatables.datatables.response import build_response, normalize_draw, parse_extension_config
+from mongo_datatables.datatables._limits import MAX_PIPELINE_STAGES
 
 logger = logging.getLogger(__name__)
 
 
 class DataTables(DataTablesMixin):
-    """Server-side processor for jQuery DataTables with MongoDB integration.
-
-    Translates a DataTables Ajax request into MongoDB aggregation pipelines and
-    returns the standard DataTables JSON response. Handles pagination, sorting,
-    global/column/colon-syntax search, SearchPanes, SearchBuilder, and fixed searches.
-    Pass extra kwargs as a custom MongoDB filter (e.g. ``status="active"``).
-    """
+    """Translate DataTables Ajax requests into MongoDB aggregation pipelines."""
 
     def __init__(
         self,
@@ -80,7 +75,14 @@ class DataTables(DataTablesMixin):
         self.row_data = row_data
         self.row_attr = row_attr
         self.row_id = row_id
-        self.pipeline_stages = list(pipeline_stages) if pipeline_stages else []
+        raw_stages = list(pipeline_stages) if pipeline_stages else []
+        if len(raw_stages) > MAX_PIPELINE_STAGES:
+            logger.warning(
+                "pipeline_stages truncated from %d to %d stages",
+                len(raw_stages),
+                MAX_PIPELINE_STAGES,
+            )
+        self.pipeline_stages = raw_stages[:MAX_PIPELINE_STAGES]
         self.custom_filter = custom_filter
 
         self._results = None
@@ -120,6 +122,11 @@ class DataTables(DataTablesMixin):
                 "textIndexVersion" in idx for idx in self.collection.list_indexes()
             )
         except PyMongoError:
+            logging.getLogger(__name__).warning(
+                "Failed to check text index on collection %s",
+                self.collection.name,
+                exc_info=True,
+            )
             self._has_text_index = False
 
     @property

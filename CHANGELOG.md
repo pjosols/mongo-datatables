@@ -12,6 +12,9 @@ All notable changes to mongo-datatables are documented here.
 - Enhanced docstrings in `editor/document.py` to specify type conversions and metadata handling
 - Enhanced docstrings in `editor/validator.py` to clarify validation scope and security intent
 - Updated test module docstrings to follow Wholeshoot convention
+- Simplified `DataTables` class docstring to one sentence
+- Simplified `get_searchpanes_options()` docstring to Wholeshoot convention with flat parameter list
+- Simplified `parse_searchpanes_filters()` docstring to Wholeshoot convention
 
 ### Fixed
 
