@@ -48,7 +48,8 @@ class TestResults(BaseDataTablesTest):
         self.assertEqual(result[0]['name'], "Test User")
 
     def test_results_error_handling(self):
-        self.collection.aggregate.side_effect = Exception("Test exception")
+        from pymongo.errors import PyMongoError
+        self.collection.aggregate.side_effect = PyMongoError("Test exception")
         datatables = DataTables(self.mongo, 'users', self.request_args)
         result = datatables.results()
         self.assertEqual(result, [])

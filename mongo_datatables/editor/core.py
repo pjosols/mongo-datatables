@@ -238,9 +238,6 @@ class Editor:
             # Unexpected None or wrong type on internal objects — likely a bug; log prominently
             logger.error("AttributeError in process (possible bug): %s", e, exc_info=True)
             return {"error": str(e)}
-        except Exception as e:
-            logger.error("Unexpected error in process: %s", e, exc_info=True)
-            return {"error": str(e)}
 
     # ------------------------------------------------------------------
     # Backward-compatible instance method shims
