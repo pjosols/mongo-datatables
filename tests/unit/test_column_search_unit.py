@@ -9,7 +9,7 @@ import pytest
 
 from mongo_datatables import DataTables
 from mongo_datatables.datatables import DataField
-from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.datatables.query import MongoQueryBuilder
 from mongo_datatables.utils import DateHandler, FieldMapper
 
 

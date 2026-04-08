@@ -10,7 +10,7 @@ from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables import DataTables as DT
 from mongo_datatables.search_panes import get_searchpanes_options
 from mongo_datatables.utils import FieldMapper
-from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.datatables.query import MongoQueryBuilder
 
 
 class TestSearchPanes:

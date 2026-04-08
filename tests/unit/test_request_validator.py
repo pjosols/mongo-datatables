@@ -6,7 +6,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 
 from mongo_datatables.exceptions import InvalidDataError
-from mongo_datatables.request_validator import (
+from mongo_datatables.datatables.request_validator import (
     validate_request_args,
     _coerce_int,
     _validate_columns,

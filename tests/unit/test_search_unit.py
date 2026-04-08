@@ -23,7 +23,7 @@ from pymongo.database import Database
 
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables import DataField as DFAlias
-from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.datatables.query import MongoQueryBuilder
 from mongo_datatables.search_fixed import parse_column_search_fixed, parse_search_fixed
 from mongo_datatables.utils import FieldMapper
 from tests.base_test import BaseDataTablesTest

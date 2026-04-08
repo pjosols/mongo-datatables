@@ -7,7 +7,7 @@ from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from mongo_datatables import DataTables, DataField, Editor
-from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.datatables.query import MongoQueryBuilder
 from mongo_datatables.search_builder import _sb_group, _sb_date
 from mongo_datatables.utils import FieldMapper
 import mongo_datatables

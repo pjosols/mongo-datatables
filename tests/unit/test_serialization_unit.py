@@ -10,7 +10,7 @@ from bson import Binary, Decimal128, ObjectId, Regex
 
 from mongo_datatables import DataTables
 from mongo_datatables.datatables import DataField
-from mongo_datatables.formatting import format_result_values, process_cursor, remap_aliases
+from mongo_datatables.datatables.formatting import format_result_values, process_cursor, remap_aliases
 from mongo_datatables.utils import FieldMapper
 from tests.base_test import BaseDataTablesTest
 

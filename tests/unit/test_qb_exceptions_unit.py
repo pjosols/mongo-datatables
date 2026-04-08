@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from mongo_datatables import DataTables, DataField
-from mongo_datatables.query_builder import MongoQueryBuilder
+from mongo_datatables.datatables.query import MongoQueryBuilder
 
 
 # ---------------------------------------------------------------------------

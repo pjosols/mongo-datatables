@@ -1,5 +1,5 @@
 """Integrate MongoDB with jQuery DataTables server-side processing."""
-__version__ = '2.0.0'
+__version__ = '2.1.0'
 
 from mongo_datatables.datatables import DataTables, DataField
 from mongo_datatables.editor import Editor, StorageAdapter
