@@ -4,50 +4,33 @@ All notable changes to mongo-datatables are documented here.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-07
+
+### Added
+
+- **Input validation**: `validate_request_args()` validates all DataTables request parameters at construction — rejects missing required keys, wrong types, and out-of-range values
+- **Input validation**: `validate_editor_request_args()` validates Editor request structure and action values at construction
+- **Upload security**: `validate_upload_data()` enforces filename safety, content-type format, size limits (50 MB), and magic-byte verification for common file types (JPEG, PNG, GIF, WebP, PDF, plain text, CSV)
+- **Regex safety**: `validate_regex()` in `datatables/query/regex_utils.py` rejects patterns exceeding 200 characters or containing known ReDoS constructs before passing to MongoDB `$regex`
+- **SearchBuilder depth limit**: `_MAX_SB_DEPTH = 10` prevents unbounded recursion on deeply nested criteria payloads
+- **Document payload limits**: `validate_document_payload()` enforces max nesting depth (10), max keys (200), and max string value length (1 MB) to guard against resource exhaustion
+
 ### Changed
 
-- Restructured test suite to mirror source subpackage layout: `tests/unit/datatables/` for DataTables tests, `tests/unit/datatables/query/` for query builder tests, `tests/unit/editor/` for Editor tests — improves maintainability and discoverability
-- Added module docstrings to test package `__init__.py` files following Wholeshoot convention
-- Updated module and function docstrings to follow Wholeshoot convention (one sentence, imperative, no filler)
-- Enhanced docstrings in `datatables/response.py` to clarify return value structure and purpose
-- Enhanced docstrings in `editor/core.py` to clarify protocol-compliant error handling
-- Enhanced docstrings in `editor/document.py` to specify type conversions and metadata handling
-- Refined `editor/validator.py` module docstring to Wholeshoot convention (one sentence, imperative)
-- Updated test module docstrings to follow Wholeshoot convention
-- Simplified `DataTables` class docstring to one sentence
-- Simplified `get_searchpanes_options()` docstring to Wholeshoot convention with flat parameter list
-- Simplified `parse_searchpanes_filters()` docstring to Wholeshoot convention
-- Updated `datatables/compat.py` module docstring to clarify backward-compatible re-exports and shim mixin purpose
-- Updated `test_compat.py` module docstring to follow Wholeshoot convention
-- Updated `datatables/compat.py` module docstring to imperative form
-- Updated test module docstrings in `test_datatables_filtering.py`, `test_datatables_misc.py`, `test_datatables_pipeline.py`, `test_extensions_unit.py`, and `test_sort_unit.py` to imperative form
-- Updated `DataTables._parse_extension_config()` docstring to imperative form
-- Updated `parse_extension_config()` docstring to imperative form
-- Added docstring to `Editor._resolve_options()` following Wholeshoot convention
-- Updated module docstrings in `datatables/request_validator.py`, `editor/core.py`, `editor/search.py`, `editor/validators/__init__.py`, `editor/validators/payload.py`, `search_builder.py`, and `search_panes.py` to imperative form
-- Updated test module docstrings in `test_request_validator.py`, `test_editor_subpackage.py`, and `test_editor_upload.py` to imperative form
+- Refactored `datatables` module into a subpackage: `core.py`, `filter.py`, `results.py`, `formatting.py`, `request_validator.py`, `response.py`, `compat.py`, and `query/` sub-package — no behaviour changes
+- Refactored `editor` module into a subpackage: `core.py`, `crud.py`, `document.py`, `search.py`, `storage.py`, `dispatch.py`, and `validators/` sub-package — no behaviour changes
+- Removed internal re-export shim modules (`query_builder.py`, `query_conditions.py`, `query_global_search.py`, `column_control.py`, `datatables_core.py`, `formatting.py`, `regex_utils.py`, `request_validator.py`) — public API unchanged
+- Restructured test suite to mirror source subpackage layout (`tests/unit/datatables/`, `tests/unit/editor/`)
+- Updated all docstrings to Wholeshoot convention
 
 ### Fixed
 
-- **Import correctness**: `datatables/compat.py` now imports `get_searchpanes_options` from `search_panes` module instead of the removed `filter` wrapper — resolves import error after wrapper removal
-- **Error handling**: `DataTables.get_rows()` now catches `PyMongoError`, `ValueError`, `TypeError`, `KeyError`, and `RuntimeError` to return a generic error message instead of propagating exceptions — prevents information disclosure via stack traces
-- **Error handling**: `DataTables.get_export_data()` now catches database and data errors to return an empty list instead of propagating exceptions
-- **Error handling**: `Editor.process()` now catches `PyMongoError`, `InvalidDataError`, `FieldMappingError`, `DatabaseOperationError`, `KeyError`, `TypeError`, and `ValueError` to return error dicts with generic messages — prevents information disclosure
-- **Error handling**: `fetch_results()` now catches `PyMongoError`, `ValueError`, and `TypeError` to return an empty list instead of propagating
-- **Error handling**: `count_total()` now catches `PyMongoError` to return 0 instead of propagating
-- **Error handling**: `count_filtered()` now catches `PyMongoError`, `ValueError`, and `TypeError` to return 0 instead of propagating
-- **Error handling**: `get_rowgroup_data()` now catches `PyMongoError` to return None instead of propagating
-- **Error handling**: `run_create()`, `run_edit()`, and `run_remove()` now catch `PyMongoError` to raise `DatabaseOperationError` instead of propagating raw database errors
-- **Error handling**: `_check_text_index()` now catches `PyMongoError` to set `_has_text_index = False` instead of propagating
-
-## [2.1.0] - 2026-04-07
-
-### Changed
-
-- Refactored `datatables` module into a subpackage with focused modules: `filter.py` for query building and `results.py` for result fetching and counting — no behaviour changes
-- Refactored `editor` module into a subpackage with focused modules: `core.py` for the main Editor class, `crud.py` for create/edit/remove operations, `document.py` for document formatting and preprocessing, `search.py` for search/dependent/upload handlers, `storage.py` for the pluggable StorageAdapter, and `validator.py` for request validation — no behaviour changes
-- Removed deprecated internal re-export shim modules (`query_builder.py`, `query_conditions.py`, `query_global_search.py`, `column_control.py`, `datatables_core.py`, `formatting.py`, `regex_utils.py`, `request_validator.py`) — public API via `mongo_datatables` top-level imports is unchanged
-- Updated module docstrings to follow Wholeshoot convention (one sentence, imperative)
+- All public methods now catch specific exception types rather than bare `Exception` — `get_rows()`, `get_export_data()`, `fetch_results()`, `count_total()`, `count_filtered()`, `get_rowgroup_data()`, `run_create()`, `run_edit()`, `run_remove()`, `Editor.process()`
+- `_parse_extension_config()` now handles all extension types generically, not just `dataSrc` — fixes RowGroup and other extensions
+- `Editor.__init__` now validates `collection_name` and `doc_id` format before use
+- `uploadField` added to allowed Editor request keys — fixes upload action rejection
+- Improved exception handling in the upload flow
+- `datatables/compat.py` imports `get_searchpanes_options` directly from `search_panes` after dead wrapper removal
 
 ## [2.0.0] - 2026-03-21
 

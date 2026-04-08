@@ -142,7 +142,7 @@ class TestUploadHasattr:
         editor = Editor(mongo, 'c', {
             'action': 'upload',
             'uploadField': 'avatar',
-            'upload': {'filename': 'test.png', 'content_type': 'image/png', 'data': b'bytes'}
+            'upload': {'filename': 'test.png', 'content_type': 'image/png', 'data': b'\x89PNG\r\n\x1a\n'}
         }, storage_adapter=adapter)
         result = editor.upload()
         assert result['upload']['id'] == 'file-1'
@@ -160,7 +160,7 @@ class TestUploadHasattr:
         editor = Editor(mongo, 'c', {
             'action': 'upload',
             'uploadField': 'doc',
-            'upload': {'filename': 'doc.pdf', 'content_type': 'application/pdf', 'data': b'pdf'}
+            'upload': {'filename': 'doc.pdf', 'content_type': 'application/pdf', 'data': b'%PDF-'}
         }, storage_adapter=adapter)
         result = editor.upload()
         assert result['upload']['id'] == 'file-2'
