@@ -63,4 +63,4 @@ fail_under = 80
 directory = "htmlcov"
 
 [tool.uv]
-constraint-dependencies = ["filelock>=3.20.3", "pygments>=2.20.0", "virtualenv>=20.36.1"]
+constraint-dependencies = ["filelock>=3.20.3", "pygments>=2.20.0", "virtualenv>=20.36.1", "requests>=2.33.0"]

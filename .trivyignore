@@ -1,0 +1,2 @@
+# requests 2.33.1 is already patched; Trivy DB lags behind
+CVE-2026-25645
