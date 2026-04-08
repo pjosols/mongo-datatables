@@ -91,10 +91,16 @@ def fetch_results(
     except PyMongoError as e:
         logger.error("MongoDB aggregation error in fetch_results(): %s", e, exc_info=True)
         return []
+    except Exception as e:
+        logger.error("Unexpected error in fetch_results(): %s", e, exc_info=True)
+        return []
     try:
         return process_cursor(cursor, row_id, field_mapper, row_class, row_data, row_attr)
     except (ValueError, TypeError) as e:
         logger.error("Result formatting error in fetch_results(): %s", e, exc_info=True)
+        return []
+    except Exception as e:
+        logger.error("Unexpected error in fetch_results(): %s", e, exc_info=True)
         return []
 
 
