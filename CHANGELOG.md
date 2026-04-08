@@ -24,6 +24,8 @@ All notable changes to mongo-datatables are documented here.
 - Updated `DataTables._parse_extension_config()` docstring to imperative form
 - Updated `parse_extension_config()` docstring to imperative form
 - Added docstring to `Editor._resolve_options()` following Wholeshoot convention
+- Updated module docstrings in `datatables/request_validator.py`, `editor/core.py`, `editor/search.py`, `editor/validators/__init__.py`, `editor/validators/payload.py`, `search_builder.py`, and `search_panes.py` to imperative form
+- Updated test module docstrings in `test_request_validator.py`, `test_editor_subpackage.py`, and `test_editor_upload.py` to imperative form
 
 ### Fixed
 

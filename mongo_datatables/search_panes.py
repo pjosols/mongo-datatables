@@ -1,4 +1,4 @@
-"""SearchPanes support — aggregation pipeline for pane options and filter parsing."""
+"""Generate SearchPanes options and parse filter selections."""
 import logging
 from typing import Any, Dict, List
 
@@ -9,7 +9,7 @@ from pymongo.errors import PyMongoError
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
-from mongo_datatables.editor.validator import validate_field_name
+from mongo_datatables.editor.validators import validate_field_name
 from mongo_datatables.datatables._limits import MAX_FACET_BRANCHES, MAX_PANE_OPTIONS
 
 logger = logging.getLogger(__name__)

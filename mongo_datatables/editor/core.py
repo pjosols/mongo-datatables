@@ -1,18 +1,15 @@
-"""Server-side processor for DataTables Editor with MongoDB."""
+"""Process DataTables Editor requests with MongoDB."""
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from pymongo.collection import Collection
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
 
 from mongo_datatables.data_field import DataField
-from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
+from mongo_datatables.exceptions import InvalidDataError, FieldMappingError
 from mongo_datatables.utils import FieldMapper, TypeConverter
-from mongo_datatables.editor.validator import (
-    validate_data_fields_whitelist,
+from mongo_datatables.editor.validators import (
     validate_collection_name,
-    validate_editor_request_args,
     validate_doc_id,
     _validate_request_args_structure,
 )
@@ -21,7 +18,6 @@ from mongo_datatables.editor.crud import (
     run_create,
     run_edit,
     run_remove,
-    run_validators,
     resolve_collection,
     resolve_db,
 )
@@ -31,6 +27,7 @@ from mongo_datatables.editor.document import (
     build_updates,
 )
 from mongo_datatables.editor.search import handle_search, handle_dependent, handle_upload
+from mongo_datatables.editor.dispatch import process_request
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +53,7 @@ class Editor:
         row_attr: Optional[Union[Dict[str, Any], Callable[..., Dict[str, Any]]]] = None,
         file_fields: Optional[List[str]] = None,
         dependent_handlers: Optional[Dict[str, Any]] = None,
+        virus_scanner: Optional[Any] = None,
     ) -> None:
         """Initialise the Editor processor.
 
@@ -73,6 +71,7 @@ class Editor:
         row_attr: Dict or callable(row) -> dict for DT_RowAttr.
         file_fields: List of field names that are upload fields.
         dependent_handlers: Dict of field -> callable(field, values, rows).
+        virus_scanner: Optional scanner with a ``scan(filename, data) -> bool`` method.
         """
         self._init_error: Optional[str] = None
         _validate_request_args_structure(request_args if request_args is not None else {})
@@ -100,6 +99,7 @@ class Editor:
         self.row_attr = row_attr
         self.file_fields = file_fields or []
         self.dependent_handlers = dependent_handlers or {}
+        self.virus_scanner = virus_scanner
         self._collection = resolve_collection(pymongo_object, collection_name)
 
     @property
@@ -187,7 +187,7 @@ class Editor:
 
     def upload(self) -> Dict[str, Any]:
         """Handle action=upload via the pluggable storage adapter."""
-        return handle_upload(self.request_args, self.storage_adapter)
+        return handle_upload(self.request_args, self.storage_adapter, self.virus_scanner)
 
     def _preprocess_document(self, doc: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Preprocess a document before insert/update.
@@ -241,74 +241,4 @@ class Editor:
         Catches exceptions and returns error dict so the client can display errors inline.
         Returns response data for the Editor client, or error dict on failure.
         """
-        if self._init_error is not None:
-            return {"error": self._init_error}
-
-        actions = {
-            "create": self.create,
-            "edit": self.edit,
-            "remove": self.remove,
-            "search": self.search,
-            "upload": self.upload,
-            "dependent": self.dependent,
-        }
-
-        if self.action not in actions:
-            return {"error": f"Unsupported action: {self.action}"}
-
-        required_keys: Dict[str, List[str]] = {
-            "create": ["data"],
-            "edit": ["data"],
-            "remove": ["data"],
-            "search": ["field"],
-            "upload": ["upload"],
-            "dependent": ["field"],
-        }
-        missing = [k for k in required_keys.get(self.action, []) if k not in self.request_args]
-        if missing:
-            return {"error": f"Missing required keys for action '{self.action}': {missing}"}
-
-        if self.action in ("create", "edit"):
-            rows = (
-                {k: v for k, v in self.data.items() if k in self.list_of_ids}
-                if self.action == "edit"
-                else self.data
-            )
-        else:
-            rows = {}
-
-        if (self.fields or self.data_fields) and self.action in ("create", "edit"):
-            try:
-                for row in rows.values():
-                    validate_data_fields_whitelist(row, self.fields, self.data_fields)
-            except InvalidDataError as e:
-                return {"error": str(e)}
-
-        if self.validators and self.action in ("create", "edit"):
-            field_errors = [
-                err for row in rows.values() for err in run_validators(self.validators, row)
-            ]
-            if field_errors:
-                return {"fieldErrors": field_errors}
-
-        try:
-            response = actions[self.action]()
-            opts = self._resolve_options()
-            if opts is not None:
-                response["options"] = opts
-            return response
-        except (InvalidDataError, FieldMappingError) as e:
-            return {"error": str(e)}
-        except DatabaseOperationError:
-            return {"error": "A database error occurred. Please try again."}
-        except PyMongoError as e:
-            logger.error("Unexpected PyMongo error in process: %s", e, exc_info=True)
-            return {"error": "A database error occurred. Please try again."}
-        except (KeyError, TypeError, ValueError) as e:
-            logger.error("Unexpected error in process action=%r: %s", self.action, e, exc_info=True)
-            return {"error": "An error occurred processing your request."}
-        except Exception:
-            logger.error("Unhandled error in process action=%r", self.action, exc_info=True)
-            raise
-
-
+        return process_request(self)

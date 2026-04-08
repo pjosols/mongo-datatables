@@ -1,4 +1,4 @@
-"""Editor tests — file upload and storage adapter."""
+"""Test Editor file upload and storage adapter."""
 import unittest
 import pytest
 from unittest.mock import MagicMock, patch
@@ -56,11 +56,12 @@ class TestEditorUpload(unittest.TestCase):
     def test_upload_calls_adapter_store(self):
         adapter = MagicMock(spec=StorageAdapter)
         adapter.store.return_value = 'file-id-123'
-        file_data = {'filename': 'photo.png', 'content_type': 'image/png', 'data': b'imgdata'}
+        png_data = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        file_data = {'filename': 'photo.png', 'content_type': 'image/png', 'data': png_data}
         editor = self._make_editor({'action': 'upload', 'uploadField': 'avatar', 'upload': file_data},
                                    storage=adapter)
         result = editor.upload()
-        adapter.store.assert_called_once_with('avatar', 'photo.png', 'image/png', b'imgdata')
+        adapter.store.assert_called_once_with('avatar', 'photo.png', 'image/png', png_data)
         self.assertEqual(result, {'upload': {'id': 'file-id-123'}, 'files': {}})
 
     def test_upload_adapter_store_exception_returns_error(self):
@@ -75,7 +76,8 @@ class TestEditorUpload(unittest.TestCase):
     def test_upload_via_process_dispatch(self):
         adapter = MagicMock()
         adapter.store.return_value = 'abc'
-        file_data = {'filename': 'f.jpg', 'content_type': 'image/jpeg', 'data': b'jpg'}
+        jpg_data = b'\xff\xd8\xff' + b'\x00' * 100
+        file_data = {'filename': 'f.jpg', 'content_type': 'image/jpeg', 'data': jpg_data}
         editor = self._make_editor({'action': 'upload', 'uploadField': 'img', 'upload': file_data},
                                    storage=adapter)
         result = editor.process()
@@ -89,7 +91,8 @@ class TestEditorUpload(unittest.TestCase):
             def files_for_field(self, field):
                 return {'rich-id': {'filename': 'photo.png', 'web_path': '/uploads/photo.png'}}
 
-        file_data = {'filename': 'photo.png', 'content_type': 'image/png', 'data': b'x'}
+        png_data = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        file_data = {'filename': 'photo.png', 'content_type': 'image/png', 'data': png_data}
         editor = Editor(self.mongo, 'files', {'action': 'upload', 'uploadField': 'avatar',
                                                'upload': file_data}, storage_adapter=RichAdapter())
         result = editor.upload()

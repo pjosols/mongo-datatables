@@ -8,7 +8,7 @@ from datetime import datetime
 
 from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
-from mongo_datatables.editor.validator import validate_field_name, validate_document_payload
+from mongo_datatables.editor.validators import validate_field_name, validate_document_payload
 from mongo_datatables.data_field import DataField
 from mongo_datatables.editor.storage import StorageAdapter
 

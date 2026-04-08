@@ -1,8 +1,14 @@
-"""Validation for upload payloads and document structure."""
+"""Validate upload payloads and document structure."""
 
-from typing import Any
+from typing import Any, Optional
 
 from mongo_datatables.exceptions import InvalidDataError
+from mongo_datatables.editor.validators.upload_security import (
+    validate_file_type,
+    validate_filename_safety,
+    validate_file_size_for_type,
+    run_virus_scan_hook,
+)
 
 _MAX_FILENAME_LEN = 255
 _MAX_CONTENT_TYPE_LEN = 127
@@ -13,14 +19,16 @@ _MAX_DOC_NESTING = 10
 _MAX_STRING_VALUE_LEN = 1_000_000  # 1 MB per string field
 
 
-def validate_upload_data(upload: Any) -> None:
-    """Validate the upload dict from an Editor upload request for required fields and bounds.
+def validate_upload_data(upload: Any, scanner: Optional[object] = None) -> None:
+    """Validate the upload dict from an Editor upload request for security and bounds.
 
-    Checks that filename, content_type, and data are present and sane, rejecting
-    path traversal attempts and oversized payloads.
+    Checks that filename, content_type, and data are present and sane, then
+    applies filename safety checks, file-type whitelist with magic number
+    verification, per-type size limits, and an optional virus scan.
 
     upload: dict expected to contain 'filename', 'content_type', and 'data'.
-    Raises InvalidDataError if any field is missing or invalid.
+    scanner: optional virus scanner with a ``scan(filename, data) -> bool`` method.
+    Raises InvalidDataError if any field is missing, invalid, or fails security checks.
     """
     if not isinstance(upload, dict):
         raise InvalidDataError(
@@ -36,6 +44,7 @@ def validate_upload_data(upload: Any) -> None:
         )
     if ".." in filename or "/" in filename or "\\" in filename:
         raise InvalidDataError("upload 'filename' contains invalid path characters")
+    validate_filename_safety(filename)
 
     content_type = upload.get("content_type", "")
     if not isinstance(content_type, str) or not content_type.strip():
@@ -54,6 +63,10 @@ def validate_upload_data(upload: Any) -> None:
         raise InvalidDataError(
             f"upload 'data' exceeds maximum size of {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
         )
+
+    validate_file_type(filename, content_type, bytes(data))
+    validate_file_size_for_type(content_type, bytes(data))
+    run_virus_scan_hook(filename, bytes(data), scanner)
 
 
 def validate_document_payload(doc: Any, _depth: int = 0) -> None:

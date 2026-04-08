@@ -1,4 +1,4 @@
-"""SearchBuilder tree evaluator — converts DataTables SearchBuilder payloads to MongoDB queries."""
+"""Convert DataTables SearchBuilder criteria trees to MongoDB queries."""
 import json as _json
 import logging
 import re
@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
-from mongo_datatables.editor.validator import validate_field_name
+from mongo_datatables.editor.validators import validate_field_name
 
 _log = logging.getLogger(__name__)
 

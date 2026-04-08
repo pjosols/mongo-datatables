@@ -1,10 +1,10 @@
-"""Search, dependent-field, and upload handlers for Editor."""
+"""Handle search, dependent-field, and upload requests for Editor."""
 import re
 import logging
 from typing import Any, Dict, List, Optional
 
 from mongo_datatables.exceptions import InvalidDataError
-from mongo_datatables.editor.validator import validate_upload_data
+from mongo_datatables.editor.validators import validate_upload_data
 from mongo_datatables.utils import FieldMapper
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def handle_search(
     return {"data": results}
 
 
-def _coerce_values(field: str, values: list, fields: Dict[str, Any]) -> list:
+def _coerce_values(field: str, values: List[Any], fields: Dict[str, Any]) -> List[Any]:
     """Coerce string values from the request to the field's declared type.
 
     field: Field alias.
@@ -104,6 +104,7 @@ def handle_dependent(
 def handle_upload(
     request_args: Dict[str, Any],
     storage_adapter: Optional[Any],
+    scanner: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Handle action=upload — store a file via the pluggable storage adapter.
 
@@ -113,6 +114,7 @@ def handle_upload(
 
     request_args: Parsed Editor request dict.
     storage_adapter: StorageAdapter instance.
+    scanner: optional virus scanner with a ``scan(filename, data) -> bool`` method.
     Returns ``{"upload": {"id": "<file_id>"}, "files": {...}}``.
     Raises InvalidDataError if adapter, uploadField, or upload data is missing.
     """
@@ -124,13 +126,13 @@ def handle_upload(
     upload = request_args.get("upload")
     if not upload:
         raise InvalidDataError("No file data provided for upload")
-    validate_upload_data(upload)
-    file_id = storage_adapter.store(
-        field,
-        upload.get("filename", ""),
-        upload.get("content_type", ""),
-        upload.get("data", b""),
-    )
+    validate_upload_data(upload, scanner)
+    filename = upload.get("filename", "")
+    content_type = upload.get("content_type", "")
+    data = bytes(upload.get("data", b""))
+    if hasattr(storage_adapter, "validate_upload"):
+        storage_adapter.validate_upload(field, filename, content_type, data)
+    file_id = storage_adapter.store(field, filename, content_type, data)
     files: Dict[str, Any] = {}
     if hasattr(storage_adapter, "files_for_field"):
         files[field] = storage_adapter.files_for_field(field)

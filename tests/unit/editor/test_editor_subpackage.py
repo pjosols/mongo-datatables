@@ -1,4 +1,4 @@
-"""Tests for the editor/ subpackage structure and public API re-exports."""
+"""Test Editor subpackage structure and public API re-exports."""
 import importlib
 import pytest
 from unittest.mock import MagicMock
@@ -53,7 +53,7 @@ def test_editor_core_module_importable():
 
 
 def test_editor_validator_module_importable():
-    mod = importlib.import_module("mongo_datatables.editor.validator")
+    mod = importlib.import_module("mongo_datatables.editor.validators")
     assert hasattr(mod, "validate_editor_request_args")
     assert hasattr(mod, "validate_doc_id")
     assert hasattr(mod, "validate_upload_data")

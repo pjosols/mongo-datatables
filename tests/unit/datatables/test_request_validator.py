@@ -1,4 +1,4 @@
-"""Test request_validator and editor_validator input validation."""
+"""Test DataTables and Editor request validation."""
 import pytest
 from unittest.mock import MagicMock
 from bson.objectid import ObjectId
@@ -13,7 +13,7 @@ from mongo_datatables.datatables.request_validator import (
     _validate_order,
     _validate_search_dict,
 )
-from mongo_datatables.editor.validator import (
+from mongo_datatables.editor.validators import (
     validate_editor_request_args,
     validate_doc_id,
     validate_field_name,
@@ -401,7 +401,7 @@ class TestEditorWhitelistEnforcement:
 # validate_document_payload — bounds and structure safety
 # ---------------------------------------------------------------------------
 
-from mongo_datatables.editor.validator import validate_document_payload
+from mongo_datatables.editor.validators import validate_document_payload
 
 
 class TestValidateDocumentPayload:

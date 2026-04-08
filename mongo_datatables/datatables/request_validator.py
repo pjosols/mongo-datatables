@@ -1,9 +1,9 @@
-"""Validation for DataTables request_args parameters."""
+"""Validate DataTables request_args parameters."""
 
 from typing import Any, Dict
 
 from mongo_datatables.exceptions import InvalidDataError
-from mongo_datatables.editor.validator import validate_field_name
+from mongo_datatables.editor.validators import validate_field_name
 
 # Keys that must be present in a valid DataTables request
 _REQUIRED_KEYS = ("draw", "start", "length", "columns", "order", "search")
