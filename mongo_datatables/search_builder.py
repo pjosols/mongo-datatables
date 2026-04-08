@@ -1,11 +1,15 @@
 """SearchBuilder tree evaluator — converts DataTables SearchBuilder payloads to MongoDB queries."""
+import json as _json
+import logging
 import re
-from datetime import timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Union
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
 from mongo_datatables.editor.validator import validate_field_name
+
+_log = logging.getLogger(__name__)
 
 
 _MAX_SB_DEPTH = 10
@@ -47,7 +51,6 @@ def parse_search_builder(request_args: Dict[str, Any], field_mapper: FieldMapper
     Returns:
         MongoDB query dict, or ``{}`` if no SearchBuilder data is present.
     """
-    import json as _json
     sb = request_args.get("searchBuilder")
     if not sb:
         return {}
@@ -152,7 +155,7 @@ def _sb_criterion(criterion: Dict[str, Any], field_mapper: FieldMapper) -> Dict[
 
 def _sb_number(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
     """Build a MongoDB condition for a numeric SearchBuilder criterion."""
-    def _n(v: Any) -> Any:
+    def _n(v: Any) -> Union[int, float]:
         return TypeConverter.to_number(v)
     try:
         if condition == "=":
@@ -171,14 +174,14 @@ def _sb_number(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
             return {field: {"$gte": _n(v0), "$lte": _n(v1)}}
         if condition == "!between":
             return {"$or": [{field: {"$lt": _n(v0)}}, {field: {"$gt": _n(v1)}}]}
-    except (ValueError, TypeError, FieldMappingError):
-        pass
+    except (ValueError, TypeError, FieldMappingError) as exc:
+        _log.debug("Skipping numeric criterion for field %r condition %r: %s", field, condition, exc)
     return {}
 
 
 def _sb_date(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
     """Build a MongoDB condition for a date SearchBuilder criterion."""
-    def _d(v: Any) -> Any:
+    def _d(v: Any) -> datetime:
         return DateHandler.parse_iso_date(v.split('T')[0])
     try:
         if condition == "=":
@@ -199,8 +202,8 @@ def _sb_date(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
             return {field: {"$gte": _d(v0), "$lt": _d(v1) + timedelta(days=1)}}
         if condition == "!between":
             return {"$or": [{field: {"$lt": _d(v0)}}, {field: {"$gte": _d(v1) + timedelta(days=1)}}]}
-    except (ValueError, TypeError, FieldMappingError):
-        pass
+    except (ValueError, TypeError, FieldMappingError) as exc:
+        _log.debug("Skipping date criterion for field %r condition %r: %s", field, condition, exc)
     return {}
 
 
