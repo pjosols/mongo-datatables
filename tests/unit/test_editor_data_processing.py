@@ -447,3 +447,61 @@ class TestPreprocessDocumentInputValidation:
         # iterates doc.items() — passing a non-dict should raise AttributeError/TypeError
         with pytest.raises((AttributeError, TypeError, InvalidDataError)):
             self._call("not a dict")
+
+
+# ---------------------------------------------------------------------------
+# _coerce_values — FieldMappingError fallback (bug fix regression tests)
+# ---------------------------------------------------------------------------
+
+from mongo_datatables.exceptions import FieldMappingError
+
+
+class TestCoerceValuesFieldMappingErrorFallback(unittest.TestCase):
+    """Regression tests: _coerce_values must fall back to raw value when
+    TypeConverter.to_number raises FieldMappingError (not propagate it)."""
+
+    def setUp(self):
+        self.mongo = MagicMock()
+        self.mongo.db = MagicMock(spec=Database)
+        self.collection = MagicMock(spec=Collection)
+        self.mongo.db.__getitem__.return_value = self.collection
+
+    def _editor(self, field_type: str = "number") -> Editor:
+        data_fields = [DataField("score", field_type)]
+        return Editor(self.mongo, "test", {}, data_fields=data_fields)
+
+    def test_invalid_number_string_falls_back_to_raw(self):
+        """FieldMappingError from to_number must not propagate; raw value kept."""
+        editor = self._editor()
+        result = editor._coerce_values("score", ["not-a-number"])
+        self.assertEqual(result, ["not-a-number"])
+
+    def test_field_mapping_error_raised_by_to_number_is_caught(self):
+        """Explicitly patch to_number to raise FieldMappingError; verify fallback."""
+        editor = self._editor()
+        with patch(
+            "mongo_datatables.editor.core.TypeConverter.to_number",
+            side_effect=FieldMappingError("Cannot convert"),
+        ):
+            result = editor._coerce_values("score", ["bad"])
+        self.assertEqual(result, ["bad"])
+
+    def test_mixed_valid_and_invalid_numbers(self):
+        """Valid values convert; invalid ones fall back without raising."""
+        editor = self._editor()
+        result = editor._coerce_values("score", ["42", "bad", "3.14"])
+        self.assertEqual(result[0], 42)
+        self.assertEqual(result[1], "bad")
+        self.assertAlmostEqual(result[2], 3.14)
+
+    def test_empty_string_falls_back_to_raw(self):
+        """Empty string is not a valid number; raw value kept."""
+        editor = self._editor()
+        result = editor._coerce_values("score", [""])
+        self.assertEqual(result, [""])
+
+    def test_none_value_falls_back_to_raw(self):
+        """None coerced to str('None') fails; raw None kept."""
+        editor = self._editor()
+        result = editor._coerce_values("score", [None])
+        self.assertEqual(result, [None])

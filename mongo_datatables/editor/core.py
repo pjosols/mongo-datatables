@@ -206,7 +206,8 @@ class Editor:
 
         field: Field name to look up in field_mapper.
         values: List of raw values to coerce.
-        Returns list of coerced values.
+        Returns list of coerced values; on coercion failure the original
+        value is kept unchanged and a warning is logged.
         """
         field_type = self.field_mapper.get_field_type(field) or "string"
         result = []
@@ -214,7 +215,7 @@ class Editor:
             if field_type == "number":
                 try:
                     result.append(TypeConverter.to_number(str(v)))
-                except (ValueError, TypeError) as e:
+                except (ValueError, TypeError, FieldMappingError) as e:
                     logger.warning("Could not coerce value %r for field %r to number: %s", v, field, e)
                     result.append(v)
             elif field_type == "boolean":
@@ -222,27 +223,6 @@ class Editor:
             else:
                 result.append(v)
         return result
-
-    # Keys required in request_args for each action type
-    _REQUIRED_KEYS: Dict[str, List[str]] = {
-        "create": ["data"],
-        "edit": ["data"],
-        "remove": ["data"],
-        "search": ["field"],
-        "upload": ["upload"],
-        "dependent": ["field"],
-    }
-
-    def _extract_rows(self) -> Dict[str, Any]:
-        """Extract the relevant rows from request data for the current action.
-
-        For edit, filters data to only rows matching list_of_ids.
-        For create, returns all data rows.
-        Returns dict of row_id -> row_data.
-        """
-        if self.action == "edit":
-            return {k: v for k, v in self.data.items() if k in self.list_of_ids}
-        return self.data
 
     def process(self) -> Dict[str, Any]:
         """Process the Editor request based on the action, returning protocol-compliant JSON.
@@ -262,12 +242,28 @@ class Editor:
         if self.action not in actions:
             return {"error": f"Unsupported action: {self.action}"}
 
-        missing = [k for k in self._REQUIRED_KEYS.get(self.action, []) if k not in self.request_args]
+        required_keys: Dict[str, List[str]] = {
+            "create": ["data"],
+            "edit": ["data"],
+            "remove": ["data"],
+            "search": ["field"],
+            "upload": ["upload"],
+            "dependent": ["field"],
+        }
+        missing = [k for k in required_keys.get(self.action, []) if k not in self.request_args]
         if missing:
             return {"error": f"Missing required keys for action '{self.action}': {missing}"}
 
+        if self.action in ("create", "edit"):
+            rows = (
+                {k: v for k, v in self.data.items() if k in self.list_of_ids}
+                if self.action == "edit"
+                else self.data
+            )
+        else:
+            rows = {}
+
         if (self.fields or self.data_fields) and self.action in ("create", "edit"):
-            rows = self._extract_rows()
             try:
                 for row in rows.values():
                     validate_data_fields_whitelist(row, self.fields, self.data_fields)
@@ -275,7 +271,6 @@ class Editor:
                 return {"error": str(e)}
 
         if self.validators and self.action in ("create", "edit"):
-            rows = self._extract_rows()
             field_errors = [
                 err for row in rows.values() for err in run_validators(self.validators, row)
             ]
@@ -308,13 +303,13 @@ class Editor:
                 exc_info=True,
             )
             return {"error": f"Missing or unexpected key: {e}"}
-        except (TypeError, ValueError) as e:
-            # Invalid data types or values from external input that passed earlier validation
-            logger.error("Invalid data in process: %s", e, exc_info=True)
-            return {"error": f"Invalid data: {e}"}
-        except AttributeError as e:
-            # Unexpected None or wrong type on internal objects — likely a bug; log prominently
-            logger.error("AttributeError in process (possible bug): %s", e, exc_info=True)
-            return {"error": str(e)}
+        except TypeError as e:
+            # Type coercion failure — a field value could not be converted to the expected type
+            logger.error("Type coercion failure in process action=%r: %s", self.action, e, exc_info=True)
+            return {"error": f"Type error: {e}"}
+        except ValueError as e:
+            # Value validation failure — a field value is structurally valid but semantically rejected
+            logger.error("Value validation failure in process action=%r: %s", self.action, e, exc_info=True)
+            return {"error": f"Invalid value: {e}"}
 
 
