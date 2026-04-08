@@ -266,13 +266,15 @@ class DataTables(DataTablesMixin):
             return []
 
     def _parse_extension_config(self, key: str) -> Optional[Dict[str, Any]]:
-        """Return extension config dict for the given request key, or None."""
+        """Return extension config dict for the given request key, or None.
+
+        Returns None if the key is absent, not a dict, or lacks a dataSrc entry.
+        Returns only {"dataSrc": value} when dataSrc is present.
+        """
         val = self.request_args.get(key)
-        if not val:
+        if not isinstance(val, dict) or "dataSrc" not in val:
             return None
-        if val is True:
-            return {}
-        return val if isinstance(val, dict) else None
+        return {"dataSrc": val["dataSrc"]}
 
     def get_rows(self) -> Dict[str, Any]:
         """Get the complete DataTables JSON response.
