@@ -11,9 +11,10 @@ from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError
 from mongo_datatables.utils import FieldMapper, TypeConverter
 from mongo_datatables.editor.validator import (
     validate_data_fields_whitelist,
-    validate_doc_id,
     validate_collection_name,
     validate_editor_request_args,
+    validate_doc_id,
+    _validate_request_args_structure,
 )
 from mongo_datatables.editor.storage import StorageAdapter
 from mongo_datatables.editor.crud import (
@@ -73,13 +74,18 @@ class Editor:
         file_fields: List of field names that are upload fields.
         dependent_handlers: Dict of field -> callable(field, values, rows).
         """
-        validate_editor_request_args(request_args if request_args is not None else {})
+        self._init_error: Optional[str] = None
+        _validate_request_args_structure(request_args if request_args is not None else {})
         validate_collection_name(collection_name)
         self.mongo = pymongo_object
         self.collection_name = collection_name
         self.request_args = request_args if isinstance(request_args, dict) else {}
         self.doc_id = doc_id or ""
-        validate_doc_id(self.doc_id)
+        try:
+            validate_doc_id(self.doc_id)
+        except InvalidDataError as e:
+            if self._init_error is None:
+                self._init_error = str(e)
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
         self.fields: Dict[str, DataField] = {
@@ -221,10 +227,8 @@ class Editor:
             if field_type == "number":
                 try:
                     result.append(TypeConverter.to_number(str(v)))
-                except (ValueError, TypeError, FieldMappingError) as e:
-                    raise InvalidDataError(
-                        f"Cannot coerce value {v!r} for field {field!r} to number: {e}"
-                    ) from e
+                except (ValueError, TypeError, FieldMappingError):
+                    result.append(v)
             elif field_type == "boolean":
                 result.append(TypeConverter.to_boolean(str(v)) if not isinstance(v, bool) else v)
             else:
@@ -237,6 +241,9 @@ class Editor:
         Catches exceptions and returns error dict so the client can display errors inline.
         Returns response data for the Editor client, or error dict on failure.
         """
+        if self._init_error is not None:
+            return {"error": self._init_error}
+
         actions = {
             "create": self.create,
             "edit": self.edit,
@@ -300,8 +307,8 @@ class Editor:
         except (KeyError, TypeError, ValueError) as e:
             logger.error("Unexpected error in process action=%r: %s", self.action, e, exc_info=True)
             return {"error": "An error occurred processing your request."}
-        except Exception as e:
-            logger.error("Unhandled error in process action=%r: %s", self.action, e, exc_info=True)
-            return {"error": "An error occurred processing your request."}
+        except Exception:
+            logger.error("Unhandled error in process action=%r", self.action, exc_info=True)
+            raise
 
 
