@@ -88,12 +88,13 @@ def fetch_results(
     """
     try:
         cursor = collection.aggregate(pipeline, allowDiskUse=allow_disk_use)
-        return process_cursor(cursor, row_id, field_mapper, row_class, row_data, row_attr)
     except PyMongoError as e:
-        logger.error("MongoDB error in fetch_results(): %s", e, exc_info=True)
+        logger.error("MongoDB aggregation error in fetch_results(): %s", e, exc_info=True)
         return []
+    try:
+        return process_cursor(cursor, row_id, field_mapper, row_class, row_data, row_attr)
     except (ValueError, TypeError) as e:
-        logger.error("Error in fetch_results(): %s", e, exc_info=True)
+        logger.error("Result formatting error in fetch_results(): %s", e, exc_info=True)
         return []
 
 
@@ -155,6 +156,30 @@ def count_filtered(
     except (ValueError, TypeError) as e:
         logger.error("Invalid data in count_filtered(): %s", e, exc_info=True)
         return 0
+    except Exception as e:
+        logger.error("Unexpected error in count_filtered(): %s", e, exc_info=True)
+        return 0
+
+
+def _resolve_rowgroup_field(
+    data_src: Any,
+    columns: List[Dict[str, Any]],
+    field_mapper: Any,
+) -> Optional[str]:
+    """Resolve a rowGroup dataSrc to a MongoDB field name.
+
+    data_src: Column index (int) or field name (str) from rowGroup config.
+    columns: Columns list from the DataTables request.
+    field_mapper: FieldMapper for alias resolution.
+    Returns the MongoDB field name, or None if it cannot be resolved.
+    """
+    if isinstance(data_src, int):
+        if data_src >= len(columns):
+            return None
+        field_name = columns[data_src].get("data")
+    else:
+        field_name = data_src
+    return field_mapper.get_db_field(field_name) if field_name else None
 
 
 def get_rowgroup_data(
@@ -173,7 +198,9 @@ def get_rowgroup_data(
     current_filter: Combined active MongoDB filter.
     request_args: Validated DataTables request parameters.
     allow_disk_use: Whether to allow disk use in aggregation.
-    Returns dict with dataSrc and groups, or None if not configured.
+    Returns dict with dataSrc and groups if rowGroup is configured and the
+    field can be resolved; None otherwise. Callers should treat None as
+    "no rowGroup data available" and omit the key from the response.
     """
     rowgroup_params = request_args.get("rowGroup")
     if not rowgroup_params:
@@ -182,14 +209,7 @@ def get_rowgroup_data(
     if not isinstance(data_src, (str, int)):
         return None
 
-    if isinstance(data_src, int):
-        if data_src >= len(columns):
-            return None
-        field_name = columns[data_src].get("data")
-    else:
-        field_name = data_src
-
-    mongo_field = field_mapper.get_db_field(field_name) if field_name else None
+    mongo_field = _resolve_rowgroup_field(data_src, columns, field_mapper)
     if not mongo_field:
         return None
 
