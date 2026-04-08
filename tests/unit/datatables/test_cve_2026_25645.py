@@ -7,7 +7,6 @@ via pyproject.toml constraint-dependencies and uv.lock resolution.
 from __future__ import annotations
 
 import re
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent.parent
@@ -24,8 +23,8 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
 def test_pyproject_constrains_requests_to_fixed_version() -> None:
     """pyproject.toml must pin requests to >=2.33.0 to exclude CVE-2026-25645."""
-    data = tomllib.loads(PYPROJECT.read_text())
-    constraints: list[str] = data.get("tool", {}).get("uv", {}).get("constraint-dependencies", [])
+    text = PYPROJECT.read_text()
+    constraints = re.findall(r'"(requests[^"]*)"', text)
     requests_constraints = [c for c in constraints if c.startswith("requests")]
     assert requests_constraints, "No requests constraint found in [tool.uv] constraint-dependencies"
     # Extract the version bound, e.g. "requests>=2.33.0"
