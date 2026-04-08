@@ -1,6 +1,6 @@
 """Server-side processor for DataTables Editor with MongoDB."""
 import logging
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -8,7 +8,7 @@ from pymongo.errors import PyMongoError
 
 from mongo_datatables.data_field import DataField
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
-from mongo_datatables.utils import FieldMapper
+from mongo_datatables.utils import FieldMapper, TypeConverter
 from mongo_datatables.editor.validator import (
     validate_data_fields_whitelist,
 )
@@ -20,6 +20,11 @@ from mongo_datatables.editor.crud import (
     run_validators,
     resolve_collection,
     resolve_db,
+)
+from mongo_datatables.editor.document import (
+    format_response_document,
+    preprocess_document,
+    build_updates,
 )
 from mongo_datatables.editor.search import handle_search, handle_dependent, handle_upload
 
@@ -42,10 +47,10 @@ class Editor:
         storage_adapter: Optional[StorageAdapter] = None,
         options: Optional[Union[Dict[str, Any], Callable[[], Dict[str, Any]]]] = None,
         hooks: Optional[Dict[str, Any]] = None,
-        row_class=None,
-        row_data=None,
-        row_attr=None,
-        file_fields=None,
+        row_class: Optional[Union[str, Callable[..., str]]] = None,
+        row_data: Optional[Union[Dict[str, Any], Callable[..., Dict[str, Any]]]] = None,
+        row_attr: Optional[Union[Dict[str, Any], Callable[..., Dict[str, Any]]]] = None,
+        file_fields: Optional[List[str]] = None,
         dependent_handlers: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Initialise the Editor processor.
@@ -65,9 +70,13 @@ class Editor:
         file_fields: List of field names that are upload fields.
         dependent_handlers: Dict of field -> callable(field, values, rows).
         """
+        if request_args is not None and not isinstance(request_args, dict):
+            raise InvalidDataError(
+                f"request_args must be a dict, got {type(request_args).__name__}"
+            )
         self.mongo = pymongo_object
         self.collection_name = collection_name
-        self.request_args = request_args or {}
+        self.request_args = request_args if isinstance(request_args, dict) else {}
         self.doc_id = doc_id or ""
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
@@ -168,6 +177,73 @@ class Editor:
         """Handle action=upload via the pluggable storage adapter."""
         return handle_upload(self.request_args, self.storage_adapter)
 
+    def _preprocess_document(self, doc: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Preprocess a document before insert/update.
+
+        doc: Raw document data from Editor.
+        Returns (processed_document, dot_notation_updates).
+        """
+        return preprocess_document(doc, self.fields, self.data_fields, self.field_mapper)
+
+    def _process_updates(self, data: Any, updates: Dict[str, Any]) -> None:
+        """Build $set updates dict from nested Editor data in-place.
+
+        data: Data to process (dict or scalar).
+        updates: Dict to populate in-place.
+        """
+        build_updates(data, self.field_mapper, self.fields, self.data_fields, updates)
+
+    def _format_response_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Format a MongoDB document for the Editor response.
+
+        doc: Document from MongoDB.
+        Returns formatted document dict.
+        """
+        return format_response_document(doc, self.row_class, self.row_data, self.row_attr)
+
+    def _coerce_values(self, field: str, values: List[Any]) -> List[Any]:
+        """Coerce a list of values to the type declared for field.
+
+        field: Field name to look up in field_mapper.
+        values: List of raw values to coerce.
+        Returns list of coerced values.
+        """
+        field_type = self.field_mapper.get_field_type(field) or "string"
+        result = []
+        for v in values:
+            if field_type == "number":
+                try:
+                    result.append(TypeConverter.to_number(str(v)))
+                except (ValueError, TypeError) as e:
+                    logger.warning("Could not coerce value %r for field %r to number: %s", v, field, e)
+                    result.append(v)
+            elif field_type == "boolean":
+                result.append(TypeConverter.to_boolean(str(v)) if not isinstance(v, bool) else v)
+            else:
+                result.append(v)
+        return result
+
+    # Keys required in request_args for each action type
+    _REQUIRED_KEYS: Dict[str, List[str]] = {
+        "create": ["data"],
+        "edit": ["data"],
+        "remove": ["data"],
+        "search": ["field"],
+        "upload": ["upload"],
+        "dependent": ["field"],
+    }
+
+    def _extract_rows(self) -> Dict[str, Any]:
+        """Extract the relevant rows from request data for the current action.
+
+        For edit, filters data to only rows matching list_of_ids.
+        For create, returns all data rows.
+        Returns dict of row_id -> row_data.
+        """
+        if self.action == "edit":
+            return {k: v for k, v in self.data.items() if k in self.list_of_ids}
+        return self.data
+
     def process(self) -> Dict[str, Any]:
         """Process the Editor request based on the action, returning protocol-compliant JSON.
 
@@ -186,12 +262,12 @@ class Editor:
         if self.action not in actions:
             return {"error": f"Unsupported action: {self.action}"}
 
+        missing = [k for k in self._REQUIRED_KEYS.get(self.action, []) if k not in self.request_args]
+        if missing:
+            return {"error": f"Missing required keys for action '{self.action}': {missing}"}
+
         if (self.fields or self.data_fields) and self.action in ("create", "edit"):
-            rows = (
-                {k: v for k, v in self.data.items() if k in self.list_of_ids}
-                if self.action == "edit"
-                else self.data
-            )
+            rows = self._extract_rows()
             try:
                 for row in rows.values():
                     validate_data_fields_whitelist(row, self.fields, self.data_fields)
@@ -199,11 +275,7 @@ class Editor:
                 return {"error": str(e)}
 
         if self.validators and self.action in ("create", "edit"):
-            rows = (
-                {k: v for k, v in self.data.items() if k in self.list_of_ids}
-                if self.action == "edit"
-                else self.data
-            )
+            rows = self._extract_rows()
             field_errors = [
                 err for row in rows.values() for err in run_validators(self.validators, row)
             ]
@@ -224,9 +296,18 @@ class Editor:
             logger.error("Unexpected PyMongo error in process: %s", e, exc_info=True)
             return {"error": f"Database error: {e}"}
         except KeyError as e:
-            # Malformed request data missing expected keys (e.g. bad row IDs or field names)
-            logger.error("Missing key in process: %s", e, exc_info=True)
-            return {"error": f"Missing field: {e}"}
+            # KeyError here may indicate malformed request data (unexpected row IDs or field
+            # names) or an internal bug accessing a key that should have been validated earlier.
+            # The earlier _REQUIRED_KEYS check guards top-level keys; a KeyError reaching here
+            # most likely originates from nested row data or an internal code path.
+            logger.error(
+                "KeyError in process for action=%r key=%s — "
+                "check request data structure or internal key access",
+                self.action,
+                e,
+                exc_info=True,
+            )
+            return {"error": f"Missing or unexpected key: {e}"}
         except (TypeError, ValueError) as e:
             # Invalid data types or values from external input that passed earlier validation
             logger.error("Invalid data in process: %s", e, exc_info=True)
