@@ -1,5 +1,7 @@
 """Validate DataTables request_args parameters."""
 
+from __future__ import annotations
+
 from typing import Any, Dict
 
 from mongo_datatables.exceptions import InvalidDataError
