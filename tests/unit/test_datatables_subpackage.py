@@ -371,3 +371,36 @@ def test_get_rowgroup_data_returns_groups():
     assert result is not None
     assert result["dataSrc"] == "status"
     assert result["groups"]["A"]["count"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Orphaned module check — files removed during datatables/ consolidation
+# ---------------------------------------------------------------------------
+
+import os
+import importlib
+
+_ORPHANED_MODULES = [
+    "datatables_core",
+    "query_builder",
+    "query_conditions",
+    "query_global_search",
+    "column_control",
+    "regex_utils",
+    "formatting",
+    "request_validator",
+]
+
+_PACKAGE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "mongo_datatables")
+
+
+@pytest.mark.parametrize("module_name", _ORPHANED_MODULES)
+def test_orphaned_file_does_not_exist(module_name: str) -> None:
+    path = os.path.join(_PACKAGE_DIR, f"{module_name}.py")
+    assert not os.path.exists(path), f"Orphaned file still present: mongo_datatables/{module_name}.py"
+
+
+@pytest.mark.parametrize("module_name", _ORPHANED_MODULES)
+def test_orphaned_module_not_importable(module_name: str) -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(f"mongo_datatables.{module_name}")

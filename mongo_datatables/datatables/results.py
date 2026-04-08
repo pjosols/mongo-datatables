@@ -92,7 +92,7 @@ def fetch_results(
     except PyMongoError as e:
         logger.error("MongoDB error in fetch_results(): %s", e, exc_info=True)
         return []
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.error("Error in fetch_results(): %s", e, exc_info=True)
         return []
 

@@ -295,6 +295,6 @@ class DataTables(DataTablesMixin):
                 request_args=self.request_args,
                 allow_disk_use=self.allow_disk_use,
             )
-        except (PyMongoError, ValueError, TypeError, KeyError, Exception) as e:
+        except (PyMongoError, ValueError, TypeError, KeyError) as e:
             logger.error("DataTables get_rows error: %s", e)
             return error_response(self.draw, e)
