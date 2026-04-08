@@ -13,6 +13,7 @@ from mongo_datatables.editor.validator import (
     validate_data_fields_whitelist,
     validate_doc_id,
     validate_collection_name,
+    validate_editor_request_args,
 )
 from mongo_datatables.editor.storage import StorageAdapter
 from mongo_datatables.editor.crud import (
@@ -72,10 +73,7 @@ class Editor:
         file_fields: List of field names that are upload fields.
         dependent_handlers: Dict of field -> callable(field, values, rows).
         """
-        if request_args is not None and not isinstance(request_args, dict):
-            raise InvalidDataError(
-                f"request_args must be a dict, got {type(request_args).__name__}"
-            )
+        validate_editor_request_args(request_args if request_args is not None else {})
         validate_collection_name(collection_name)
         self.mongo = pymongo_object
         self.collection_name = collection_name
@@ -134,6 +132,10 @@ class Editor:
         return [id_.strip() for id_ in self.doc_id.split(",") if id_.strip()]
 
     def _resolve_options(self) -> Optional[Any]:
+        """Resolve options dict, calling if callable.
+
+        Returns the options dict, or None if not configured.
+        """
         if self._options is None:
             return None
         return self._options() if callable(self._options) else self._options
@@ -210,8 +212,8 @@ class Editor:
 
         field: Field name to look up in field_mapper.
         values: List of raw values to coerce.
-        Returns list of coerced values; on coercion failure the original
-        value is kept unchanged and a warning is logged.
+        Returns list of coerced values.
+        Raises InvalidDataError if any value cannot be coerced to the declared type.
         """
         field_type = self.field_mapper.get_field_type(field) or "string"
         result = []
@@ -220,8 +222,9 @@ class Editor:
                 try:
                     result.append(TypeConverter.to_number(str(v)))
                 except (ValueError, TypeError, FieldMappingError) as e:
-                    logger.warning("Could not coerce value %r for field %r to number: %s", v, field, e)
-                    result.append(v)
+                    raise InvalidDataError(
+                        f"Cannot coerce value {v!r} for field {field!r} to number: {e}"
+                    ) from e
             elif field_type == "boolean":
                 result.append(TypeConverter.to_boolean(str(v)) if not isinstance(v, bool) else v)
             else:
@@ -296,6 +299,9 @@ class Editor:
             return {"error": "A database error occurred. Please try again."}
         except (KeyError, TypeError, ValueError) as e:
             logger.error("Unexpected error in process action=%r: %s", self.action, e, exc_info=True)
+            return {"error": "An error occurred processing your request."}
+        except Exception as e:
+            logger.error("Unhandled error in process action=%r: %s", self.action, e, exc_info=True)
             return {"error": "An error occurred processing your request."}
 
 

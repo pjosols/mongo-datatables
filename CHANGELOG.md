@@ -23,6 +23,7 @@ All notable changes to mongo-datatables are documented here.
 - Updated test module docstrings in `test_datatables_filtering.py`, `test_datatables_misc.py`, `test_datatables_pipeline.py`, `test_extensions_unit.py`, and `test_sort_unit.py` to imperative form
 - Updated `DataTables._parse_extension_config()` docstring to imperative form
 - Updated `parse_extension_config()` docstring to imperative form
+- Added docstring to `Editor._resolve_options()` following Wholeshoot convention
 
 ### Fixed
 
