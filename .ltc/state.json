@@ -1,1 +1,1 @@
-{"iteration": 23, "agent": "ltc_committer", "agent_started_at": "2026-04-08T04:17:05.519232+00:00", "task_id": "2ab5c1fd-1f25-4efa-be29-9509d8dd8055", "task_title": "[BUG] uploadField missing from _ALLOWED_REQUEST_KEYS in validator.py", "task_started_at": "2026-04-08T04:15:49.616027+00:00", "agents_completed": [{"name": "ltc_committer", "duration_seconds": 4}], "agents_active": ["ltc_committer"], "session_dir": "20260407-220531"}
+{"agent": null}
