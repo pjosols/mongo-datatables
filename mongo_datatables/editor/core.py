@@ -11,6 +11,8 @@ from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError
 from mongo_datatables.utils import FieldMapper, TypeConverter
 from mongo_datatables.editor.validator import (
     validate_data_fields_whitelist,
+    validate_doc_id,
+    validate_collection_name,
 )
 from mongo_datatables.editor.storage import StorageAdapter
 from mongo_datatables.editor.crud import (
@@ -74,10 +76,12 @@ class Editor:
             raise InvalidDataError(
                 f"request_args must be a dict, got {type(request_args).__name__}"
             )
+        validate_collection_name(collection_name)
         self.mongo = pymongo_object
         self.collection_name = collection_name
         self.request_args = request_args if isinstance(request_args, dict) else {}
         self.doc_id = doc_id or ""
+        validate_doc_id(self.doc_id)
         self.data_fields = data_fields or []
         self.field_mapper = FieldMapper(self.data_fields)
         self.fields: Dict[str, DataField] = {

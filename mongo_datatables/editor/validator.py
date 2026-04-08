@@ -14,6 +14,9 @@ _VALID_ACTIONS = frozenset({"create", "edit", "remove", "upload", "search", "dep
 # Allowed field name pattern: alphanumeric, underscore, hyphen, dot (for nested)
 _FIELD_NAME_RE = re.compile(r"^[A-Za-z0-9_\-\.]+$")
 
+# Valid MongoDB collection name: no $, no \0, no empty string, max 120 bytes
+_COLLECTION_NAME_RE = re.compile(r"^[^\x00$]{1,120}$")
+
 # Max lengths for upload fields
 _MAX_FILENAME_LEN = 255
 _MAX_CONTENT_TYPE_LEN = 127
@@ -42,6 +45,22 @@ def validate_editor_request_args(request_args: Any) -> None:
     if action is not None and action not in _VALID_ACTIONS:
         raise InvalidDataError(
             f"Invalid action {action!r}. Must be one of: {', '.join(sorted(_VALID_ACTIONS))}"
+        )
+
+
+def validate_collection_name(name: str) -> None:
+    """Validate a MongoDB collection name against MongoDB naming rules.
+
+    Rejects empty strings, names containing null bytes or '$', and names
+    exceeding 120 bytes — preventing injection via collection name.
+
+    name: collection name string to validate.
+    Raises InvalidDataError if the name is invalid.
+    """
+    if not isinstance(name, str) or not _COLLECTION_NAME_RE.match(name):
+        raise InvalidDataError(
+            f"Invalid collection name {name!r}. Must be a non-empty string "
+            "without null bytes or '$', and at most 120 characters."
         )
 
 
