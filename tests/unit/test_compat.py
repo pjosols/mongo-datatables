@@ -1,8 +1,25 @@
-"""Tests for DataTablesMixin shims in datatables/compat.py."""
+"""Verify DataTablesMixin backward-compatible shims and import correctness."""
 import pytest
 from unittest.mock import MagicMock
 from tests.base_test import BaseDataTablesTest
 from mongo_datatables import DataTables
+
+
+class TestCompatImports:
+    """compat.py imports get_searchpanes_options from search_panes, not filter."""
+
+    def test_get_searchpanes_options_importable_from_compat(self):
+        from mongo_datatables.datatables.compat import get_searchpanes_options
+        assert callable(get_searchpanes_options)
+
+    def test_get_searchpanes_options_is_same_as_search_panes(self):
+        from mongo_datatables.datatables.compat import get_searchpanes_options as compat_fn
+        from mongo_datatables.search_panes import get_searchpanes_options as sp_fn
+        assert compat_fn is sp_fn
+
+    def test_filter_module_does_not_export_get_searchpanes_options(self):
+        import mongo_datatables.datatables.filter as filter_mod
+        assert not hasattr(filter_mod, "get_searchpanes_options")
 
 
 def _make_dt(mongo, request_args):

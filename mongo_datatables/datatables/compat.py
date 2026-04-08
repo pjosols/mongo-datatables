@@ -7,10 +7,8 @@ from mongo_datatables.datatables.results import (
     count_filtered,
     get_rowgroup_data,
 )
-from mongo_datatables.datatables.filter import (
-    build_filter,
-    get_searchpanes_options,
-)
+from mongo_datatables.datatables.filter import build_filter
+from mongo_datatables.search_panes import get_searchpanes_options
 from mongo_datatables.datatables.results import build_pipeline
 
 __all__ = [

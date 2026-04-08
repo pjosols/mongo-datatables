@@ -15,6 +15,12 @@ All notable changes to mongo-datatables are documented here.
 - Simplified `DataTables` class docstring to one sentence
 - Simplified `get_searchpanes_options()` docstring to Wholeshoot convention with flat parameter list
 - Simplified `parse_searchpanes_filters()` docstring to Wholeshoot convention
+- Updated `datatables/compat.py` module docstring to clarify backward-compatible re-exports and shim mixin purpose
+- Updated `test_compat.py` module docstring to follow Wholeshoot convention
+
+### Fixed
+
+- **Import correctness**: `datatables/compat.py` now imports `get_searchpanes_options` from `search_panes` module instead of the removed `filter` wrapper — resolves import error after wrapper removal
 
 ### Fixed
 
