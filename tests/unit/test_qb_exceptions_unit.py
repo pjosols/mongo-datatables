@@ -38,7 +38,7 @@ class TestBuildColumnSearchExceptions:
         qb = _make_qb()
         qb.field_mapper.get_field_type.return_value = "number"
         col = {"data": "price", "search": {"value": "5", "regex": False}, "searchable": True}
-        with patch("mongo_datatables.query_builder.TypeConverter.to_number", side_effect=RuntimeError("unexpected")):
+        with patch("mongo_datatables.datatables.query.TypeConverter.to_number", side_effect=RuntimeError("unexpected")):
             with pytest.raises(RuntimeError):
                 qb.build_column_search([col])
 
@@ -53,7 +53,7 @@ class TestBuildNumberConditionExceptions:
 
     def test_unexpected_exception_propagates(self):
         qb = _make_qb()
-        with patch("mongo_datatables.query_builder.TypeConverter.to_number", side_effect=RuntimeError("unexpected")):
+        with patch("mongo_datatables.datatables.query.TypeConverter.to_number", side_effect=RuntimeError("unexpected")):
             with pytest.raises(RuntimeError):
                 qb._build_number_condition("price", "5", None)
 
@@ -70,7 +70,7 @@ class TestBuildDateConditionExceptions:
 
     def test_unexpected_exception_propagates(self):
         qb = _make_qb()
-        with patch("mongo_datatables.query_builder.DateHandler.get_date_range_for_comparison", side_effect=RuntimeError("unexpected")):
+        with patch("mongo_datatables.datatables.query.DateHandler.get_date_range_for_comparison", side_effect=RuntimeError("unexpected")):
             with pytest.raises(RuntimeError):
                 qb._build_date_condition("created", "2024-01-15", None)
 
