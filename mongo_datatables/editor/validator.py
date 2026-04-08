@@ -30,7 +30,7 @@ _MAX_STRING_VALUE_LEN = 1_000_000  # 1 MB per string field
 
 # Allowed top-level keys in request_args
 _ALLOWED_REQUEST_KEYS = frozenset({
-    "action", "data", "field", "value", "upload", "id", "ids",
+    "action", "data", "field", "value", "upload", "uploadField", "id", "ids",
 })
 
 # Maximum nesting depth for request_args values
