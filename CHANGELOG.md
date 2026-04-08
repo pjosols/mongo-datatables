@@ -17,6 +17,8 @@ All notable changes to mongo-datatables are documented here.
 - Simplified `parse_searchpanes_filters()` docstring to Wholeshoot convention
 - Updated `datatables/compat.py` module docstring to clarify backward-compatible re-exports and shim mixin purpose
 - Updated `test_compat.py` module docstring to follow Wholeshoot convention
+- Updated `datatables/compat.py` module docstring to imperative form
+- Updated test module docstrings in `test_datatables_filtering.py`, `test_datatables_misc.py`, `test_datatables_pipeline.py`, `test_extensions_unit.py`, and `test_sort_unit.py` to imperative form
 
 ### Fixed
 

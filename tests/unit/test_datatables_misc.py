@@ -1,4 +1,4 @@
-"""Tests for DataTables miscellaneous features: draw, input validation, regression fixes."""
+"""Test DataTables miscellaneous features: draw, input validation, regression fixes."""
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -303,7 +303,7 @@ class TestSbGroup(unittest.TestCase):
         self.assertEqual(result, {})
 
 
-class TestGetRowgroupData:
+class TestGetRowgroupData(unittest.TestCase):
     _BASE_ARGS = {
         "draw": 1, "start": 0, "length": 10,
         "search": {"value": "", "regex": False},
@@ -322,53 +322,60 @@ class TestGetRowgroupData:
         return DataTables(db, "test", request_args, data_fields or [], **custom_filter), col
 
     def test_no_rowgroup_config_returns_none(self):
-        dt, _ = self._make_dt(self._BASE_ARGS)
-        assert dt._get_rowgroup_data() is None
+        from mongo_datatables.datatables.results import get_rowgroup_data
+        dt, col = self._make_dt(self._BASE_ARGS)
+        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_string_datasrc_builds_pipeline(self):
+        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
         dt, col = self._make_dt(args)
         col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
-        result = dt._get_rowgroup_data()
-        assert result is not None
-        assert "dataSrc" in result
-        assert "groups" in result
+        result = get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
+        self.assertIsNotNone(result)
+        self.assertIn("dataSrc", result)
+        self.assertIn("groups", result)
 
     def test_numeric_datasrc_maps_to_column(self):
+        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": 0}}
         dt, col = self._make_dt(args)
         col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
-        result = dt._get_rowgroup_data()
-        assert result is not None
-        assert result["dataSrc"] == 0
+        result = get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["dataSrc"], 0)
 
     def test_out_of_range_datasrc_returns_none(self):
+        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": 99}}
-        dt, _ = self._make_dt(args)
-        assert dt._get_rowgroup_data() is None
+        dt, col = self._make_dt(args)
+        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_pymongo_error_returns_none(self):
+        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
         dt, col = self._make_dt(args)
         col.aggregate = MagicMock(side_effect=PyMongoError("db error"))
-        assert dt._get_rowgroup_data() is None
+        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_empty_field_name_returns_none(self):
+        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": ""}}
-        dt, _ = self._make_dt(args)
-        assert dt._get_rowgroup_data() is None
+        dt, col = self._make_dt(args)
+        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_rowgroup_with_active_filter(self):
+        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"},
                 "search": {"value": "foo", "regex": False}}
         dt, col = self._make_dt(args)
         col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
-        dt._get_rowgroup_data()
+        get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
         pipeline_arg = col.aggregate.call_args[0][0]
-        assert any("$match" in stage for stage in pipeline_arg)
+        self.assertTrue(any("$match" in stage for stage in pipeline_arg))
 
 
-class TestGlobalSearchPerf:
+class TestGlobalSearchPerf(unittest.TestCase):
     """Tests for global search query builder performance and correctness."""
 
     def _make_perf_qb(self, columns):
@@ -376,7 +383,6 @@ class TestGlobalSearchPerf:
         return MongoQueryBuilder(fm, use_text_index=False, has_text_index=False)
 
     def test_field_mapper_called_once_per_column_not_per_term(self):
-        from unittest.mock import MagicMock
         fm = MagicMock(spec=FieldMapper)
         fm.get_field_type.return_value = "text"
         fm.get_db_field.side_effect = lambda c: c
@@ -384,34 +390,34 @@ class TestGlobalSearchPerf:
         columns = ["name", "city", "country"]
         terms = ["alice", "bob", "carol"]
         qb.build_global_search(terms, columns)
-        assert fm.get_field_type.call_count == len(columns)
-        assert fm.get_db_field.call_count == len(columns)
+        self.assertEqual(fm.get_field_type.call_count, len(columns))
+        self.assertEqual(fm.get_db_field.call_count, len(columns))
 
     def test_global_search_multi_term_produces_correct_or_conditions(self):
         qb = self._make_perf_qb(["name", "city"])
         result = qb.build_global_search(["alice", "bob"], ["name", "city"])
-        assert "$and" in result
-        assert len(result["$and"]) == 2
+        self.assertIn("$and", result)
+        self.assertEqual(len(result["$and"]), 2)
         for term_cond in result["$and"]:
-            assert "$or" in term_cond
-            assert len(term_cond["$or"]) == 2
+            self.assertIn("$or", term_cond)
+            self.assertEqual(len(term_cond["$or"]), 2)
 
     def test_global_search_quoted_phrase_word_boundary(self):
         qb = self._make_perf_qb(["name"])
         result = qb.build_global_search(["alice"], ["name"], original_search='"alice"')
-        assert "$or" in result
+        self.assertIn("$or", result)
         pattern = result["$or"][0]["name"]["$regex"]
-        assert pattern.startswith("\\b") and pattern.endswith("\\b")
+        self.assertTrue(pattern.startswith("\\b") and pattern.endswith("\\b"))
 
     def test_global_search_skips_date_columns(self):
         fields = [DataField("created", "date"), DataField("name", "string")]
         fm = FieldMapper(fields)
         qb = MongoQueryBuilder(fm, use_text_index=False, has_text_index=False)
         result = qb.build_global_search(["alice"], ["created", "name"])
-        assert "$or" in result
+        self.assertIn("$or", result)
         fields_searched = [list(cond.keys())[0] for cond in result["$or"]]
-        assert "created" not in fields_searched
-        assert "name" in fields_searched
+        self.assertNotIn("created", fields_searched)
+        self.assertIn("name", fields_searched)
 
 
 if __name__ == '__main__':

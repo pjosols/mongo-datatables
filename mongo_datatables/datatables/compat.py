@@ -1,15 +1,12 @@
-"""Backward-compatible re-exports and shim mixin for the datatables subpackage."""
+"""Provide backward-compatible shim methods and re-exports for the datatables subpackage."""
 
 from typing import Any, Dict, List, Optional
 
 from mongo_datatables.datatables.results import (
     count_total,
     count_filtered,
-    get_rowgroup_data,
 )
-from mongo_datatables.datatables.filter import build_filter
 from mongo_datatables.search_panes import get_searchpanes_options
-from mongo_datatables.datatables.results import build_pipeline
 
 __all__ = [
     "count_total",
@@ -28,22 +25,6 @@ class DataTablesMixin:
     to the current public API. Inherit before DataTables core logic.
     """
 
-    def _build_pipeline(self, paginate: bool = True) -> List[Dict[str, Any]]:
-        """Build the aggregation pipeline for backward compatibility."""
-        return build_pipeline(
-            self.filter, self.pipeline_stages, self.sort_specification,
-            self.projection, self.start, self.limit, paginate=paginate,
-        )
-
-    def _build_filter(self) -> Dict[str, Any]:
-        """Build the combined MongoDB filter for backward compatibility."""
-        return build_filter(
-            self.custom_filter, self.query_builder, self.request_args,
-            self.field_mapper, self.columns, self.searchable_columns,
-            self.search_terms_without_a_colon, self.search_terms_with_a_colon,
-            self.search_value,
-        )
-
     def _process_cursor(self, cursor: Any) -> List[Dict[str, Any]]:
         """Format cursor rows for backward compatibility."""
         from mongo_datatables.datatables.formatting import process_cursor
@@ -54,13 +35,6 @@ class DataTablesMixin:
         """Remap aliased fields in a document for backward compatibility."""
         from mongo_datatables.datatables.formatting import remap_aliases
         return remap_aliases(doc, self.field_mapper)
-
-    def _get_rowgroup_data(self) -> Optional[Dict[str, Any]]:
-        """Get RowGroup aggregation data for backward compatibility."""
-        return get_rowgroup_data(
-            self.collection, self.columns, self.field_mapper,
-            self.filter, self.request_args, self.allow_disk_use,
-        )
 
     def _parse_search_builder(self) -> Dict[str, Any]:
         """Parse SearchBuilder payload for backward compatibility."""
@@ -77,20 +51,6 @@ class DataTablesMixin:
         """Return True if filter contains a $text operator for backward compatibility."""
         from mongo_datatables.datatables.results import filter_has_text
         return filter_has_text(f)
-
-    @property
-    def global_search_condition(self) -> Dict[str, Any]:
-        """Build global search condition for backward compatibility."""
-        search = self.request_args.get("search", {})
-        from mongo_datatables.utils import is_truthy
-        return self.query_builder.build_global_search(
-            self.search_terms_without_a_colon,
-            self.searchable_columns,
-            original_search=self.search_value,
-            search_regex=is_truthy(search.get("regex", False)),
-            search_smart=is_truthy(search.get("smart", True)),
-            case_insensitive=is_truthy(search.get("caseInsensitive", True)),
-        )
 
     @property
     def column_specific_search_condition(self) -> Dict[str, Any]:

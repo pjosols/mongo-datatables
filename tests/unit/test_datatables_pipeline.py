@@ -1,10 +1,10 @@
-"""Tests for DataTables pipeline building, count optimization, and pipeline_stages."""
-import unittest
+"""Test DataTables pipeline building, count optimization, and pipeline_stages."""
 from unittest.mock import MagicMock, Mock, patch
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
 from mongo_datatables import DataTables, DataField
+from mongo_datatables.datatables.results import build_pipeline
 from tests.base_test import BaseDataTablesTest
 
 
@@ -53,7 +53,7 @@ class TestBuildPipelineStructure:
     def test_paginate_true_includes_skip_and_limit(self):
         args = {**_BASE_ARGS, "start": "20", "length": "10"}
         dt = _make_dt(args)
-        pipeline = dt._build_pipeline(paginate=True)
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$skip" in stages
         assert "$limit" in stages
@@ -61,7 +61,7 @@ class TestBuildPipelineStructure:
     def test_paginate_false_excludes_skip_and_limit(self):
         args = {**_BASE_ARGS, "start": "20", "length": "10"}
         dt = _make_dt(args)
-        pipeline = dt._build_pipeline(paginate=False)
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$skip" not in stages
         assert "$limit" not in stages
@@ -69,55 +69,55 @@ class TestBuildPipelineStructure:
     def test_always_ends_with_project(self):
         dt = _make_dt()
         for paginate in (True, False):
-            pipeline = dt._build_pipeline(paginate=paginate)
+            pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=paginate)
             assert list(pipeline[-1].keys())[0] == "$project"
 
     def test_no_match_when_no_filter(self):
         dt = _make_dt()
-        pipeline = dt._build_pipeline()
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$match" not in stages
 
     def test_skip_omitted_when_start_is_zero(self):
         dt = _make_dt()
-        pipeline = dt._build_pipeline(paginate=True)
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$skip" not in stages
 
     def test_limit_omitted_when_length_is_negative_one(self):
         args = {**_BASE_ARGS, "length": "-1"}
         dt = _make_dt(args)
-        pipeline = dt._build_pipeline(paginate=True)
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$limit" not in stages
 
     def test_default_paginate_is_true(self):
         args = {**_BASE_ARGS, "start": "5", "length": "10"}
         dt = _make_dt(args)
-        assert dt._build_pipeline() == dt._build_pipeline(paginate=True)
+        assert build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit) == build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
 
 
 class TestBuildPipelineConsistency:
     def test_results_and_export_share_match_stage(self):
         dt = _make_dt()
-        paginated = dt._build_pipeline(paginate=True)
-        export = dt._build_pipeline(paginate=False)
+        paginated = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
+        export = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         p_match = next((s for s in paginated if "$match" in s), None)
         e_match = next((s for s in export if "$match" in s), None)
         assert p_match == e_match
 
     def test_results_and_export_share_sort_stage(self):
         dt = _make_dt()
-        paginated = dt._build_pipeline(paginate=True)
-        export = dt._build_pipeline(paginate=False)
+        paginated = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
+        export = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         p_sort = next((s for s in paginated if "$sort" in s), None)
         e_sort = next((s for s in export if "$sort" in s), None)
         assert p_sort == e_sort
 
     def test_results_and_export_share_project_stage(self):
         dt = _make_dt()
-        paginated = dt._build_pipeline(paginate=True)
-        export = dt._build_pipeline(paginate=False)
+        paginated = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
+        export = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         assert paginated[-1] == export[-1]
 
 
@@ -264,27 +264,27 @@ class TestPipelineStages:
     def test_default_none_no_extra_stages(self):
         dt, _ = self._make_dt()
         assert dt.pipeline_stages == []
-        pipeline = dt._build_pipeline()
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
         assert not any("$addFields" in s for s in pipeline)
 
     def test_single_stage_prepended(self):
         stage = {"$addFields": {"full_name": {"$concat": ["$first", " ", "$last"]}}}
         dt, _ = self._make_dt(pipeline_stages=[stage])
-        pipeline = dt._build_pipeline()
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
         assert pipeline[0] == stage
 
     def test_multiple_stages_order_preserved(self):
         s1 = {"$addFields": {"x": 1}}
         s2 = {"$unwind": "$tags"}
         dt, _ = self._make_dt(pipeline_stages=[s1, s2])
-        pipeline = dt._build_pipeline()
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
         assert pipeline[0] == s1
         assert pipeline[1] == s2
 
     def test_stages_before_match(self):
         stage = {"$addFields": {"x": 1}}
         dt, _ = self._make_dt(pipeline_stages=[stage], search_value="hello")
-        pipeline = dt._build_pipeline()
+        pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
         stage_keys = [list(s.keys())[0] for s in pipeline]
         add_idx = stage_keys.index("$addFields")
         for mi in [i for i, k in enumerate(stage_keys) if k == "$match"]:
@@ -293,8 +293,8 @@ class TestPipelineStages:
     def test_stages_not_mutated(self):
         original = [{"$addFields": {"x": 1}}]
         dt, _ = self._make_dt(pipeline_stages=original)
-        dt._build_pipeline()
-        dt._build_pipeline()
+        build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
+        build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
         assert original == [{"$addFields": {"x": 1}}]
 
     def test_count_filtered_includes_stages(self):
@@ -309,7 +309,9 @@ class TestPipelineStages:
         dt_none, _ = self._make_dt(pipeline_stages=None)
         dt_empty, _ = self._make_dt(pipeline_stages=[])
         assert dt_none.pipeline_stages == dt_empty.pipeline_stages == []
-        assert dt_none._build_pipeline() == dt_empty._build_pipeline()
+        p_none = build_pipeline(dt_none.filter, dt_none.pipeline_stages, dt_none.sort_specification, dt_none.projection, dt_none.start, dt_none.limit)
+        p_empty = build_pipeline(dt_empty.filter, dt_empty.pipeline_stages, dt_empty.sort_specification, dt_empty.projection, dt_empty.start, dt_empty.limit)
+        assert p_none == p_empty
 
 
 class TestDataTablesCoverageGaps:
@@ -437,5 +439,4 @@ class TestAllowDiskUse(BaseDataTablesTest):
         self.collection.aggregate.assert_called_once()
 
 
-if __name__ == '__main__':
-    unittest.main()
+

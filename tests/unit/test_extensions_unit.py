@@ -1,4 +1,4 @@
-"""Consolidated extension tests: Buttons, FixedColumns, Responsive, RowGroup, Select."""
+"""Test consolidated extensions: Buttons, FixedColumns, Responsive, RowGroup, Select."""
 from mongo_datatables import DataTables, DataField
 from tests.base_test import BaseDataTablesTest
 
@@ -201,14 +201,15 @@ class TestRowGroupExtension(BaseDataTablesTest):
         assert dt._parse_extension_config("rowGroup")["dataSrc"] == 1
 
     def test_rowgroup_data_generation(self) -> None:
-        """Validates that _get_rowgroup_data returns correct dataSrc and group counts."""
+        """Validates that get_rowgroup_data returns correct dataSrc and group counts."""
+        from mongo_datatables.datatables.results import get_rowgroup_data
         self.collection.aggregate.return_value = [{"_id": "A", "count": 2}, {"_id": "B", "count": 2}]
         request_args = {"draw": "1", "start": "0", "length": "10",
             "rowGroup": {"dataSrc": "category"},
             "columns": [{"data": "category", "searchable": "true"}]}
         dt = DataTables(self.mongo, "test_collection", request_args,
             data_fields=[DataField("category", "string"), DataField("value", "number")])
-        rowgroup_data = dt._get_rowgroup_data()
+        rowgroup_data = get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
         assert rowgroup_data["dataSrc"] == "category"
         assert rowgroup_data["groups"]["A"]["count"] == 2
         assert rowgroup_data["groups"]["B"]["count"] == 2
@@ -229,24 +230,26 @@ class TestRowGroupExtension(BaseDataTablesTest):
 
     def test_no_rowgroup_config(self) -> None:
         """Validates that rowGroup is absent from response and helpers return None when not configured."""
+        from mongo_datatables.datatables.results import get_rowgroup_data
         self.collection.count_documents.return_value = 0
         self.collection.aggregate.return_value = []
         request_args = {"draw": "1", "start": "0", "length": "10",
             "columns": [{"data": "name", "searchable": "true"}]}
         dt = DataTables(self.mongo, "test_collection", request_args, data_fields=[DataField("name", "string")])
         assert dt._parse_extension_config("rowGroup") is None
-        assert dt._get_rowgroup_data() is None
+        assert get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use) is None
         assert "rowGroup" not in dt.get_rows()
 
     def test_rowgroup_no_numeric_summaries(self) -> None:
         """Validates that group data does not include _sum or _avg keys."""
+        from mongo_datatables.datatables.results import get_rowgroup_data
         self.collection.aggregate.return_value = [{"_id": "A", "count": 3}, {"_id": "B", "count": 1}]
         request_args = {"draw": "1", "start": "0", "length": "10",
             "rowGroup": {"dataSrc": "category"},
             "columns": [{"data": "category", "searchable": "true"}]}
         dt = DataTables(self.mongo, "test_collection", request_args,
             data_fields=[DataField("category", "string"), DataField("value", "number")])
-        result = dt._get_rowgroup_data()
+        result = get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
         for group_values in result["groups"].values():
             assert not any(k.endswith("_sum") or k.endswith("_avg") for k in group_values)
 

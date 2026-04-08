@@ -1,59 +1,108 @@
-"""Tests for DataTables filtering functionality."""
-import unittest
-from unittest.mock import patch
+"""Test DataTables filtering functionality."""
+from unittest.mock import MagicMock, patch
+
+import pytest
+from pymongo.collection import Collection
 
 from mongo_datatables import DataTables
-from tests.base_test import BaseDataTablesTest
 
 
-class TestFiltering(BaseDataTablesTest):
+_REQUEST_ARGS = {
+    "draw": "1",
+    "start": 0,
+    "length": 10,
+    "search": {"value": "", "regex": False},
+    "order": [{"column": 0, "dir": "asc"}],
+    "columns": [
+        {"data": "name", "name": "", "searchable": True, "orderable": True,
+         "search": {"value": "", "regex": False}},
+        {"data": "email", "name": "", "searchable": True, "orderable": True,
+         "search": {"value": "", "regex": False}},
+        {"data": "status", "name": "", "searchable": True, "orderable": True,
+         "search": {"value": "", "regex": False}},
+    ],
+}
+
+_BASE_ARGS = {
+    "draw": 1, "start": 0, "length": 10,
+    "search": {"value": "", "regex": False},
+    "order": [{"column": 0, "dir": "asc"}],
+    "columns": [{"data": "Title", "searchable": True, "orderable": True,
+                 "search": {"value": "", "regex": False}}],
+}
+
+
+@pytest.fixture
+def mongo():
+    from unittest.mock import MagicMock
+    from pymongo.database import Database
+
+    m = MagicMock()
+    m.db = MagicMock(spec=Database)
+    col = MagicMock(spec=Collection)
+    col.estimated_document_count.return_value = 0
+    m.db.__getitem__.return_value = col
+    return m
+
+
+@pytest.fixture
+def request_args():
+    import copy
+    return copy.deepcopy(_REQUEST_ARGS)
+
+
+def _make_dt(request_args, data_fields=None, **custom_filter):
+    col = MagicMock(spec=Collection)
+    col.list_indexes = MagicMock(return_value=[])
+    col.aggregate = MagicMock(return_value=iter([]))
+    col.count_documents = MagicMock(return_value=0)
+    col.estimated_document_count = MagicMock(return_value=0)
+    db = {"test": col}
+    return DataTables(db, "test", request_args, data_fields or [], **custom_filter), col
+
+
+class TestFiltering:
     """Test cases for DataTables filtering functionality."""
 
-    def test_filter_property_empty(self):
-        datatables = DataTables(self.mongo, 'users', self.request_args)
-        self.assertEqual(datatables.filter, {})
+    def test_filter_property_empty(self, mongo, request_args):
+        dt = DataTables(mongo, 'users', request_args)
+        assert dt.filter == {}
 
-    def test_filter_property_with_custom_filter(self):
+    def test_filter_property_with_custom_filter(self, mongo, request_args):
         custom_filter = {"department": "IT"}
-        datatables = DataTables(self.mongo, 'users', self.request_args, **custom_filter)
-        self.assertEqual(datatables.filter, custom_filter)
+        dt = DataTables(mongo, 'users', request_args, **custom_filter)
+        assert dt.filter == custom_filter
 
-    def test_filter_property_with_global_search(self):
-        self.request_args["search"]["value"] = "John"
+    def test_filter_property_with_global_search(self, mongo, request_args):
+        request_args["search"]["value"] = "John"
         with patch.object(DataTables, 'has_text_index', return_value=True):
-            datatables = DataTables(self.mongo, 'users', self.request_args)
-            result = datatables.filter
-            self.assertIn('$text', result)
+            dt = DataTables(mongo, 'users', request_args)
+            assert '$text' in dt.filter
 
-    def test_filter_property_with_column_search(self):
-        self.request_args["columns"][2]["search"]["value"] = "active"
-        datatables = DataTables(self.mongo, 'users', self.request_args)
-        result = datatables.filter
-        self.assertIn('$and', result)
+    def test_filter_property_with_column_search(self, mongo, request_args):
+        request_args["columns"][2]["search"]["value"] = "active"
+        dt = DataTables(mongo, 'users', request_args)
+        assert '$and' in dt.filter
 
-    def test_filter_property_with_combined_searches(self):
+    def test_filter_property_with_combined_searches(self, mongo, request_args):
         custom_filter = {"department": "IT"}
-        self.request_args["search"]["value"] = "John"
-        self.request_args["columns"][2]["search"]["value"] = "active"
+        request_args["search"]["value"] = "John"
+        request_args["columns"][2]["search"]["value"] = "active"
         with patch.object(DataTables, 'has_text_index', return_value=True):
-            datatables = DataTables(self.mongo, 'users', self.request_args, **custom_filter)
-            result = datatables.filter
-            self.assertIn('$and', result)
-            custom_filter_included = any('department' in str(cond) and 'IT' in str(cond) for cond in result['$and'])
-            self.assertTrue(custom_filter_included)
-            text_search_included = any('$text' in str(cond) and 'John' in str(cond) for cond in result['$and'])
-            self.assertTrue(text_search_included)
-            column_search_included = any('$and' in str(cond) and 'active' in str(cond) for cond in result['$and'])
-            self.assertTrue(column_search_included)
+            dt = DataTables(mongo, 'users', request_args, **custom_filter)
+            result = dt.filter
+            assert '$and' in result
+            assert any('department' in str(c) and 'IT' in str(c) for c in result['$and'])
+            assert any('$text' in str(c) and 'John' in str(c) for c in result['$and'])
+            assert any('$and' in str(c) and 'active' in str(c) for c in result['$and'])
 
-    def test_filter_with_complex_custom_filter(self):
+    def test_filter_with_complex_custom_filter(self, mongo, request_args):
         complex_filter = {"$or": [{"status": "active"}, {"role": "admin"}]}
-        datatables = DataTables(self.mongo, 'users', self.request_args, **complex_filter)
-        result = datatables.filter
-        self.assertIn('$or', result)
+        dt = DataTables(mongo, 'users', request_args, **complex_filter)
+        assert '$or' in dt.filter
 
-    def test_filter_with_nested_fields(self):
-        request_args = {
+    def test_filter_with_nested_fields(self, mongo):
+        args = {
             "draw": 1, "start": 0, "length": 10,
             "search": {"value": "address.city:New York", "regex": False},
             "columns": [
@@ -63,107 +112,76 @@ class TestFiltering(BaseDataTablesTest):
             "order": [],
         }
         with patch.object(DataTables, 'has_text_index', return_value=False):
-            datatables = DataTables(self.mongo, 'users', request_args, use_text_index=False)
-            result = datatables.column_specific_search_condition
-            self.assertIn('$and', result)
-            has_nested_field = any('address.city' in str(cond) for cond in result['$and'])
-            self.assertTrue(has_nested_field)
+            dt = DataTables(mongo, 'users', args, use_text_index=False)
+            result = dt.column_specific_search_condition
+            assert '$and' in result
+            assert any('address.city' in str(c) for c in result['$and'])
 
-    def test_filter_cache_returns_same_object(self):
-        datatables = DataTables(self.mongo, 'users', self.request_args)
-        first = datatables.filter
-        second = datatables.filter
-        assert first is second
+    def test_filter_cache_returns_same_object(self, mongo, request_args):
+        dt = DataTables(mongo, 'users', request_args)
+        assert dt.filter is dt.filter
 
-    def test_filter_cache_is_none_before_access(self):
-        datatables = DataTables(self.mongo, 'users', self.request_args)
-        assert datatables._filter_cache is None
-        _ = datatables.filter
-        assert datatables._filter_cache is not None
+    def test_filter_cache_is_none_before_access(self, mongo, request_args):
+        dt = DataTables(mongo, 'users', request_args)
+        assert dt._filter_cache is None
+        _ = dt.filter
+        assert dt._filter_cache is not None
 
 
 class TestBuildFilter:
-    """Tests for _build_filter method."""
-
-    _BASE_ARGS = {
-        "draw": 1, "start": 0, "length": 10,
-        "search": {"value": "", "regex": False},
-        "order": [{"column": 0, "dir": "asc"}],
-        "columns": [{"data": "Title", "searchable": True, "orderable": True,
-                      "search": {"value": "", "regex": False}}],
-    }
-
-    def _make_dt(self, request_args, data_fields=None, **custom_filter):
-        from unittest.mock import MagicMock
-        from pymongo.collection import Collection
-        col = MagicMock(spec=Collection)
-        col.list_indexes = MagicMock(return_value=[])
-        col.aggregate = MagicMock(return_value=iter([]))
-        col.count_documents = MagicMock(return_value=0)
-        col.estimated_document_count = MagicMock(return_value=0)
-        db = {"test": col}
-        return DataTables(db, "test", request_args, data_fields or [], **custom_filter), col
+    """Tests for the filter property."""
 
     def test_empty_returns_empty_dict(self):
-        dt, _ = self._make_dt(self._BASE_ARGS)
-        assert dt._build_filter() == {}
+        dt, _ = _make_dt(_BASE_ARGS)
+        assert dt.filter == {}
 
     def test_custom_filter_included(self):
-        dt, _ = self._make_dt(self._BASE_ARGS, status="active")
-        result = dt._build_filter()
-        assert result.get("status") == "active"
+        dt, _ = _make_dt(_BASE_ARGS, status="active")
+        assert dt.filter.get("status") == "active"
 
     def test_global_search_included(self):
-        args = {**self._BASE_ARGS, "search": {"value": "Orwell", "regex": False}}
-        dt, _ = self._make_dt(args)
+        args = {**_BASE_ARGS, "search": {"value": "Orwell", "regex": False}}
+        dt, _ = _make_dt(args)
         dt._has_text_index = False
-        result = dt._build_filter()
-        assert result != {}
+        assert dt.filter != {}
 
     def test_column_search_included(self):
-        args = {**self._BASE_ARGS, "columns": [
+        args = {**_BASE_ARGS, "columns": [
             {"data": "Title", "searchable": True, "orderable": True,
              "search": {"value": "1984", "regex": False}}
         ]}
-        dt, _ = self._make_dt(args)
-        result = dt._build_filter()
-        assert result != {}
+        dt, _ = _make_dt(args)
+        assert dt.filter != {}
 
     def test_searchbuilder_included(self):
-        args = {**self._BASE_ARGS, "searchBuilder": {
+        args = {**_BASE_ARGS, "searchBuilder": {
             "logic": "AND",
-            "criteria": [{"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}]
+            "criteria": [{"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}],
         }}
-        dt, _ = self._make_dt(args)
-        result = dt._build_filter()
-        assert result != {}
+        dt, _ = _make_dt(args)
+        assert dt.filter != {}
 
     def test_searchpanes_included(self):
-        args = {**self._BASE_ARGS, "searchPanes": {"Title": ["1984"]}}
-        dt, _ = self._make_dt(args)
-        result = dt._build_filter()
-        assert result != {}
+        args = {**_BASE_ARGS, "searchPanes": {"Title": ["1984"]}}
+        dt, _ = _make_dt(args)
+        assert dt.filter != {}
 
     def test_multiple_sources_wrapped_in_and(self):
-        args = {**self._BASE_ARGS, "search": {"value": "Orwell", "regex": False}}
-        dt, _ = self._make_dt(args, status="active")
+        args = {**_BASE_ARGS, "search": {"value": "Orwell", "regex": False}}
+        dt, _ = _make_dt(args, status="active")
         dt._has_text_index = False
-        result = dt._build_filter()
+        result = dt.filter
         assert "$and" in result
         assert len(result["$and"]) >= 2
 
     def test_single_source_not_wrapped(self):
-        dt, _ = self._make_dt(self._BASE_ARGS, status="active")
-        result = dt._build_filter()
+        dt, _ = _make_dt(_BASE_ARGS, status="active")
+        result = dt.filter
         assert "$and" not in result
         assert result == {"status": "active"}
 
     def test_search_fixed_included(self):
-        args = {**self._BASE_ARGS, "search": {"value": "", "regex": False, "fixed": [{"name": "active", "term": "Orwell"}]}}
-        dt, _ = self._make_dt(args)
-        result = dt._build_filter()
-        assert result != {}
-
-
-if __name__ == '__main__':
-    unittest.main()
+        args = {**_BASE_ARGS, "search": {"value": "", "regex": False,
+                                          "fixed": [{"name": "active", "term": "Orwell"}]}}
+        dt, _ = _make_dt(args)
+        assert dt.filter != {}

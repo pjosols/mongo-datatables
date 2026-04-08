@@ -183,14 +183,23 @@ class DataTables(DataTablesMixin):
             )
         return self._filter_cache
 
-    def get_sort_specification(self) -> Dict[str, int]:
-        """Build sort specification from the request columns and order array."""
+    @property
+    def sort_specification(self) -> Dict[str, int]:
+        """Sort specification derived from the request columns and order array."""
         return build_sort_specification(self.request_args, self.columns, self.field_mapper)
 
     @property
-    def sort_specification(self) -> Dict[str, int]:
-        """Sort specification (property alias for get_sort_specification)."""
-        return self.get_sort_specification()
+    def global_search_condition(self) -> Dict[str, Any]:
+        """Global search condition built from the current request."""
+        search = self.request_args.get("search", {})
+        return self.query_builder.build_global_search(
+            self.search_terms_without_a_colon,
+            self.searchable_columns,
+            original_search=self.search_value,
+            search_regex=is_truthy(search.get("regex", False)),
+            search_smart=is_truthy(search.get("smart", True)),
+            case_insensitive=is_truthy(search.get("caseInsensitive", True)),
+        )
 
     @property
     def projection(self) -> Dict[str, int]:
