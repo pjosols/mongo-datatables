@@ -7,10 +7,7 @@ from mongo_datatables.utils import FieldMapper, is_truthy
 from mongo_datatables.datatables.query import MongoQueryBuilder
 from mongo_datatables.search_builder import parse_search_builder
 from mongo_datatables.search_fixed import parse_search_fixed, parse_column_search_fixed
-from mongo_datatables.search_panes import (
-    get_searchpanes_options as _get_searchpanes_options_fn,
-    parse_searchpanes_filters,
-)
+from mongo_datatables.search_panes import parse_searchpanes_filters
 
 logger = logging.getLogger(__name__)
 
@@ -168,24 +165,3 @@ def build_projection(
     return projection
 
 
-def get_searchpanes_options(
-    columns: List[Dict[str, Any]],
-    field_mapper: FieldMapper,
-    custom_filter: Dict[str, Any],
-    current_filter: Dict[str, Any],
-    collection: Any,
-    allow_disk_use: bool,
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Return option counts for each SearchPanes column.
-
-    columns: Columns list from request_args.
-    field_mapper: FieldMapper for alias resolution.
-    custom_filter: Base filter from DataTables kwargs.
-    current_filter: Combined active filter.
-    collection: MongoDB collection.
-    allow_disk_use: Whether to allow disk use in aggregation.
-    Returns dict mapping column data names to option lists.
-    """
-    return _get_searchpanes_options_fn(
-        columns, field_mapper, custom_filter, current_filter, collection, allow_disk_use
-    )

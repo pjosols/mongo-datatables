@@ -15,8 +15,8 @@ from mongo_datatables.datatables.filter import (
     build_filter,
     build_sort_specification,
     build_projection,
-    get_searchpanes_options as _get_searchpanes_options,
 )
+from mongo_datatables.search_panes import get_searchpanes_options as _get_searchpanes_options
 from mongo_datatables.datatables.results import (
     build_pipeline,
     fetch_results,
