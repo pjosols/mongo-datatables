@@ -230,6 +230,14 @@ class DataTables(DataTablesMixin):
         except (ValueError, TypeError):
             return 1
 
+    def _parse_extension_config(self, key: str) -> Any:
+        """Parse extension config from request_args for the given key.
+
+        key: Extension key (e.g. 'buttons', 'fixedColumns', 'rowGroup', 'select').
+        Returns the parsed config dict or None if not present/applicable.
+        """
+        return parse_extension_config(self.request_args, key)
+
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
         """Return option counts for each SearchPanes column."""
         return _get_searchpanes_options(
@@ -293,7 +301,7 @@ class DataTables(DataTablesMixin):
                 count_filtered_fn=self.count_filtered,
                 results_fn=self.results,
                 get_searchpanes_options_fn=self.get_searchpanes_options,
-                parse_extension_config_fn=lambda key: parse_extension_config(self.request_args, key),
+                parse_extension_config_fn=self._parse_extension_config,
                 collection=self.collection,
                 columns=self.columns,
                 field_mapper=self.field_mapper,

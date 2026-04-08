@@ -19,6 +19,8 @@ All notable changes to mongo-datatables are documented here.
 - Updated `test_compat.py` module docstring to follow Wholeshoot convention
 - Updated `datatables/compat.py` module docstring to imperative form
 - Updated test module docstrings in `test_datatables_filtering.py`, `test_datatables_misc.py`, `test_datatables_pipeline.py`, `test_extensions_unit.py`, and `test_sort_unit.py` to imperative form
+- Updated `DataTables._parse_extension_config()` docstring to imperative form
+- Updated `parse_extension_config()` docstring to imperative form
 
 ### Fixed
 

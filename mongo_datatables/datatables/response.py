@@ -60,16 +60,23 @@ def build_response(
 
 
 def parse_extension_config(request_args: Dict[str, Any], key: str) -> Any:
-    """Return extension config dict for the given request key, or None.
+    """Parse extension config from request_args for the given key.
 
     request_args: Validated request args dict.
-    key: Extension key to look up (e.g. 'fixedColumns').
-    Returns {"dataSrc": value} when dataSrc is present, else None.
+    key: Extension key to look up (e.g. 'fixedColumns', 'buttons', 'select').
+    For 'rowGroup': returns {"dataSrc": value} only when dataSrc is present.
+    For other keys: returns the full dict when non-empty, {} for truthy non-dict values, else None.
     """
     val = request_args.get(key)
-    if not isinstance(val, dict) or "dataSrc" not in val:
-        return None
-    return {"dataSrc": val["dataSrc"]}
+    if key == "rowGroup":
+        if not isinstance(val, dict) or "dataSrc" not in val:
+            return None
+        return {"dataSrc": val["dataSrc"]}
+    if isinstance(val, dict):
+        return val if val else None
+    if val:
+        return {}
+    return None
 
 
 def normalize_draw(request_args: Dict[str, Any]) -> None:
