@@ -30,9 +30,6 @@ All notable changes to mongo-datatables are documented here.
 ### Fixed
 
 - **Import correctness**: `datatables/compat.py` now imports `get_searchpanes_options` from `search_panes` module instead of the removed `filter` wrapper — resolves import error after wrapper removal
-
-### Fixed
-
 - **Error handling**: `DataTables.get_rows()` now catches `PyMongoError`, `ValueError`, `TypeError`, `KeyError`, and `RuntimeError` to return a generic error message instead of propagating exceptions — prevents information disclosure via stack traces
 - **Error handling**: `DataTables.get_export_data()` now catches database and data errors to return an empty list instead of propagating exceptions
 - **Error handling**: `Editor.process()` now catches `PyMongoError`, `InvalidDataError`, `FieldMappingError`, `DatabaseOperationError`, `KeyError`, `TypeError`, and `ValueError` to return error dicts with generic messages — prevents information disclosure
