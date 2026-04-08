@@ -20,7 +20,6 @@ from mongo_datatables.datatables.filter import (
 from mongo_datatables.datatables.results import (
     build_pipeline,
     fetch_results,
-    get_rowgroup_data,
     count_total as _count_total,
     count_filtered as _count_filtered,
 )

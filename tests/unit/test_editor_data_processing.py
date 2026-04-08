@@ -1,4 +1,4 @@
-"""Editor tests — data processing and document transformation."""
+"""Test Editor data processing, document formatting, and input validation."""
 import unittest
 import pytest
 from unittest.mock import MagicMock, patch
@@ -389,3 +389,61 @@ class TestEditorCoverageGaps(unittest.TestCase):
         # key has no dot, so the except block does nothing — value stays as-is in processed_doc
         self.assertNotIn("created_at", dot)
         self.assertEqual(processed.get("created_at"), "not-a-date")
+
+
+# ---------------------------------------------------------------------------
+# preprocess_document — input validation via validate_document_payload
+# ---------------------------------------------------------------------------
+
+from mongo_datatables.editor.document import preprocess_document
+from mongo_datatables.utils import FieldMapper
+
+
+class TestPreprocessDocumentInputValidation:
+    """Tests that preprocess_document rejects malicious/malformed payloads."""
+
+    def _call(self, doc, fields=None, data_fields=None):
+        fm = FieldMapper(data_fields or [])
+        return preprocess_document(doc, fields or {}, data_fields or [], fm)
+
+    def test_valid_doc_processes_normally(self):
+        processed, dot = self._call({"name": "Alice"})
+        assert processed["name"] == "Alice"
+
+    def test_too_many_keys_raises(self):
+        doc = {f"field_{i}": "v" for i in range(201)}
+        with pytest.raises(InvalidDataError, match="too many keys"):
+            self._call(doc)
+
+    def test_deeply_nested_doc_raises(self):
+        doc: dict = {}
+        current = doc
+        for _ in range(11):
+            current["child"] = {}
+            current = current["child"]
+        with pytest.raises(InvalidDataError, match="nesting exceeds"):
+            self._call(doc)
+
+    def test_oversized_string_raises(self):
+        doc = {"payload": "x" * 1_000_001}
+        with pytest.raises(InvalidDataError, match="exceeds maximum string length"):
+            self._call(doc)
+
+    def test_invalid_field_name_raises(self):
+        with pytest.raises(InvalidDataError):
+            self._call({"$evil": "value"})
+
+    def test_empty_doc_returns_empty(self):
+        processed, dot = self._call({})
+        assert processed == {}
+        assert dot == {}
+
+    def test_json_string_value_is_parsed(self):
+        processed, _ = self._call({"tags": '["a", "b"]'})
+        assert processed["tags"] == ["a", "b"]
+
+    def test_non_dict_input_raises_or_passes_gracefully(self):
+        # validate_document_payload skips non-dicts, but preprocess_document
+        # iterates doc.items() — passing a non-dict should raise AttributeError/TypeError
+        with pytest.raises((AttributeError, TypeError, InvalidDataError)):
+            self._call("not a dict")

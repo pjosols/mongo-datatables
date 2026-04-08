@@ -8,7 +8,9 @@ from datetime import datetime
 
 from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
-from mongo_datatables.editor.validator import validate_field_name
+from mongo_datatables.editor.validator import validate_field_name, validate_document_payload
+from mongo_datatables.data_field import DataField
+from mongo_datatables.editor.storage import StorageAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +21,15 @@ def format_response_document(
     row_data=None,
     row_attr=None,
 ) -> Dict[str, Any]:
-    """Format a MongoDB document for the Editor response.
+    """Format a MongoDB document for the Editor response, converting ObjectId and datetime.
 
-    Converts ObjectId to DT_RowId string, serialises datetime fields,
+    Converts ObjectId to DT_RowId string, serialises datetime fields to ISO format,
     and attaches optional DT_Row* metadata.
 
     doc: Document from MongoDB.
-    row_class: Optional string or callable(row) -> str.
-    row_data: Optional dict or callable(row) -> dict.
-    row_attr: Optional dict or callable(row) -> dict.
+    row_class: Optional string or callable(row) -> str for DT_RowClass.
+    row_data: Optional dict or callable(row) -> dict for DT_RowData.
+    row_attr: Optional dict or callable(row) -> dict for DT_RowAttr.
     Returns formatted document dict.
     """
     response_doc = dict(doc)
@@ -51,11 +53,11 @@ def format_response_document(
     return response_doc
 
 
-def collect_files(file_fields: List[str], storage_adapter: Any) -> Optional[Dict[str, Any]]:
+def collect_files(file_fields: List[str], storage_adapter: StorageAdapter) -> Optional[Dict[str, Any]]:
     """Collect file metadata from the storage adapter for all configured upload fields.
 
     file_fields: List of field names that are upload fields.
-    storage_adapter: StorageAdapter instance; must have files_for_field().
+    storage_adapter: StorageAdapter instance; must have files_for_field() method.
     Returns dict of {field: {file_id: metadata}}, or None if unavailable.
     """
     if not file_fields or not storage_adapter:
@@ -72,13 +74,14 @@ def collect_files(file_fields: List[str], storage_adapter: Any) -> Optional[Dict
 
 def preprocess_document(
     doc: Dict[str, Any],
-    fields: Dict[str, Any],
-    data_fields: list,
+    fields: Dict[str, DataField],
+    data_fields: List[DataField],
     field_mapper: FieldMapper,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Process document data before database insert/update.
+    """Process document data before database insert/update, parsing JSON and dates.
 
-    Converts JSON strings, handles date fields, and separates dot-notation keys.
+    Converts JSON strings to objects, handles date field parsing, and separates
+    dot-notation keys for nested updates.
 
     doc: Raw document data from Editor.
     fields: Dict of alias -> DataField for whitelist checking.
@@ -86,6 +89,7 @@ def preprocess_document(
     field_mapper: FieldMapper instance.
     Returns (processed_document, dot_notation_updates).
     """
+    validate_document_payload(doc)
     def _allowed(key: str) -> bool:
         if not fields:
             return True
@@ -135,12 +139,15 @@ def preprocess_document(
 def build_updates(
     data: Any,
     field_mapper: FieldMapper,
-    fields: Dict[str, Any],
-    data_fields: list,
+    fields: Dict[str, DataField],
+    data_fields: List[DataField],
     updates: Dict[str, Any],
     prefix: str = "",
 ) -> None:
-    """Recursively build a $set updates dict from nested Editor data.
+    """Recursively build a $set updates dict from nested Editor data, applying type conversions.
+
+    Traverses nested dicts, applies field type conversions (date, number, boolean, array),
+    and populates the updates dict with dot-notation keys.
 
     data: Data to process (dict or scalar).
     field_mapper: FieldMapper for type lookups.

@@ -19,9 +19,14 @@ _MAX_FILENAME_LEN = 255
 _MAX_CONTENT_TYPE_LEN = 127
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
+# Document payload limits
+_MAX_DOC_KEYS = 200
+_MAX_DOC_NESTING = 10
+_MAX_STRING_VALUE_LEN = 1_000_000  # 1 MB per string field
+
 
 def validate_editor_request_args(request_args: Any) -> None:
-    """Validate Editor request_args dict for required structure.
+    """Validate Editor request_args dict for required structure and valid action.
 
     Checks that request_args is a dict and, when an action is present,
     that it is a recognised Editor action string.
@@ -61,9 +66,10 @@ def validate_doc_id(doc_id: str) -> None:
 
 
 def validate_upload_data(upload: Any) -> None:
-    """Validate the upload dict from an Editor upload request.
+    """Validate the upload dict from an Editor upload request for required fields and bounds.
 
-    Checks that filename, content_type, and data are present and sane.
+    Checks that filename, content_type, and data are present and sane, rejecting
+    path traversal attempts and oversized payloads.
 
     upload: dict expected to contain 'filename', 'content_type', and 'data'.
     Raises InvalidDataError if any field is missing or invalid.
@@ -106,6 +112,8 @@ def validate_upload_data(upload: Any) -> None:
 def validate_field_name(name: str) -> None:
     """Validate a single field name against the allowed character whitelist.
 
+    Rejects names containing special characters that could be used for injection.
+
     name: field name string to validate.
     Raises InvalidDataError if the name contains disallowed characters.
     """
@@ -114,6 +122,39 @@ def validate_field_name(name: str) -> None:
             f"Field name {name!r} contains invalid characters. "
             "Only alphanumeric characters, underscores, hyphens, and dots are allowed."
         )
+
+
+def validate_document_payload(doc: Any, _depth: int = 0) -> None:
+    """Validate a document payload for bounds and structure safety against resource exhaustion.
+
+    Rejects payloads that are too deeply nested, have too many keys, or
+    contain excessively large string values — guarding against memory
+    exhaustion from malicious or malformed input.
+
+    doc: Document dict to validate.
+    Raises InvalidDataError if any limit is exceeded.
+    """
+    if not isinstance(doc, dict):
+        return
+    if _depth > _MAX_DOC_NESTING:
+        raise InvalidDataError(
+            f"Document nesting exceeds maximum depth of {_MAX_DOC_NESTING}"
+        )
+    if len(doc) > _MAX_DOC_KEYS:
+        raise InvalidDataError(
+            f"Document has too many keys ({len(doc)}); maximum is {_MAX_DOC_KEYS}"
+        )
+    for key, value in doc.items():
+        if isinstance(value, str) and len(value) > _MAX_STRING_VALUE_LEN:
+            raise InvalidDataError(
+                f"Value for field {key!r} exceeds maximum string length of {_MAX_STRING_VALUE_LEN}"
+            )
+        if isinstance(value, dict):
+            validate_document_payload(value, _depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    validate_document_payload(item, _depth + 1)
 
 
 def validate_data_fields_whitelist(

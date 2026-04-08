@@ -10,8 +10,6 @@ from mongo_datatables.data_field import DataField
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
 from mongo_datatables.utils import FieldMapper
 from mongo_datatables.editor.validator import (
-    validate_editor_request_args,
-    validate_doc_id,
     validate_data_fields_whitelist,
 )
 from mongo_datatables.editor.storage import StorageAdapter
@@ -171,10 +169,9 @@ class Editor:
         return handle_upload(self.request_args, self.storage_adapter)
 
     def process(self) -> Dict[str, Any]:
-        """Process the Editor request based on the action.
+        """Process the Editor request based on the action, returning protocol-compliant JSON.
 
-        Catches exceptions and returns Editor protocol error JSON so the
-        client can display errors inline rather than raising.
+        Catches exceptions and returns error dict so the client can display errors inline.
         Returns response data for the Editor client, or error dict on failure.
         """
         actions = {
@@ -239,30 +236,4 @@ class Editor:
             logger.error("AttributeError in process (possible bug): %s", e, exc_info=True)
             return {"error": str(e)}
 
-    # ------------------------------------------------------------------
-    # Backward-compatible instance method shims
-    # ------------------------------------------------------------------
 
-    def _format_response_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
-        """Format a document for the Editor response (backward-compatible shim)."""
-        from mongo_datatables.editor.document import format_response_document
-        return format_response_document(doc, self.row_class, self.row_data, self.row_attr)
-
-    def _preprocess_document(self, doc: Dict[str, Any]):
-        """Preprocess a document before insert/update (backward-compatible shim)."""
-        from mongo_datatables.editor.document import preprocess_document
-        return preprocess_document(doc, self.fields, self.data_fields, self.field_mapper)
-
-    def _process_updates(self, data: Any, updates: Dict[str, Any]) -> None:
-        """Build $set updates dict from nested data (backward-compatible shim)."""
-        from mongo_datatables.editor.document import build_updates
-        build_updates(data, self.field_mapper, self.fields, self.data_fields, updates)
-
-    def _coerce_values(self, field: str, values: List[Any]) -> List[Any]:
-        """Coerce a list of values to the field's declared type (backward-compatible shim)."""
-        from mongo_datatables.editor.search import _coerce_values
-        return _coerce_values(field, values, self.fields)
-
-    def _run_pre_hook(self, action: str, row_id: str, row_data: Dict[str, Any]) -> bool:
-        """Run a pre-action hook (backward-compatible shim)."""
-        return self._pre_hook(action, row_id, row_data)

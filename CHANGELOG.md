@@ -7,6 +7,11 @@ All notable changes to mongo-datatables are documented here.
 ### Changed
 
 - Updated module and function docstrings to follow Wholeshoot convention (one sentence, imperative, no filler)
+- Enhanced docstrings in `datatables/response.py` to clarify return value structure and purpose
+- Enhanced docstrings in `editor/core.py` to clarify protocol-compliant error handling
+- Enhanced docstrings in `editor/document.py` to specify type conversions and metadata handling
+- Enhanced docstrings in `editor/validator.py` to clarify validation scope and security intent
+- Updated test module docstrings to follow Wholeshoot convention
 
 ## [2.1.0] - 2026-04-07
 

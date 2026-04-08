@@ -1,4 +1,4 @@
-"""Tests for request_validator and editor_validator input validation."""
+"""Test request_validator and editor_validator input validation."""
 import pytest
 from unittest.mock import MagicMock
 from bson.objectid import ObjectId
@@ -395,3 +395,70 @@ class TestEditorWhitelistEnforcement:
         )
         result = editor.process()
         assert "error" not in result
+
+
+# ---------------------------------------------------------------------------
+# validate_document_payload — bounds and structure safety
+# ---------------------------------------------------------------------------
+
+from mongo_datatables.editor.validator import validate_document_payload
+
+
+class TestValidateDocumentPayload:
+    def test_valid_doc_passes(self):
+        validate_document_payload({"name": "Alice", "age": "30"})  # no exception
+
+    def test_non_dict_passes_silently(self):
+        validate_document_payload("not a dict")  # no exception
+        validate_document_payload(None)  # no exception
+        validate_document_payload(42)  # no exception
+
+    def test_too_many_keys_raises(self):
+        doc = {f"field_{i}": "v" for i in range(201)}
+        with pytest.raises(InvalidDataError, match="too many keys"):
+            validate_document_payload(doc)
+
+    def test_exactly_max_keys_passes(self):
+        doc = {f"field_{i}": "v" for i in range(200)}
+        validate_document_payload(doc)  # no exception
+
+    def test_excessive_nesting_raises(self):
+        # Build a doc nested 11 levels deep
+        doc: dict = {}
+        current = doc
+        for _ in range(11):
+            current["child"] = {}
+            current = current["child"]
+        with pytest.raises(InvalidDataError, match="nesting exceeds"):
+            validate_document_payload(doc)
+
+    def test_max_allowed_nesting_passes(self):
+        # 10 levels deep is the limit — should pass
+        doc: dict = {}
+        current = doc
+        for _ in range(10):
+            current["child"] = {}
+            current = current["child"]
+        validate_document_payload(doc)  # no exception
+
+    def test_oversized_string_value_raises(self):
+        doc = {"payload": "x" * 1_000_001}
+        with pytest.raises(InvalidDataError, match="exceeds maximum string length"):
+            validate_document_payload(doc)
+
+    def test_exactly_max_string_length_passes(self):
+        doc = {"payload": "x" * 1_000_000}
+        validate_document_payload(doc)  # no exception
+
+    def test_oversized_string_in_nested_dict_raises(self):
+        doc = {"outer": {"inner": "x" * 1_000_001}}
+        with pytest.raises(InvalidDataError, match="exceeds maximum string length"):
+            validate_document_payload(doc)
+
+    def test_oversized_string_in_list_item_raises(self):
+        doc = {"items": [{"value": "x" * 1_000_001}]}
+        with pytest.raises(InvalidDataError, match="exceeds maximum string length"):
+            validate_document_payload(doc)
+
+    def test_empty_doc_passes(self):
+        validate_document_payload({})  # no exception

@@ -1,10 +1,9 @@
 """Build the DataTables JSON response dict."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from pymongo.collection import Collection
-from pymongo.errors import PyMongoError
 
 from mongo_datatables.utils import FieldMapper
 from mongo_datatables.datatables.results import get_rowgroup_data
@@ -40,7 +39,7 @@ def build_response(
     filter_doc: Active MongoDB filter.
     request_args: Validated request args.
     allow_disk_use: Whether to allow disk use in aggregation.
-    Returns DataTables response dict.
+    Returns dict with draw, recordsTotal, recordsFiltered, data, and optional extension keys.
     """
     search_return = request_args.get("search", {}).get("return", True)
     records_filtered = -1 if search_return in (False, "false") else count_filtered_fn()
@@ -69,13 +68,13 @@ def error_response(draw: int, error: Exception) -> Dict[str, Any]:
 
     draw: DataTables draw counter.
     error: The exception that occurred.
-    Returns error response dict.
+    Returns dict with draw, error, recordsTotal, recordsFiltered, and empty data.
     """
     return {"draw": draw, "error": str(error), "recordsTotal": 0, "recordsFiltered": 0, "data": []}
 
 
 def normalize_draw(request_args: Dict[str, Any]) -> None:
-    """Normalize the draw value in request_args in-place.
+    """Normalize the draw value in request_args in-place to a positive integer.
 
     request_args: Mutable request args dict. Modified in place.
     """
