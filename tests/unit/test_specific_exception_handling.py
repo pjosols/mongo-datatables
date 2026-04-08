@@ -269,7 +269,8 @@ class TestEditorProcessExceptions:
         with patch.object(editor, "create", side_effect=PyMongoError("conn refused")):
             result = editor.process()
         assert "error" in result
-        assert "conn refused" in result["error"]
+        # Generic message — must not echo raw DB error to client
+        assert "conn refused" not in result["error"]
 
     def test_invalid_data_error_returns_error_dict(self):
         editor, col = self._editor("create")

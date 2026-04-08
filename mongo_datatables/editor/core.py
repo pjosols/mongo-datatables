@@ -285,31 +285,13 @@ class Editor:
             return response
         except (InvalidDataError, FieldMappingError) as e:
             return {"error": str(e)}
-        except DatabaseOperationError as e:
-            return {"error": str(e)}
+        except DatabaseOperationError:
+            return {"error": "A database error occurred. Please try again."}
         except PyMongoError as e:
             logger.error("Unexpected PyMongo error in process: %s", e, exc_info=True)
-            return {"error": f"Database error: {e}"}
-        except KeyError as e:
-            # KeyError here may indicate malformed request data (unexpected row IDs or field
-            # names) or an internal bug accessing a key that should have been validated earlier.
-            # The earlier _REQUIRED_KEYS check guards top-level keys; a KeyError reaching here
-            # most likely originates from nested row data or an internal code path.
-            logger.error(
-                "KeyError in process for action=%r key=%s — "
-                "check request data structure or internal key access",
-                self.action,
-                e,
-                exc_info=True,
-            )
-            return {"error": f"Missing or unexpected key: {e}"}
-        except TypeError as e:
-            # Type coercion failure — a field value could not be converted to the expected type
-            logger.error("Type coercion failure in process action=%r: %s", self.action, e, exc_info=True)
-            return {"error": f"Type error: {e}"}
-        except ValueError as e:
-            # Value validation failure — a field value is structurally valid but semantically rejected
-            logger.error("Value validation failure in process action=%r: %s", self.action, e, exc_info=True)
-            return {"error": f"Invalid value: {e}"}
+            return {"error": "A database error occurred. Please try again."}
+        except (KeyError, TypeError, ValueError) as e:
+            logger.error("Unexpected error in process action=%r: %s", self.action, e, exc_info=True)
+            return {"error": "An error occurred processing your request."}
 
 

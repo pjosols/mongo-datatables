@@ -1,15 +1,11 @@
 """Build the DataTables JSON response dict."""
 
-import logging
 from typing import Any, Dict, List
 
 from pymongo.collection import Collection
 
 from mongo_datatables.utils import FieldMapper
 from mongo_datatables.datatables.results import get_rowgroup_data
-
-logger = logging.getLogger(__name__)
-
 
 def build_response(
     draw: int,
@@ -39,7 +35,7 @@ def build_response(
     filter_doc: Active MongoDB filter.
     request_args: Validated request args.
     allow_disk_use: Whether to allow disk use in aggregation.
-    Returns dict with draw, recordsTotal, recordsFiltered, data, and optional extension keys.
+    Returns dict with draw, recordsTotal, recordsFiltered, data, and optional extension keys (searchPanes, fixedColumns, responsive, buttons, select, rowGroup).
     """
     search_return = request_args.get("search", {}).get("return", True)
     records_filtered = -1 if search_return in (False, "false") else count_filtered_fn()
@@ -63,14 +59,17 @@ def build_response(
     return response
 
 
-def error_response(draw: int, error: Exception) -> Dict[str, Any]:
-    """Build a DataTables error response dict.
+def parse_extension_config(request_args: Dict[str, Any], key: str) -> Any:
+    """Return extension config dict for the given request key, or None.
 
-    draw: DataTables draw counter.
-    error: The exception that occurred.
-    Returns dict with draw, error, recordsTotal, recordsFiltered, and empty data.
+    request_args: Validated request args dict.
+    key: Extension key to look up (e.g. 'fixedColumns').
+    Returns {"dataSrc": value} when dataSrc is present, else None.
     """
-    return {"draw": draw, "error": str(error), "recordsTotal": 0, "recordsFiltered": 0, "data": []}
+    val = request_args.get(key)
+    if not isinstance(val, dict) or "dataSrc" not in val:
+        return None
+    return {"dataSrc": val["dataSrc"]}
 
 
 def normalize_draw(request_args: Dict[str, Any]) -> None:

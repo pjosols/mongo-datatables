@@ -13,6 +13,18 @@ All notable changes to mongo-datatables are documented here.
 - Enhanced docstrings in `editor/validator.py` to clarify validation scope and security intent
 - Updated test module docstrings to follow Wholeshoot convention
 
+### Fixed
+
+- **Error handling**: `DataTables.get_rows()` now catches `PyMongoError`, `ValueError`, `TypeError`, `KeyError`, and `RuntimeError` to return a generic error message instead of propagating exceptions — prevents information disclosure via stack traces
+- **Error handling**: `DataTables.get_export_data()` now catches database and data errors to return an empty list instead of propagating exceptions
+- **Error handling**: `Editor.process()` now catches `PyMongoError`, `InvalidDataError`, `FieldMappingError`, `DatabaseOperationError`, `KeyError`, `TypeError`, and `ValueError` to return error dicts with generic messages — prevents information disclosure
+- **Error handling**: `fetch_results()` now catches `PyMongoError`, `ValueError`, and `TypeError` to return an empty list instead of propagating
+- **Error handling**: `count_total()` now catches `PyMongoError` to return 0 instead of propagating
+- **Error handling**: `count_filtered()` now catches `PyMongoError`, `ValueError`, and `TypeError` to return 0 instead of propagating
+- **Error handling**: `get_rowgroup_data()` now catches `PyMongoError` to return None instead of propagating
+- **Error handling**: `run_create()`, `run_edit()`, and `run_remove()` now catch `PyMongoError` to raise `DatabaseOperationError` instead of propagating raw database errors
+- **Error handling**: `_check_text_index()` now catches `PyMongoError` to set `_has_text_index = False` instead of propagating
+
 ## [2.1.0] - 2026-04-07
 
 ### Changed

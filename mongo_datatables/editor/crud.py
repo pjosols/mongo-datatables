@@ -1,6 +1,6 @@
 """Create, edit, and remove operations for Editor."""
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from bson.objectid import ObjectId
 from bson.errors import InvalidId as ObjectIdError
@@ -81,7 +81,7 @@ def run_create(
         raise
     except PyMongoError as e:
         logger.error("Error in create operation: %s", e, exc_info=True)
-        raise DatabaseOperationError(f"Failed to create document: {e}") from e
+        raise DatabaseOperationError("Failed to create document") from e
 
 
 def run_edit(
@@ -150,7 +150,7 @@ def run_edit(
         raise
     except PyMongoError as e:
         logger.error("Edit error: %s", e, exc_info=True)
-        raise DatabaseOperationError(f"Failed to update documents: {e}") from e
+        raise DatabaseOperationError("Failed to update documents") from e
 
 
 def run_remove(
@@ -183,11 +183,11 @@ def run_remove(
     except InvalidDataError:
         raise
     except PyMongoError as e:
-        raise DatabaseOperationError(f"Failed to delete documents: {e}") from e
+        raise DatabaseOperationError("Failed to delete documents") from e
 
 
 def run_validators(
-    validators: Dict[str, Any],
+    validators: Dict[str, Callable[[Any], Optional[str]]],
     row_data: Dict[str, Any],
 ) -> List[Dict[str, str]]:
     """Run field validators against a data row.

@@ -24,7 +24,7 @@ from mongo_datatables.datatables.results import (
     count_filtered as _count_filtered,
 )
 from mongo_datatables.datatables.compat import DataTablesMixin
-from mongo_datatables.datatables.response import build_response, error_response, normalize_draw
+from mongo_datatables.datatables.response import build_response, normalize_draw, parse_extension_config
 
 logger = logging.getLogger(__name__)
 
@@ -264,17 +264,6 @@ class DataTables(DataTablesMixin):
             logger.error("DataTables get_export_data error: %s", e)
             return []
 
-    def _parse_extension_config(self, key: str) -> Optional[Dict[str, Any]]:
-        """Return extension config dict for the given request key, or None.
-
-        Returns None if the key is absent, not a dict, or lacks a dataSrc entry.
-        Returns only {"dataSrc": value} when dataSrc is present.
-        """
-        val = self.request_args.get(key)
-        if not isinstance(val, dict) or "dataSrc" not in val:
-            return None
-        return {"dataSrc": val["dataSrc"]}
-
     def get_rows(self) -> Dict[str, Any]:
         """Get the complete DataTables JSON response.
 
@@ -288,7 +277,7 @@ class DataTables(DataTablesMixin):
                 count_filtered_fn=self.count_filtered,
                 results_fn=self.results,
                 get_searchpanes_options_fn=self.get_searchpanes_options,
-                parse_extension_config_fn=self._parse_extension_config,
+                parse_extension_config_fn=lambda key: parse_extension_config(self.request_args, key),
                 collection=self.collection,
                 columns=self.columns,
                 field_mapper=self.field_mapper,
@@ -297,5 +286,11 @@ class DataTables(DataTablesMixin):
                 allow_disk_use=self.allow_disk_use,
             )
         except (PyMongoError, ValueError, TypeError, KeyError, RuntimeError) as e:
-            logger.error("DataTables get_rows error: %s", e)
-            return error_response(self.draw, e)
+            logger.error("DataTables get_rows error: %s", e, exc_info=True)
+            return {
+                "draw": self.draw,
+                "error": "An error occurred processing your request.",
+                "recordsTotal": 0,
+                "recordsFiltered": 0,
+                "data": [],
+            }

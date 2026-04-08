@@ -92,7 +92,9 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         with patch.object(dt, "results", side_effect=RuntimeError("pipeline failed")):
             response = dt.get_rows()
         self.assertIn("error", response)
-        self.assertEqual(response["error"], "pipeline failed")
+        # Generic message — must not echo raw exception text back to client
+        self.assertIsInstance(response["error"], str)
+        self.assertNotIn("pipeline failed", response["error"])
         self.assertEqual(response["data"], [])
         self.assertEqual(response["recordsTotal"], 0)
         self.assertEqual(response["recordsFiltered"], 0)
@@ -103,7 +105,8 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         with patch.object(dt, "count_total", side_effect=PyMongoError("connection refused")):
             response = dt.get_rows()
         self.assertIn("error", response)
-        self.assertIn("connection refused", response["error"])
+        # Generic message — must not leak raw DB error to client
+        self.assertNotIn("connection refused", response["error"])
         self.assertEqual(response["data"], [])
 
     def test_check_text_index_handles_pymongo_error(self):
