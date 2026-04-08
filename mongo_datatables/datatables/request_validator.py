@@ -25,8 +25,7 @@ def _coerce_int(value: Any, name: str, default: int, minimum: int | None = None)
     name: parameter name for error messages.
     default: fallback when value is missing or None.
     minimum: if set, clamp result to this floor.
-    Returns coerced int.
-    Raises InvalidDataError if value cannot be converted.
+    Returns coerced int. Raises InvalidDataError if value cannot be converted.
     """
     if value is None:
         return default
@@ -137,7 +136,7 @@ def _normalize_request_args(request_args: Dict[str, Any]) -> None:
                     col["search"].setdefault("value", "")
                     col["search"].setdefault("regex", False)
                 col.setdefault("searchable", False)
-                col.setdefault("orderable", False)
+                col.setdefault("orderable", True)
 
     if "order" not in request_args:
         request_args["order"] = []
@@ -192,13 +191,15 @@ def validate_request_args(request_args: Any) -> Dict[str, Any]:
     # Sanitize numeric parameters in-place
     request_args["draw"] = _coerce_int(request_args.get("draw"), "draw", default=1, minimum=1)
     # start and length use lenient coercion (return default on invalid input)
+    start_raw = request_args.get("start")
     try:
-        request_args["start"] = _coerce_int(request_args.get("start"), "start", default=0, minimum=0)
-    except InvalidDataError:
+        request_args["start"] = max(0, int(start_raw)) if start_raw is not None else 0
+    except (ValueError, TypeError):
         request_args["start"] = 0
+    length_raw = request_args.get("length")
     try:
-        request_args["length"] = _coerce_int(request_args.get("length"), "length", default=10)
-    except InvalidDataError:
+        request_args["length"] = int(length_raw) if length_raw is not None else 10
+    except (ValueError, TypeError):
         request_args["length"] = 10
 
     return request_args

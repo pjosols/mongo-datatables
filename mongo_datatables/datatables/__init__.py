@@ -1,4 +1,4 @@
-"""Server-side processing for jQuery DataTables with MongoDB."""
+"""Translate DataTables Ajax requests into MongoDB aggregation pipelines."""
 
 from mongo_datatables.data_field import DataField
 from mongo_datatables.datatables.core import DataTables
@@ -17,10 +17,12 @@ from mongo_datatables.datatables.results import (
     fetch_results,
     get_rowgroup_data,
 )
+from mongo_datatables.utils import SearchTermParser
 
 __all__ = [
     "DataTables",
     "DataField",
+    "SearchTermParser",
     "build_filter",
     "build_sort_specification",
     "build_projection",

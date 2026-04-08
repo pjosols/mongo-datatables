@@ -2,6 +2,12 @@
 
 All notable changes to mongo-datatables are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Updated module and function docstrings to follow Wholeshoot convention (one sentence, imperative, no filler)
+
 ## [2.1.0] - 2026-04-07
 
 ### Changed

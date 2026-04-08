@@ -178,7 +178,7 @@ class DataTables(DataTablesMixin):
         return self._filter_cache
 
     def get_sort_specification(self) -> Dict[str, int]:
-        """Generate sort specification from the request."""
+        """Build sort specification from the request columns and order array."""
         return build_sort_specification(self.request_args, self.columns, self.field_mapper)
 
     @property
@@ -261,7 +261,7 @@ class DataTables(DataTablesMixin):
                 self.collection, pipeline, self.row_id, self.field_mapper,
                 self.row_class, self.row_data, self.row_attr, self.allow_disk_use,
             )
-        except Exception as e:
+        except (PyMongoError, ValueError, TypeError, KeyError, RuntimeError) as e:
             logger.error("DataTables get_export_data error: %s", e)
             return []
 
@@ -295,6 +295,6 @@ class DataTables(DataTablesMixin):
                 request_args=self.request_args,
                 allow_disk_use=self.allow_disk_use,
             )
-        except (PyMongoError, ValueError, TypeError, KeyError) as e:
+        except (PyMongoError, ValueError, TypeError, KeyError, RuntimeError) as e:
             logger.error("DataTables get_rows error: %s", e)
             return error_response(self.draw, e)
