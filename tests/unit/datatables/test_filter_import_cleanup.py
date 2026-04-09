@@ -2,8 +2,8 @@
 
 Verifies that:
 - filter.py does not expose get_searchpanes_options
-- core.py imports get_searchpanes_options directly from mongo_datatables.search_panes
-- the canonical get_searchpanes_options lives in mongo_datatables.search_panes
+- core.py imports get_searchpanes_options from datatables.search.panes
+- the canonical get_searchpanes_options lives in mongo_datatables.datatables.search.panes
 """
 from pathlib import Path
 
@@ -29,24 +29,22 @@ def test_filter_module_source_does_not_import_get_searchpanes_options():
 
 
 def test_search_panes_exposes_get_searchpanes_options():
-    """get_searchpanes_options must be defined in mongo_datatables.search_panes."""
-    source = (Path(__file__).parent.parent.parent.parent / "mongo_datatables" / "search_panes.py").read_text()
+    """get_searchpanes_options must be defined in datatables/search/panes.py."""
+    source = (_ROOT / "search" / "panes.py").read_text()
     assert "def get_searchpanes_options" in source
 
 
 def test_core_imports_get_searchpanes_options_from_search_panes():
-    """core.py must import get_searchpanes_options from mongo_datatables.search_panes."""
+    """core.py must import get_searchpanes_options from datatables.search.panes."""
     source = (_ROOT / "core.py").read_text()
-    assert "from mongo_datatables.search_panes import get_searchpanes_options" in source
+    assert "from mongo_datatables.datatables.search.panes import get_searchpanes_options" in source
 
 
 def test_core_does_not_import_get_searchpanes_options_from_filter():
     """core.py must not import get_searchpanes_options from datatables.filter."""
     source = (_ROOT / "core.py").read_text()
-    # If there's a filter import block, get_searchpanes_options must not be in it
     if "from mongo_datatables.datatables.filter import" in source:
         filter_import_block = source.split("from mongo_datatables.datatables.filter import")[1]
-        # Extract until end of import statement (closing paren or next non-continuation line)
         assert "get_searchpanes_options" not in filter_import_block.split(")")[0]
 
 

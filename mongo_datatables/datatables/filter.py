@@ -1,13 +1,13 @@
 """Build MongoDB filters and sort specifications for DataTables queries."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from mongo_datatables.utils import FieldMapper, is_truthy
 from mongo_datatables.datatables.query import MongoQueryBuilder
-from mongo_datatables.search_builder import parse_search_builder
-from mongo_datatables.search_fixed import parse_search_fixed, parse_column_search_fixed
-from mongo_datatables.search_panes import parse_searchpanes_filters
+from mongo_datatables.datatables.search.builder import parse_search_builder
+from mongo_datatables.datatables.search.fixed import parse_search_fixed, parse_column_search_fixed
+from mongo_datatables.datatables.search.panes import parse_searchpanes_filters
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ def build_sort_specification(
 def build_projection(
     columns: List[Dict[str, Any]],
     field_mapper: FieldMapper,
-    row_id: str = None,
+    row_id: Optional[str] = None,
 ) -> Dict[str, int]:
     """Generate projection specification to select fields.
 

@@ -14,7 +14,7 @@ class TestCompatImports:
 
     def test_get_searchpanes_options_is_same_as_search_panes(self):
         from mongo_datatables.datatables.compat import get_searchpanes_options as compat_fn
-        from mongo_datatables.search_panes import get_searchpanes_options as sp_fn
+        from mongo_datatables.datatables.search.panes import get_searchpanes_options as sp_fn
         assert compat_fn is sp_fn
 
     def test_filter_module_does_not_export_get_searchpanes_options(self):
@@ -136,14 +136,8 @@ class TestParseSearchFixedShim(BaseDataTablesTest):
     def test_delegates_to_module_function(self):
         args = _base_args([_col("name")])
         dt = _make_dt(self.mongo, args)
+        mock_fn = MagicMock(return_value={"patched": True})
         with pytest.MonkeyPatch().context() as mp:
-            mock_fn = MagicMock(return_value={"patched": True})
-            mp.setattr("mongo_datatables.search_fixed.parse_search_fixed", mock_fn)
-            # Re-import to pick up patch via the shim's import path
-            from mongo_datatables import search_fixed as sf
-            original = sf.parse_search_fixed
-            sf.parse_search_fixed = mock_fn
-            try:
-                result = dt._parse_search_fixed()
-            finally:
-                sf.parse_search_fixed = original
+            mp.setattr("mongo_datatables.datatables.search.fixed.parse_search_fixed", mock_fn)
+            result = dt._parse_search_fixed()
+        assert result == {"patched": True}

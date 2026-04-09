@@ -3,8 +3,6 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from pymongo.collection import Collection
-from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from mongo_datatables.data_field import DataField
@@ -16,7 +14,7 @@ from mongo_datatables.datatables.filter import (
     build_sort_specification,
     build_projection,
 )
-from mongo_datatables.search_panes import get_searchpanes_options as _get_searchpanes_options
+from mongo_datatables.datatables.search.panes import get_searchpanes_options as _get_searchpanes_options
 from mongo_datatables.datatables.results import (
     build_pipeline,
     fetch_results,
@@ -26,6 +24,7 @@ from mongo_datatables.datatables.results import (
 from mongo_datatables.datatables.compat import DataTablesMixin
 from mongo_datatables.datatables.response import build_response, normalize_draw, parse_extension_config
 from mongo_datatables.datatables._limits import MAX_PIPELINE_STAGES
+from mongo_datatables.datatables._setup import get_collection, check_text_index
 
 logger = logging.getLogger(__name__)
 
@@ -90,9 +89,7 @@ class DataTables(DataTablesMixin):
         self._recordsFiltered = None
         self._filter_cache = None
         self._search_terms_cache = None
-        self._has_text_index = None
-
-        self._check_text_index()
+        self._has_text_index = self._check_text_index()
 
         self.query_builder = MongoQueryBuilder(
             field_mapper=self.field_mapper,
@@ -102,32 +99,13 @@ class DataTables(DataTablesMixin):
         )
 
     @staticmethod
-    def _get_collection(pymongo_object: Any, collection_name: str) -> Collection:
+    def _get_collection(pymongo_object: Any, collection_name: str) -> Any:
         """Resolve a MongoDB collection from a PyMongo client or Flask-PyMongo instance."""
-        if isinstance(pymongo_object, Database):
-            return pymongo_object[collection_name]
-        if hasattr(pymongo_object, "db"):
-            return pymongo_object.db[collection_name]
-        if hasattr(pymongo_object, "get_database"):
-            return pymongo_object.get_database()[collection_name]
-        return pymongo_object[collection_name]
+        return get_collection(pymongo_object, collection_name)
 
-    def _check_text_index(self) -> None:
-        """Check if the collection has a text index and cache the result."""
-        if not self.use_text_index:
-            self._has_text_index = False
-            return
-        try:
-            self._has_text_index = any(
-                "textIndexVersion" in idx for idx in self.collection.list_indexes()
-            )
-        except PyMongoError:
-            logging.getLogger(__name__).warning(
-                "Failed to check text index on collection %s",
-                self.collection.name,
-                exc_info=True,
-            )
-            self._has_text_index = False
+    def _check_text_index(self) -> bool:
+        """Check if the collection has a text index and return the result."""
+        return check_text_index(self.collection, self.use_text_index)
 
     @property
     def has_text_index(self) -> bool:

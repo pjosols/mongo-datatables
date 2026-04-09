@@ -408,21 +408,21 @@ class TestSearchBuilderErrorLogging:
 
     def test_invalid_number_logs_debug(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
-        with caplog.at_level(logging.DEBUG, logger="mongo_datatables.search_builder"):
+        with caplog.at_level(logging.DEBUG, logger="mongo_datatables.datatables.search.builder"):
             result = _sb_number("age", "=", "not-a-number", None)
         assert result == {}
         assert any("age" in r.message for r in caplog.records)
 
     def test_invalid_date_logs_debug(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
-        with caplog.at_level(logging.DEBUG, logger="mongo_datatables.search_builder"):
+        with caplog.at_level(logging.DEBUG, logger="mongo_datatables.datatables.search.builder"):
             result = _sb_date("created", "=", "not-a-date", None)
         assert result == {}
         assert any("created" in r.message for r in caplog.records)
 
     def test_number_between_invalid_v1_logs_debug(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
-        with caplog.at_level(logging.DEBUG, logger="mongo_datatables.search_builder"):
+        with caplog.at_level(logging.DEBUG, logger="mongo_datatables.datatables.search.builder"):
             result = _sb_number("price", "between", "10", "bad")
         assert result == {}
         assert any("price" in r.message for r in caplog.records)

@@ -7,7 +7,7 @@ from pymongo.database import Database
 
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables._limits import MAX_PIPELINE_STAGES, MAX_FACET_BRANCHES, MAX_PANE_OPTIONS
-from mongo_datatables.search_panes import get_searchpanes_options
+from mongo_datatables.datatables.search.panes import get_searchpanes_options
 from mongo_datatables.utils import FieldMapper
 
 
@@ -105,7 +105,7 @@ class TestFacetBranchesLimit:
         col = MagicMock(spec=Collection)
         facet_doc = {f"col{i}": [{"_id": "x", "count": 1}] for i in range(n)}
         col.aggregate.side_effect = [[facet_doc], [facet_doc]]
-        with caplog.at_level(logging.WARNING, logger="mongo_datatables.search_panes"):
+        with caplog.at_level(logging.WARNING, logger="mongo_datatables.datatables.search.panes"):
             get_searchpanes_options(columns, field_mapper, {}, {}, col, False)
         assert any("truncated" in r.message for r in caplog.records)
 

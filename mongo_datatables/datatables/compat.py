@@ -6,7 +6,7 @@ from mongo_datatables.datatables.results import (
     count_total,
     count_filtered,
 )
-from mongo_datatables.search_panes import get_searchpanes_options
+from mongo_datatables.datatables.search.panes import get_searchpanes_options
 
 __all__ = [
     "count_total",
@@ -38,12 +38,12 @@ class DataTablesMixin:
 
     def _parse_search_builder(self) -> Dict[str, Any]:
         """Parse SearchBuilder payload for backward compatibility."""
-        from mongo_datatables.search_builder import parse_search_builder
+        from mongo_datatables.datatables.search.builder import parse_search_builder
         return parse_search_builder(self.request_args, self.field_mapper)
 
     def _parse_searchpanes_filters(self) -> Dict[str, Any]:
         """Parse SearchPanes filters for backward compatibility."""
-        from mongo_datatables.search_panes import parse_searchpanes_filters
+        from mongo_datatables.datatables.search.panes import parse_searchpanes_filters
         return parse_searchpanes_filters(self.request_args, self.field_mapper)
 
     @staticmethod
@@ -74,12 +74,12 @@ class DataTablesMixin:
 
     def _parse_search_fixed(self) -> Dict[str, Any]:
         """Parse searchFixed into a MongoDB filter for backward compatibility."""
-        from mongo_datatables.search_fixed import parse_search_fixed
+        from mongo_datatables.datatables.search.fixed import parse_search_fixed
         return parse_search_fixed(self.request_args, self.query_builder, self.searchable_columns)
 
     def _parse_column_search_fixed(self) -> Dict[str, Any]:
         """Parse per-column searchFixed into a MongoDB filter for backward compatibility."""
-        from mongo_datatables.search_fixed import parse_column_search_fixed
+        from mongo_datatables.datatables.search.fixed import parse_column_search_fixed
         return parse_column_search_fixed(self.columns, self.field_mapper, self.query_builder)
 
     def _parse_rowgroup_config(self) -> Optional[Dict[str, Any]]:
@@ -87,6 +87,7 @@ class DataTablesMixin:
 
         Returns dict with dataSrc and other keys (except startRender/endRender),
         or None if rowGroup is absent or has no dataSrc.
+        Backward-compatible shim for _parse_extension_config.
         """
         config = self._parse_extension_config("rowGroup")
         if config is None or "dataSrc" not in config:
