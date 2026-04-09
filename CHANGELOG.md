@@ -6,7 +6,7 @@ All notable changes to mongo-datatables are documented here.
 
 ### Changed
 
-- Updated docstrings in `datatables/search/` subpackage modules to Wholeshoot convention
+- Updated all module and function docstrings to Wholeshoot convention: one-sentence imperative summaries, flat parameter descriptions, no type hint repetition
 
 ## [2.1.0] - 2026-04-07
 
