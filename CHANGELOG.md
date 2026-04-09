@@ -13,6 +13,7 @@ All notable changes to mongo-datatables are documented here.
 - Enhanced `build_updates()` docstring to document recursive traversal, type conversions, and error handling
 - Enhanced `editor/search.py` docstrings to clarify search/dependent/upload request handling and response formats
 - Enhanced test module docstrings to clarify security validation and test scope
+- Added Wholeshoot docstrings to helper functions and test classes in `tests/unit/datatables/test_datatables_misc.py` — clarifies regression fixes, test scope, and helper function contracts
 
 ### Fixed
 

@@ -8,12 +8,13 @@ from pymongo.errors import PyMongoError
 
 from mongo_datatables import DataTables, DataField, Editor
 from mongo_datatables.datatables.query import MongoQueryBuilder
-from mongo_datatables.datatables.search.builder import _sb_group, _sb_date
+from mongo_datatables.datatables.results import get_rowgroup_data
+from mongo_datatables.datatables.search.builder import parse_search_builder
 from mongo_datatables.utils import FieldMapper
 import mongo_datatables
 
 
-class TestDrawProperty(unittest.TestCase):
+class _BaseDataTablesTest(unittest.TestCase):
     def setUp(self):
         self.mongo = MagicMock()
         self.collection = MagicMock()
@@ -27,6 +28,9 @@ class TestDrawProperty(unittest.TestCase):
             "columns": [{"data": "name", "name": "", "searchable": "true", "orderable": "true",
                          "search": {"value": "", "regex": False}}],
         }
+
+
+class TestDrawProperty(_BaseDataTablesTest):
 
     def _make(self, draw_val):
         return DataTables(self.mongo, "users", {**self.base_args, "draw": draw_val})
@@ -56,20 +60,7 @@ class TestDrawProperty(unittest.TestCase):
         self.assertEqual(self._make("999").draw, 999)
 
 
-class TestInputValidation(unittest.TestCase):
-    def setUp(self):
-        self.mongo = MagicMock()
-        self.collection = MagicMock()
-        self.mongo.db = MagicMock()
-        self.mongo.db.__getitem__ = MagicMock(return_value=self.collection)
-        self.collection.list_indexes.return_value = iter([])
-        self.base_args = {
-            "draw": "1", "start": "0", "length": "10",
-            "search": {"value": "", "regex": False},
-            "order": [{"column": "0", "dir": "asc"}],
-            "columns": [{"data": "name", "name": "", "searchable": "true", "orderable": "true",
-                         "search": {"value": "", "regex": False}}],
-        }
+class TestInputValidation(_BaseDataTablesTest):
 
     def _make(self, extra_args):
         return DataTables(self.mongo, "users", {**self.base_args, **extra_args})
@@ -150,6 +141,11 @@ class TestInit(unittest.TestCase):
 
 
 def _make_regression_dt(data_fields=None):
+    """Create a DataTables instance for regression testing.
+    
+    data_fields: optional list of DataField objects. Defaults to empty list.
+    Returns DataTables instance with mocked MongoDB collection.
+    """
     mongo = MagicMock()
     mongo.db = MagicMock(spec=Database)
     collection = MagicMock(spec=Collection)
@@ -166,6 +162,10 @@ def _make_regression_dt(data_fields=None):
 
 
 def _make_qb():
+    """Create a MongoQueryBuilder with mocked FieldMapper.
+    
+    Returns MongoQueryBuilder configured for text field type.
+    """
     fm = MagicMock(spec=FieldMapper)
     fm.get_field_type.return_value = "text"
     fm.get_db_field.side_effect = lambda x: x
@@ -173,7 +173,10 @@ def _make_qb():
 
 
 class TestBuildColumnSearchNesting(unittest.TestCase):
-    """Fix 1: build_column_search inner blocks nested inside outer if."""
+    """Regression: build_column_search inner blocks nested inside outer if.
+    
+    Ensures column search with columnControl and searchable flags does not raise UnboundLocalError.
+    """
 
     def test_has_cc_only_no_search_value_no_unbound_error(self):
         qb = _make_qb()
@@ -201,7 +204,10 @@ class TestBuildColumnSearchNesting(unittest.TestCase):
 
 
 class TestHashableOutsideLoop(unittest.TestCase):
-    """Fix 2: _hashable defined outside the for loop in get_searchpanes_options."""
+    """Regression: _hashable defined outside the for loop in get_searchpanes_options.
+    
+    Ensures SearchPanes options are correctly deduplicated across multiple columns.
+    """
 
     def test_searchpanes_options_multiple_columns(self):
         mongo = MagicMock()
@@ -234,76 +240,130 @@ class TestHashableOutsideLoop(unittest.TestCase):
         self.assertEqual(len(options["status"]), 2)
 
 
+def _sb_args(group: dict) -> dict:
+    """Wrap a SearchBuilder group dict into request_args.
+    
+    group: SearchBuilder criteria group with logic and criteria keys.
+    Returns dict with searchBuilder key for parse_search_builder.
+    """
+    return {"searchBuilder": group}
+
+
 class TestSbDateBetweenSemantics(unittest.TestCase):
-    """Fix 3: _sb_date between/!between use day-inclusive exclusive upper bound."""
+    """Regression: date between/!between use day-inclusive exclusive upper bound.
+    
+    Ensures date range queries use correct MongoDB operators for inclusive/exclusive bounds.
+    """
+
+    def _fm(self):
+        """Create a FieldMapper with no fields.
+        
+        Returns FieldMapper instance for SearchBuilder parsing tests.
+        """
+        return FieldMapper([])
+
+    def _parse(self, condition: str, v0: str, v1: str) -> dict:
+        """Parse a SearchBuilder date condition into MongoDB query.
+        
+        condition: SearchBuilder condition string (e.g. "between", "!between").
+        v0: start date as ISO string (YYYY-MM-DD).
+        v1: end date as ISO string (YYYY-MM-DD).
+        Returns MongoDB query dict with date operators.
+        """
+        group = {"logic": "AND", "criteria": [
+            {"condition": condition, "origData": "created", "type": "date", "value": [v0, v1]},
+        ]}
+        return parse_search_builder(_sb_args(group), self._fm())
 
     def test_between_uses_lt_not_lte(self):
-        result = _sb_date("created", "between", "2024-01-01", "2024-01-31")
+        result = self._parse("between", "2024-01-01", "2024-01-31")
         cond = result["created"]
         self.assertIn("$lt", cond)
         self.assertNotIn("$lte", cond)
         self.assertEqual(cond["$lt"], datetime(2024, 2, 1))
 
     def test_between_lower_bound(self):
-        result = _sb_date("created", "between", "2024-01-01", "2024-01-31")
+        result = self._parse("between", "2024-01-01", "2024-01-31")
         self.assertEqual(result["created"]["$gte"], datetime(2024, 1, 1))
 
     def test_not_between_upper_uses_gte_not_gt(self):
-        result = _sb_date("created", "!between", "2024-01-01", "2024-01-31")
+        result = self._parse("!between", "2024-01-01", "2024-01-31")
         upper = result["$or"][1]
         self.assertIn("$gte", upper["created"])
         self.assertNotIn("$gt", upper["created"])
         self.assertEqual(upper["created"]["$gte"], datetime(2024, 2, 1))
 
     def test_not_between_lower_bound(self):
-        result = _sb_date("created", "!between", "2024-01-01", "2024-01-31")
+        result = self._parse("!between", "2024-01-01", "2024-01-31")
         lower = result["$or"][0]
         self.assertEqual(lower["created"]["$lt"], datetime(2024, 1, 1))
 
     def test_between_single_day_range(self):
-        result = _sb_date("created", "between", "2024-06-15", "2024-06-15")
+        result = self._parse("between", "2024-06-15", "2024-06-15")
         cond = result["created"]
         self.assertEqual(cond["$gte"], datetime(2024, 6, 15))
         self.assertEqual(cond["$lt"], datetime(2024, 6, 16))
 
 
 class TestSbGroup(unittest.TestCase):
+    """SearchBuilder group parsing with AND/OR logic and nesting.
+    
+    Validates correct MongoDB operator wrapping and criterion filtering.
+    """
+
     def _fm(self):
+        """Create a FieldMapper with no fields.
+        
+        Returns FieldMapper instance for SearchBuilder parsing tests.
+        """
         return FieldMapper([])
 
+    def _parse(self, group: dict) -> dict:
+        """Parse a SearchBuilder group into MongoDB query.
+        
+        group: SearchBuilder group dict with logic and criteria keys.
+        Returns MongoDB query dict with $and/$or operators as needed.
+        """
+        return parse_search_builder(_sb_args(group), self._fm())
+
     def test_empty_group_returns_empty(self):
-        self.assertEqual(_sb_group({"logic": "AND", "criteria": []}, self._fm()), {})
+        self.assertEqual(self._parse({"logic": "AND", "criteria": []}), {})
 
     def test_single_criterion_not_wrapped(self):
         c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
-        result = _sb_group({"logic": "AND", "criteria": [c]}, self._fm())
+        result = self._parse({"logic": "AND", "criteria": [c]})
         self.assertNotIn("$and", result)
         self.assertNotEqual(result, {})
 
     def test_and_logic_wraps_in_and(self):
         c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
-        result = _sb_group({"logic": "AND", "criteria": [c, c]}, self._fm())
+        result = self._parse({"logic": "AND", "criteria": [c, c]})
         self.assertIn("$and", result)
 
     def test_or_logic_wraps_in_or(self):
         c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
-        result = _sb_group({"logic": "OR", "criteria": [c, c]}, self._fm())
+        result = self._parse({"logic": "OR", "criteria": [c, c]})
         self.assertIn("$or", result)
 
     def test_nested_group(self):
         c = {"condition": "=", "origData": "Title", "type": "string", "value": ["1984"]}
         inner = {"logic": "OR", "criteria": [c, c]}
         outer = {"logic": "AND", "criteria": [c, inner]}
-        result = _sb_group(outer, self._fm())
+        result = self._parse(outer)
         self.assertIn("$and", result)
 
     def test_invalid_criterion_skipped(self):
         bad = {"condition": "=", "type": "string", "value": ["1984"]}
-        result = _sb_group({"logic": "AND", "criteria": [bad]}, self._fm())
+        result = self._parse({"logic": "AND", "criteria": [bad]})
         self.assertEqual(result, {})
 
 
 class TestGetRowgroupData(unittest.TestCase):
+    """RowGroup extension data retrieval with filtering and error handling.
+    
+    Validates pipeline construction, datasrc mapping, and error recovery.
+    """
+
     _BASE_ARGS = {
         "draw": 1, "start": 0, "length": 10,
         "search": {"value": "", "regex": False},
@@ -313,6 +373,13 @@ class TestGetRowgroupData(unittest.TestCase):
     }
 
     def _make_dt(self, request_args, data_fields=None, **custom_filter):
+        """Create a DataTables instance with mocked collection.
+        
+        request_args: DataTables request dict.
+        data_fields: optional list of DataField objects.
+        custom_filter: additional keyword arguments passed to DataTables.
+        Returns tuple of (DataTables instance, mocked Collection).
+        """
         col = MagicMock(spec=Collection)
         col.list_indexes = MagicMock(return_value=[])
         col.aggregate = MagicMock(return_value=iter([]))
@@ -322,12 +389,10 @@ class TestGetRowgroupData(unittest.TestCase):
         return DataTables(db, "test", request_args, data_fields or [], **custom_filter), col
 
     def test_no_rowgroup_config_returns_none(self):
-        from mongo_datatables.datatables.results import get_rowgroup_data
         dt, col = self._make_dt(self._BASE_ARGS)
         self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_string_datasrc_builds_pipeline(self):
-        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
         dt, col = self._make_dt(args)
         col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
@@ -337,7 +402,6 @@ class TestGetRowgroupData(unittest.TestCase):
         self.assertIn("groups", result)
 
     def test_numeric_datasrc_maps_to_column(self):
-        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": 0}}
         dt, col = self._make_dt(args)
         col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
@@ -346,26 +410,22 @@ class TestGetRowgroupData(unittest.TestCase):
         self.assertEqual(result["dataSrc"], 0)
 
     def test_out_of_range_datasrc_returns_none(self):
-        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": 99}}
         dt, col = self._make_dt(args)
         self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_pymongo_error_returns_none(self):
-        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
         dt, col = self._make_dt(args)
         col.aggregate = MagicMock(side_effect=PyMongoError("db error"))
         self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_empty_field_name_returns_none(self):
-        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": ""}}
         dt, col = self._make_dt(args)
         self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_rowgroup_with_active_filter(self):
-        from mongo_datatables.datatables.results import get_rowgroup_data
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"},
                 "search": {"value": "foo", "regex": False}}
         dt, col = self._make_dt(args)
@@ -376,9 +436,17 @@ class TestGetRowgroupData(unittest.TestCase):
 
 
 class TestGlobalSearchPerf(unittest.TestCase):
-    """Tests for global search query builder performance and correctness."""
+    """Global search query builder performance and correctness.
+    
+    Validates field mapper call efficiency, multi-term AND semantics, phrase boundaries, and type filtering.
+    """
 
     def _make_perf_qb(self, columns):
+        """Create a MongoQueryBuilder without text index.
+        
+        columns: list of DataField objects.
+        Returns MongoQueryBuilder configured for regex-based search.
+        """
         fm = FieldMapper(columns)
         return MongoQueryBuilder(fm, use_text_index=False, has_text_index=False)
 
