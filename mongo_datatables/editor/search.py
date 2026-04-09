@@ -1,11 +1,14 @@
 """Handle search, dependent-field, and upload requests for Editor."""
 import re
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 from mongo_datatables.exceptions import InvalidDataError
 from mongo_datatables.editor.validators import validate_upload_data
 from mongo_datatables.utils import FieldMapper
+
+MAX_SEARCH_VALUES = 100
+_SCALAR_TYPES = (str, int, float, bool)
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +38,15 @@ def handle_search(
     if search_term is not None:
         query = {db_field: {"$regex": re.escape(search_term), "$options": "i"}}
     elif values:
-        query = {db_field: {"$in": _coerce_values(field, values, fields)}}
+        safe_values = [v for v in values[:MAX_SEARCH_VALUES] if isinstance(v, _SCALAR_TYPES)]
+        dropped = len(values[:MAX_SEARCH_VALUES]) - len(safe_values)
+        if dropped:
+            logger.debug("Dropped %d non-scalar values from $in query for field %s", dropped, field)
+        query = {db_field: {"$in": _coerce_values(field, safe_values, fields)}}
     else:
         return {"data": []}
 
-    docs = collection.find(query, {db_field: 1}).limit(100)
+    docs = collection.find(query, {db_field: 1}).limit(MAX_SEARCH_VALUES)
     seen: set = set()
     results: List[Dict[str, Any]] = []
     for doc in docs:
@@ -78,9 +85,15 @@ def _coerce_values(field: str, values: List[Any], fields: Dict[str, Any]) -> Lis
     return values
 
 
+class DependentHandler(Protocol):
+    """Callable protocol for dependent field handlers."""
+
+    def __call__(self, field: str, values: Any, rows: Any) -> Dict[str, Any]: ...
+
+
 def handle_dependent(
     request_args: Dict[str, Any],
-    dependent_handlers: Dict[str, Any],
+    dependent_handlers: Dict[str, DependentHandler],
 ) -> Dict[str, Any]:
     """Handle dependent field Ajax requests.
 
@@ -129,7 +142,12 @@ def handle_upload(
     validate_upload_data(upload, scanner)
     filename = upload.get("filename", "")
     content_type = upload.get("content_type", "")
-    data = bytes(upload.get("data", b""))
+    raw = upload.get("data", b"")
+    if not isinstance(raw, (bytes, bytearray)):
+        raise InvalidDataError(
+            f"upload['data'] must be bytes or bytearray, got {type(raw).__name__}"
+        )
+    data = bytes(raw)
     if hasattr(storage_adapter, "validate_upload"):
         storage_adapter.validate_upload(field, filename, content_type, data)
     file_id = storage_adapter.store(field, filename, content_type, data)
