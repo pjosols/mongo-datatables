@@ -46,10 +46,7 @@ def parse_search_builder(request_args: Dict[str, Any], field_mapper: FieldMapper
         }
 
     Groups are nested via a ``criteria`` list and a ``logic`` key
-    (``"AND"`` or ``"OR"``).
-
-    Returns:
-        MongoDB query dict, or ``{}`` if no SearchBuilder data is present.
+    (``"AND"`` or ``"OR"``). Returns MongoDB query dict, or ``{}`` if no SearchBuilder data is present.
     """
     sb = request_args.get("searchBuilder")
     if not sb:
@@ -71,6 +68,8 @@ def parse_search_builder(request_args: Dict[str, Any], field_mapper: FieldMapper
 def _sb_group(group: Dict[str, Any], field_mapper: FieldMapper, depth: int = 0, counter: Optional[List[int]] = None) -> Dict[str, Any]:
     """Recursively convert a SearchBuilder group to a MongoDB condition.
 
+    group: criteria group dict with logic and nested criteria.
+    field_mapper: maps column names to database fields.
     depth: current recursion depth; aborts at _MAX_SB_DEPTH to prevent DoS.
     counter: mutable single-element list tracking total criteria processed.
     """
@@ -104,7 +103,11 @@ def _sb_group(group: Dict[str, Any], field_mapper: FieldMapper, depth: int = 0, 
 
 
 def _sb_criterion(criterion: Dict[str, Any], field_mapper: FieldMapper) -> Dict[str, Any]:
-    """Convert a single SearchBuilder leaf criterion to a MongoDB condition."""
+    """Convert a single SearchBuilder leaf criterion to a MongoDB condition.
+
+    criterion: leaf criterion dict with condition, origData, type, and value.
+    field_mapper: maps column names to database fields.
+    """
     condition = criterion.get("condition", "")
     orig_data = criterion.get("origData") or criterion.get("data", "")
     values = criterion.get("value", [])
@@ -154,7 +157,13 @@ def _sb_criterion(criterion: Dict[str, Any], field_mapper: FieldMapper) -> Dict[
 
 
 def _sb_number(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
-    """Build a MongoDB condition for a numeric SearchBuilder criterion."""
+    """Build a MongoDB condition for a numeric SearchBuilder criterion.
+
+    field: database field name.
+    condition: comparison operator (=, !=, <, <=, >, >=, between, !between).
+    v0: first value.
+    v1: second value for between/!between operators.
+    """
     def _n(v: Any) -> Union[int, float]:
         return TypeConverter.to_number(v)
     try:
@@ -180,7 +189,13 @@ def _sb_number(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
 
 
 def _sb_date(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
-    """Build a MongoDB condition for a date SearchBuilder criterion."""
+    """Build a MongoDB condition for a date SearchBuilder criterion.
+
+    field: database field name.
+    condition: comparison operator (=, !=, <, <=, >, >=, between, !between).
+    v0: first date value.
+    v1: second date value for between/!between operators.
+    """
     def _d(v: Any) -> datetime:
         return DateHandler.parse_iso_date(v.split('T')[0])
     try:
@@ -208,7 +223,12 @@ def _sb_date(field: str, condition: str, v0: Any, v1: Any) -> Dict[str, Any]:
 
 
 def _sb_string(field: str, condition: str, v0: Any) -> Dict[str, Any]:
-    """Build a MongoDB condition for a string SearchBuilder criterion."""
+    """Build a MongoDB condition for a string SearchBuilder criterion.
+
+    field: database field name.
+    condition: comparison operator (=, !=, contains, !contains, starts, !starts, ends, !ends).
+    v0: string value to match.
+    """
     if v0 is None:
         return {}
     s = re.escape(v0)

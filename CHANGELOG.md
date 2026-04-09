@@ -4,6 +4,10 @@ All notable changes to mongo-datatables are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated docstrings in `datatables/search/` subpackage modules to Wholeshoot convention
+
 ## [2.1.0] - 2026-04-07
 
 ### Added

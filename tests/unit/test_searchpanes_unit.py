@@ -1,16 +1,14 @@
 """Consolidated SearchPanes tests."""
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 from datetime import datetime
 from bson import ObjectId
 from pymongo.collection import Collection
 from pymongo.database import Database
 from bson import Decimal128
 from mongo_datatables import DataTables, DataField
-from mongo_datatables.datatables import DataTables as DT
-from mongo_datatables.search_panes import get_searchpanes_options
+from mongo_datatables.datatables.search.panes import get_searchpanes_options
 from mongo_datatables.utils import FieldMapper
-from mongo_datatables.datatables.query import MongoQueryBuilder
 
 
 class TestSearchPanes:
@@ -98,26 +96,21 @@ class TestSearchPanes:
         assert filter_condition == {"$and": [{"age": {"$in": [25, 30]}}]}
 
 
-def _make_dt_new(data_fields, request_args):
-    """Factory that bypasses DataTables.__init__ for direct attribute injection."""
-    col = MagicMock()
-    col.list_indexes.return_value = []
-    col.estimated_document_count.return_value = 0
-    with patch.object(DT, '_get_collection', return_value=col), \
-         patch.object(DT, '_check_text_index'):
-        dt = DT.__new__(DT)
-        dt.collection = col
-        dt.request_args = request_args
-        dt.data_fields = data_fields
-        dt.field_mapper = FieldMapper(data_fields)
-        dt.use_text_index = False
-        dt.allow_disk_use = False
-        dt.row_class = dt.row_data = dt.row_attr = dt.row_id = None
-        dt.custom_filter = {}
-        dt._results = dt._recordsTotal = dt._recordsFiltered = dt._filter_cache = None
-        dt._has_text_index = False
-        dt.query_builder = MongoQueryBuilder(dt.field_mapper, False, False)
-        return dt
+def _make_dt_new(data_fields: list, request_args: dict) -> DataTables:
+    """Construct a DataTables instance with minimal request_args for unit tests.
+
+    data_fields: list of DataField instances.
+    request_args: partial request args; 'draw' is injected if absent.
+    Returns a DataTables instance backed by a MagicMock collection.
+    """
+    mongo = MagicMock()
+    mongo.db = MagicMock(spec=Database)
+    collection = MagicMock(spec=Collection)
+    mongo.db.__getitem__.return_value = collection
+    collection.list_indexes.return_value = []
+    collection.estimated_document_count.return_value = 0
+    args = {"draw": 1, **request_args}
+    return DataTables(mongo, "test_collection", args, data_fields=data_fields)
 
 
 class TestSearchPanesDateFilter:

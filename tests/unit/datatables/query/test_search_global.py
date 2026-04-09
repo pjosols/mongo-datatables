@@ -2,15 +2,15 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-import pytest
 from pymongo.collection import Collection
 from pymongo.database import Database
 
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables.query import MongoQueryBuilder
-from mongo_datatables.search_fixed import parse_column_search_fixed, parse_search_fixed
+from mongo_datatables.datatables.search.fixed import parse_column_search_fixed, parse_search_fixed
 from mongo_datatables.utils import FieldMapper
 from tests.base_test import BaseDataTablesTest
+from tests.unit.datatables.conftest import make_dt_wire
 
 
 # ---------------------------------------------------------------------------
@@ -188,45 +188,8 @@ class TestSearchFixed(BaseDataTablesTest):
 # search_fixed — wire format (new array + legacy compat)
 # ---------------------------------------------------------------------------
 
-def _make_dt_wire(search_extra=None, columns_search_extra=None, search_fixed_legacy=None):
-    db = MagicMock()
-    collection = MagicMock()
-    db.__getitem__ = MagicMock(return_value=collection)
-    collection.index_information.return_value = {}
-
-    search = {"value": "", "regex": False}
-    if search_extra:
-        search.update(search_extra)
-
-    columns = [
-        {"data": "name", "searchable": True, "orderable": True,
-         "search": {"value": "", "regex": False}},
-        {"data": "status", "searchable": True, "orderable": True,
-         "search": {"value": "", "regex": False}},
-    ]
-    if columns_search_extra:
-        for i, extra in enumerate(columns_search_extra):
-            if extra and i < len(columns):
-                columns[i]["search"].update(extra)
-
-    request_args = {
-        "draw": "1", "start": "0", "length": "10",
-        "search": search,
-        "columns": columns,
-        "order": [{"column": 0, "dir": "asc"}],
-    }
-    if search_fixed_legacy is not None:
-        request_args["searchFixed"] = search_fixed_legacy
-
-    data_fields = [DataField("name", "string"), DataField("status", "string")]
-    dt = DataTables(db, "users", request_args, data_fields=data_fields)
-    with patch.object(type(dt), "has_text_index",
-                      new_callable=lambda: property(lambda self: False)):
-        return dt
-
-
 def test_global_fixed_array_single_entry():
-    dt = _make_dt_wire(search_extra={"fixed": [{"name": "lock", "term": "Alice"}]})
+    dt = make_dt_wire(search_extra={"fixed": [{"name": "lock", "term": "Alice"}]})
     result = dt._parse_search_fixed()
     assert "$or" in result
     fields = [list(c.keys())[0] for c in result["$or"]]
@@ -235,7 +198,7 @@ def test_global_fixed_array_single_entry():
 
 
 def test_global_fixed_array_multiple_entries_anded():
-    dt = _make_dt_wire(search_extra={"fixed": [
+    dt = make_dt_wire(search_extra={"fixed": [
         {"name": "a", "term": "Alice"},
         {"name": "b", "term": "active"},
     ]})
@@ -245,29 +208,29 @@ def test_global_fixed_array_multiple_entries_anded():
 
 
 def test_global_fixed_array_function_term_skipped():
-    dt = _make_dt_wire(search_extra={"fixed": [{"name": "fn", "term": "function"}]})
+    dt = make_dt_wire(search_extra={"fixed": [{"name": "fn", "term": "function"}]})
     assert dt._parse_search_fixed() == {}
 
 
 def test_global_fixed_array_empty_produces_no_filter():
-    dt = _make_dt_wire(search_extra={"fixed": []})
+    dt = make_dt_wire(search_extra={"fixed": []})
     assert dt._parse_search_fixed() == {}
 
 
 def test_column_fixed_array_single_entry():
-    dt = _make_dt_wire(columns_search_extra=[{"fixed": [{"name": "lock", "term": "Alice"}]}])
+    dt = make_dt_wire(columns_search_extra=[{"fixed": [{"name": "lock", "term": "Alice"}]}])
     result = dt._parse_column_search_fixed()
     assert "name" in str(result)
     assert "Alice" in str(result)
 
 
 def test_column_fixed_array_function_term_skipped():
-    dt = _make_dt_wire(columns_search_extra=[{"fixed": [{"name": "fn", "term": "function"}]}])
+    dt = make_dt_wire(columns_search_extra=[{"fixed": [{"name": "fn", "term": "function"}]}])
     assert dt._parse_column_search_fixed() == {}
 
 
 def test_global_and_column_fixed_combined():
-    dt = _make_dt_wire(
+    dt = make_dt_wire(
         search_extra={"fixed": [{"name": "g", "term": "Alice"}]},
         columns_search_extra=[None, {"fixed": [{"name": "s", "term": "active"}]}],
     )
@@ -278,7 +241,7 @@ def test_global_and_column_fixed_combined():
 
 
 def test_legacy_global_searchFixed_dict():
-    dt = _make_dt_wire(search_fixed_legacy={"role": "admin"})
+    dt = make_dt_wire(search_fixed_legacy={"role": "admin"})
     assert "$or" in dt._parse_search_fixed()
 
 
@@ -306,7 +269,7 @@ def test_legacy_column_searchFixed_dict():
 
 
 def test_mixed_new_array_and_legacy_dict():
-    dt = _make_dt_wire(
+    dt = make_dt_wire(
         search_extra={"fixed": [{"name": "new", "term": "Alice"}]},
         search_fixed_legacy={"old": "admin"},
     )

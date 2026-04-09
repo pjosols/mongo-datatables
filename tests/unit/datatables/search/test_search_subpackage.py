@@ -21,11 +21,11 @@ class TestSearchSubpackageStructure:
     def test_panes_module_exists(self):
         assert (_SEARCH_PKG / "panes.py").exists()
 
-    def test_old_top_level_files_are_shims_only(self):
-        """Old top-level files must only re-export, not define logic."""
+    def test_old_top_level_files_removed(self):
+        """Old top-level shim files must not exist."""
         for name in ("search_builder", "search_fixed", "search_panes"):
-            src = (Path(__file__).parent.parent.parent.parent.parent / "mongo_datatables" / f"{name}.py").read_text()
-            assert "def " not in src, f"{name}.py must not define functions — it should only re-export"
+            path = Path(__file__).parent.parent.parent.parent.parent / "mongo_datatables" / f"{name}.py"
+            assert not path.exists(), f"{name}.py shim must be deleted"
 
 
 # ---------------------------------------------------------------------------
@@ -34,9 +34,8 @@ class TestSearchSubpackageStructure:
 
 class TestSearchSubpackageImports:
     def test_builder_importable_from_new_path(self):
-        from mongo_datatables.datatables.search.builder import parse_search_builder, _sb_group, _sb_date, _sb_number, _sb_string
+        from mongo_datatables.datatables.search.builder import parse_search_builder
         assert callable(parse_search_builder)
-        assert callable(_sb_group)
 
     def test_fixed_importable_from_new_path(self):
         from mongo_datatables.datatables.search.fixed import parse_search_fixed, parse_column_search_fixed
@@ -54,20 +53,11 @@ class TestSearchSubpackageImports:
                      "get_searchpanes_options", "parse_searchpanes_filters"):
             assert hasattr(search_pkg, name), f"search.__init__ must export {name}"
 
-    def test_backward_compat_shim_search_builder(self):
-        from mongo_datatables.search_builder import parse_search_builder, _sb_group
-        from mongo_datatables.datatables.search.builder import parse_search_builder as canonical
-        assert parse_search_builder is canonical
-
-    def test_backward_compat_shim_search_fixed(self):
-        from mongo_datatables.search_fixed import parse_search_fixed
-        from mongo_datatables.datatables.search.fixed import parse_search_fixed as canonical
-        assert parse_search_fixed is canonical
-
-    def test_backward_compat_shim_search_panes(self):
-        from mongo_datatables.search_panes import get_searchpanes_options
-        from mongo_datatables.datatables.search.panes import get_searchpanes_options as canonical
-        assert get_searchpanes_options is canonical
+    def test_backward_compat_shims_removed(self):
+        """Shim files must not exist."""
+        for name in ("search_builder", "search_fixed", "search_panes"):
+            path = Path(__file__).parent.parent.parent.parent.parent / "mongo_datatables" / f"{name}.py"
+            assert not path.exists(), f"{name}.py shim must be deleted"
 
 
 # ---------------------------------------------------------------------------

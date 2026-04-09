@@ -1,10 +1,12 @@
 """searchFixed support — parses DataTables 2.x fixed/named searches into MongoDB filters."""
 from typing import Any, Dict, List
 
+from mongo_datatables.datatables.query import MongoQueryBuilder
+from mongo_datatables.field_utils import FieldMapper
 from mongo_datatables.utils import SearchTermParser, is_truthy
 
 
-def parse_search_fixed(request_args: Dict[str, Any], query_builder, searchable_columns: List[str]) -> Dict[str, Any]:
+def parse_search_fixed(request_args: Dict[str, Any], query_builder: MongoQueryBuilder, searchable_columns: List[str]) -> Dict[str, Any]:
     """Parse searchFixed named searches (DataTables 2.0+) into a MongoDB filter.
 
     Supports both the DataTables 2.x wire format (``search.fixed`` array of
@@ -47,16 +49,13 @@ def parse_search_fixed(request_args: Dict[str, Any], query_builder, searchable_c
     return {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
 
-def parse_column_search_fixed(columns: List[Dict[str, Any]], field_mapper, query_builder) -> Dict[str, Any]:
+def parse_column_search_fixed(columns: List[Dict[str, Any]], field_mapper: FieldMapper, query_builder: MongoQueryBuilder) -> Dict[str, Any]:
     """Parse per-column searchFixed (DataTables 2.0+) into a MongoDB filter.
 
     Supports both the DataTables 2.x wire format (``columns[i].search.fixed``
     array of ``{name, term}`` objects) and the legacy dict format
     (``columns[i].searchFixed`` dict). Entries with ``term == "function"`` are
-    skipped.
-
-    Returns:
-        MongoDB query condition, or ``{}`` if no column-level fixed searches exist.
+    skipped. Returns MongoDB query condition, or ``{}`` if no column-level fixed searches exist.
     """
     conditions = []
     for col in columns:

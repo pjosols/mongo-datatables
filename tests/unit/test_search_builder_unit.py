@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 from mongo_datatables import DataTables
-from mongo_datatables.search_builder import _sb_date, _sb_number, _sb_string
+from mongo_datatables.datatables.search.builder import _sb_date, _sb_number, _sb_string
 
 
 # ---------------------------------------------------------------------------

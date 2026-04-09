@@ -5,7 +5,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 from mongo_datatables.exceptions import FieldMappingError
-from mongo_datatables.search_builder import _sb_date, _sb_number
+from mongo_datatables.datatables.search.builder import _sb_date, _sb_number
 from mongo_datatables.utils import DateHandler
 
 
