@@ -1,4 +1,8 @@
-"""Build and format Editor document updates for MongoDB insert/update operations."""
+"""Build and format Editor document updates for MongoDB insert/update operations.
+
+Handles JSON parsing, date field conversion, nested field separation, and type coercion
+for Editor CRUD payloads. Enforces CWE-20 security: date parsing only for declared fields.
+"""
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -97,6 +101,7 @@ def preprocess_document(
     processed_doc = {k: v for k, v in doc.items() if v is not None and _allowed(k)}
     dot_notation_updates: Dict[str, Any] = {}
 
+    mutations: Dict[str, Any] = {}
     for key, val in processed_doc.items():
         validate_field_name(key)
         if isinstance(val, str):
@@ -105,16 +110,16 @@ def preprocess_document(
                 if "." in key:
                     dot_notation_updates[key] = parsed_val
                 else:
-                    processed_doc[key] = parsed_val
+                    mutations[key] = parsed_val
                 continue
             except json.JSONDecodeError:
                 pass
 
         leaf = key.split(".")[-1]
         is_date_field = any(
-            f.name == leaf and f.field_type == "date" for f in data_fields
+            f.name == leaf and f.data_type == "date" for f in data_fields
         ) or any(
-            f.name == key and f.field_type == "date" for f in data_fields
+            f.name == key and f.data_type == "date" for f in data_fields
         )
 
         if isinstance(val, str) and is_date_field and val.strip():
@@ -123,12 +128,14 @@ def preprocess_document(
                 if "." in key:
                     dot_notation_updates[key] = date_obj
                 else:
-                    processed_doc[key] = date_obj
+                    mutations[key] = date_obj
             except FieldMappingError:
                 if "." in key:
+                    logger.warning("Date parse failed for %s, storing raw value: %s", key, val)
                     dot_notation_updates[key] = val
         elif "." in key:
             dot_notation_updates[key] = val
+    processed_doc.update(mutations)
 
     for key in list(processed_doc.keys()):
         if "." in key:
@@ -147,8 +154,9 @@ def build_updates(
 ) -> None:
     """Build a $set updates dict from nested Editor data, applying type conversions.
 
-    Traverses nested dicts, applies field type conversions (date, number, boolean, array),
-    and populates the updates dict with dot-notation keys.
+    Recursively traverses nested dicts, applies field type conversions (date, number,
+    boolean, array), and populates the updates dict with dot-notation keys. Logs
+    non-fatal conversion errors and stores raw values on failure.
 
     data: Data to process (dict or scalar).
     field_mapper: FieldMapper for type lookups.

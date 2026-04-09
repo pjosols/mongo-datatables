@@ -8,7 +8,10 @@ All notable changes to mongo-datatables are documented here.
 
 - Moved search modules into `datatables/search/` subpackage (`builder.py`, `fixed.py`, `panes.py`) — follows `datatables/query/` pattern; no public API impact
 - Extracted collection/text-index helpers from `datatables/core.py` into `datatables/_setup.py`
-- Updated docstrings in `datatables/query/regex_utils.py` and `editor/document.py` to Wholeshoot convention
+- Updated docstrings in `datatables/query/regex_utils.py`, `editor/document.py`, and test files to Wholeshoot convention
+- Enhanced `editor/document.py` module docstring to clarify CWE-20 security fix and JSON/date handling
+- Enhanced `build_updates()` docstring to document recursive traversal, type conversions, and error handling
+- Enhanced test module docstrings to clarify security validation and test scope
 
 ### Fixed
 

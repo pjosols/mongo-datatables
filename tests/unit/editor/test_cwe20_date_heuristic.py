@@ -1,8 +1,8 @@
-"""Tests for CWE-20: heuristic date field detection security fix.
+"""Verify CWE-20 fix: date parsing only for declared fields, not name-suffix heuristics.
 
-Verifies that preprocess_document() only parses ISO datetimes for fields
-explicitly declared with data_type == 'date' in data_fields, and does NOT
-apply name-suffix heuristics to arbitrary attacker-controlled field names.
+Ensures preprocess_document() rejects attacker-controlled field names ending in
+'date', 'time', or 'at' and only parses ISO datetimes for fields explicitly
+declared with data_type == 'date' in data_fields.
 """
 import pytest
 from datetime import datetime
@@ -62,7 +62,7 @@ def test_declared_date_field_is_parsed():
 
 def test_declared_date_field_nested_is_parsed():
     """Nested field declared with data_type='date' must be parsed to datetime."""
-    df = DataField("created_at", "date")
+    df = DataField("profile.created_at", "date")
     _, dot = _call({"profile.created_at": "2024-01-15T10:00:00"}, [df])
     assert isinstance(dot["profile.created_at"], datetime)
 
@@ -86,11 +86,12 @@ def test_no_data_fields_no_date_parsing():
 # --- Multiple fields: only declared date fields parsed ---
 
 def test_only_declared_date_fields_parsed_among_many():
-    """Only the field declared as date is parsed; others remain strings."""
+    """Only the field declared as date is parsed; undeclared fields are filtered when data_fields set."""
     df = DataField("published_at", "date")
     processed, _ = _call(
         {"published_at": "2024-03-01T00:00:00", "created_at": "2024-01-01T00:00:00"},
         [df],
     )
     assert isinstance(processed["published_at"], datetime)
-    assert isinstance(processed["created_at"], str)
+    # created_at is not in data_fields whitelist, so it is filtered out
+    assert "created_at" not in processed

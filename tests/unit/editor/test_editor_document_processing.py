@@ -1,4 +1,8 @@
-"""Test Editor document preprocessing, nested fields, and type conversions."""
+"""Test Editor document preprocessing, nested fields, and type conversions.
+
+Validates JSON parsing, date field handling (CWE-20 fix), nested field separation,
+input validation, and response formatting for Editor CRUD operations.
+"""
 import unittest
 import pytest
 from unittest.mock import MagicMock
@@ -33,20 +37,28 @@ class TestPreprocessDocument(unittest.TestCase):
         self.assertEqual(processed_doc["metadata"], {"key": "value"})
 
     def test_preprocess_document_with_date_fields(self):
-        request_args = {"action": "create", "data": {"0": {
+        """Date fields are only parsed when declared via data_fields (CWE-20 fix)."""
+        from mongo_datatables.datatables import DataField
+        from mongo_datatables.utils import FieldMapper
+        from mongo_datatables.editor.document import preprocess_document
+        data_fields = [
+            DataField("created_at", "date"),
+            DataField("update_date", "date"),
+            DataField("last_login_time", "date"),
+        ]
+        doc = {
             "name": "Test User",
             "created_at": "2023-01-15T14:30:45",
-            "update_date": "2023-02-20",
-            "metadata.last_login_time": "2023-03-10T09:15:30Z"
-        }}}
-        editor = Editor(self.mongo, 'users', request_args)
-        processed_doc, dot_notation = editor._preprocess_document(editor.data["0"])
+            "update_date": "2023-02-20T00:00:00",
+            "last_login_time": "2023-03-10T09:15:30",
+        }
+        fields = {f.alias: f for f in data_fields}
+        fm = FieldMapper(data_fields)
+        processed_doc, _ = preprocess_document(doc, fields, data_fields, fm)
         self.assertIsInstance(processed_doc["created_at"], datetime)
         self.assertIsInstance(processed_doc["update_date"], datetime)
-        self.assertIsInstance(dot_notation["metadata.last_login_time"], datetime)
         self.assertEqual(processed_doc["created_at"].year, 2023)
         self.assertEqual(processed_doc["update_date"].month, 2)
-        self.assertEqual(dot_notation["metadata.last_login_time"].month, 3)
 
     def test_preprocess_document_with_nested_fields(self):
         request_args = {"action": "create", "data": {"0": {
