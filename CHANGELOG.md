@@ -6,7 +6,14 @@ All notable changes to mongo-datatables are documented here.
 
 ### Changed
 
-- Updated all module and function docstrings to Wholeshoot convention: one-sentence imperative summaries, flat parameter descriptions, no type hint repetition
+- Moved search modules into `datatables/search/` subpackage (`builder.py`, `fixed.py`, `panes.py`) — follows `datatables/query/` pattern; no public API impact
+- Extracted collection/text-index helpers from `datatables/core.py` into `datatables/_setup.py`
+- Updated docstrings in `datatables/query/regex_utils.py` and `editor/document.py` to Wholeshoot convention
+
+### Fixed
+
+- `build_projection`: corrected `row_id` annotation from `str` to `Optional[str]`
+- `search/fixed.py`: added missing type hints on `query_builder` and `field_mapper` parameters
 
 ## [2.1.0] - 2026-04-07
 

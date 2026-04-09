@@ -1,4 +1,4 @@
-"""Format, preprocess, and build updates for Editor documents."""
+"""Build and format Editor document updates for MongoDB insert/update operations."""
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,16 +21,13 @@ def format_response_document(
     row_data=None,
     row_attr=None,
 ) -> Dict[str, Any]:
-    """Format a MongoDB document for the Editor response, converting ObjectId and datetime.
-
-    Converts ObjectId to DT_RowId string, serialises datetime fields to ISO format,
-    and attaches optional DT_Row* metadata.
+    """Format a MongoDB document for Editor response, converting ObjectId and datetime to strings.
 
     doc: Document from MongoDB.
     row_class: Optional string or callable(row) -> str for DT_RowClass.
     row_data: Optional dict or callable(row) -> dict for DT_RowData.
     row_attr: Optional dict or callable(row) -> dict for DT_RowAttr.
-    Returns formatted document dict.
+    Returns formatted document with DT_RowId, DT_RowClass, DT_RowData, DT_RowAttr as needed.
     """
     response_doc = dict(doc)
 
@@ -54,10 +51,10 @@ def format_response_document(
 
 
 def collect_files(file_fields: List[str], storage_adapter: StorageAdapter) -> Optional[Dict[str, Any]]:
-    """Collect file metadata from the storage adapter for all configured upload fields.
+    """Collect file metadata from storage adapter for all configured upload fields.
 
     file_fields: List of field names that are upload fields.
-    storage_adapter: StorageAdapter instance; must have files_for_field() method.
+    storage_adapter: StorageAdapter instance with files_for_field() method.
     Returns dict of {field: {file_id: metadata}}, or None if unavailable.
     """
     if not file_fields or not storage_adapter:
@@ -65,9 +62,9 @@ def collect_files(file_fields: List[str], storage_adapter: StorageAdapter) -> Op
     if not hasattr(storage_adapter, "files_for_field"):
         return None
     files = {
-        field: storage_adapter.files_for_field(field)
+        field: result
         for field in file_fields
-        if storage_adapter.files_for_field(field)
+        if (result := storage_adapter.files_for_field(field))
     }
     return files if files else None
 
@@ -78,7 +75,7 @@ def preprocess_document(
     data_fields: List[DataField],
     field_mapper: FieldMapper,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Process document data before database insert/update, parsing JSON and dates.
+    """Parse JSON and dates in document data before database insert/update.
 
     Converts JSON strings to objects, handles date field parsing, and separates
     dot-notation keys for nested updates.
@@ -88,6 +85,7 @@ def preprocess_document(
     data_fields: List of DataField objects.
     field_mapper: FieldMapper instance.
     Returns (processed_document, dot_notation_updates).
+    Raises ValueError if document payload exceeds limits.
     """
     validate_document_payload(doc)
     def _allowed(key: str) -> bool:
@@ -112,8 +110,11 @@ def preprocess_document(
             except json.JSONDecodeError:
                 pass
 
-        is_date_field = key.lower().endswith(("date", "time", "at")) or key.split(".")[-1].lower().endswith(
-            ("date", "time", "at")
+        leaf = key.split(".")[-1]
+        is_date_field = any(
+            f.name == leaf and f.field_type == "date" for f in data_fields
+        ) or any(
+            f.name == key and f.field_type == "date" for f in data_fields
         )
 
         if isinstance(val, str) and is_date_field and val.strip():
@@ -144,7 +145,7 @@ def build_updates(
     updates: Dict[str, Any],
     prefix: str = "",
 ) -> None:
-    """Recursively build a $set updates dict from nested Editor data, applying type conversions.
+    """Build a $set updates dict from nested Editor data, applying type conversions.
 
     Traverses nested dicts, applies field type conversions (date, number, boolean, array),
     and populates the updates dict with dot-notation keys.
@@ -169,7 +170,10 @@ def build_updates(
             build_updates(value, field_mapper, fields, data_fields, updates, full_key)
             continue
 
-        field_type = field_mapper.get_field_type(full_key) or "string"
+        field_type = field_mapper.get_field_type(full_key)
+        if field_type is None:
+            logger.debug("No field type found for %s, treating as string", full_key)
+            field_type = "string"
 
         if field_type == "date" and isinstance(value, str):
             try:

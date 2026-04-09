@@ -46,3 +46,5 @@ htmlcov/
 # Local dev notes and scripts
 _dev/
 .ltc/
+.ltc/logs/
+.ltc/reports/

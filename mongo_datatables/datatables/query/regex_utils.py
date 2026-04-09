@@ -14,7 +14,9 @@ _DANGEROUS_PATTERNS = re.compile(
     (\.\*){3,}          |   # excessive .* repetition
     \(\?[Ppi]           |   # inline flags or named groups that alter engine behaviour
     \(\?[<>!]           |   # lookahead / lookbehind (can be expensive)
-    \{[0-9]{4,}\}           # very large fixed repetition counts
+    \{[0-9]{4,}\}       |   # very large fixed repetition counts
+    (\(.*\|){2,}        |   # repeated alternation groups: (a|aa)+ style
+    (\+|\*|\?){2,}          # adjacent quantifiers on groups
     """,
     re.VERBOSE,
 )
