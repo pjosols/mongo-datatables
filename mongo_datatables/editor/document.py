@@ -114,10 +114,19 @@ def preprocess_document(
     processed_doc = {k: v for k, v in doc.items() if v is not None and _allowed(k)}
     dot_notation_updates: Dict[str, Any] = {}
 
+    _json_types = {"array", "object"}
+
+    def _declared_type(key: str) -> Optional[str]:
+        leaf = key.split(".")[-1]
+        for f in data_fields:
+            if f.name == key or f.name == leaf:
+                return f.data_type
+        return None
+
     mutations: Dict[str, Any] = {}
     for key, val in processed_doc.items():
         validate_field_name(key)
-        if isinstance(val, str) and len(val) <= _MAX_JSON_PARSE_LEN:
+        if isinstance(val, str) and len(val) <= _MAX_JSON_PARSE_LEN and _declared_type(key) in _json_types:
             try:
                 parsed_val = json.loads(val)
                 if "." in key:
