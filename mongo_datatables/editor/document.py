@@ -92,6 +92,13 @@ def preprocess_document(
     Raises ValueError if document payload exceeds limits.
     """
     validate_document_payload(doc)
+    if not fields:
+        logger.warning(
+            "preprocess_document called with no data_fields whitelist — "
+            "all client-supplied fields will be written to MongoDB. "
+            "Configure data_fields to restrict writable fields."
+        )
+
     def _allowed(key: str) -> bool:
         if not fields:
             return True
