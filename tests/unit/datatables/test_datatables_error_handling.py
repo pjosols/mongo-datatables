@@ -61,24 +61,44 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
         sort_spec = datatables.sort_specification
         self.assertTrue(isinstance(sort_spec, (dict, list)))
 
-    def test_format_result_values_with_complex_data(self):
-        datatables = DataTables(self.mongo, 'test_collection', self.request_args,
-                                data_fields=self.data_fields)
-        result_dict = {
+    def _make_complex_result(self) -> dict:
+        return {
             '_id': ObjectId('5f50c31e8a91e8c9c8d5c5d5'),
             'title': 'Test Title',
             'published_date': datetime(2020, 1, 1),
             'nested': {'id': ObjectId('5f50c31e8a91e8c9c8d5c5d6'), 'date': datetime(2020, 2, 2)},
             'array_field': [ObjectId('5f50c31e8a91e8c9c8d5c5d7'), datetime(2020, 3, 3)],
         }
-        result_copy = copy.deepcopy(result_dict)
-        datatables._format_result_values(result_copy)
-        self.assertIsInstance(result_copy['_id'], str)
-        self.assertIsInstance(result_copy['published_date'], str)
-        self.assertIsInstance(result_copy['nested']['id'], str)
-        self.assertIsInstance(result_copy['nested']['date'], str)
-        self.assertIsInstance(result_copy['array_field'][0], str)
-        self.assertIsInstance(result_copy['array_field'][1], str)
+
+    def _formatted_complex_result(self) -> dict:
+        dt = DataTables(self.mongo, 'test_collection', self.request_args, data_fields=self.data_fields)
+        result = copy.deepcopy(self._make_complex_result())
+        dt._format_result_values(result)
+        return result
+
+    def test_format_result_values_converts_objectid_to_str(self):
+        result = self._formatted_complex_result()
+        self.assertIsInstance(result['_id'], str)
+
+    def test_format_result_values_converts_datetime_to_str(self):
+        result = self._formatted_complex_result()
+        self.assertIsInstance(result['published_date'], str)
+
+    def test_format_result_values_converts_nested_objectid_to_str(self):
+        result = self._formatted_complex_result()
+        self.assertIsInstance(result['nested']['id'], str)
+
+    def test_format_result_values_converts_nested_datetime_to_str(self):
+        result = self._formatted_complex_result()
+        self.assertIsInstance(result['nested']['date'], str)
+
+    def test_format_result_values_converts_array_objectid_to_str(self):
+        result = self._formatted_complex_result()
+        self.assertIsInstance(result['array_field'][0], str)
+
+    def test_format_result_values_converts_array_datetime_to_str(self):
+        result = self._formatted_complex_result()
+        self.assertIsInstance(result['array_field'][1], str)
 
     def test_count_filtered_both_aggregate_and_count_documents_fail(self):
         dt = DataTables(self.mongo, 'test_collection', self.request_args, ["name"])
@@ -125,17 +145,32 @@ class TestDataTablesErrorHandling(BaseDataTablesTest):
 class TestDataTablesEdgeCases(BaseDataTablesTest):
     """Test cases for edge cases in the DataTables class."""
 
-    def test_exact_phrase_search_without_text_index(self):
+    def _exact_phrase_condition(self):
         self.request_args['search']['value'] = '"exact phrase"'
-        datatables = DataTables(self.mongo, 'test_collection', self.request_args,
-                                use_text_index=False)
-        condition = datatables.global_search_condition
-        self.assertIn('$or', condition)
-        for subcondition in condition['$or']:
-            field_name = list(subcondition.keys())[0]
-            if '$regex' in subcondition[field_name]:
-                self.assertIn('\\bexact\\ phrase\\b', subcondition[field_name]['$regex'])
-                self.assertEqual(subcondition[field_name]['$options'], 'i')
+        dt = DataTables(self.mongo, 'test_collection', self.request_args, use_text_index=False)
+        return dt.global_search_condition
+
+    def test_exact_phrase_search_without_text_index_or_structure(self):
+        self.assertIn('$or', self._exact_phrase_condition())
+
+    def _exact_phrase_regex_sub(self):
+        condition = self._exact_phrase_condition()
+        return next(
+            (s for s in condition['$or'] if '$regex' in s.get(list(s.keys())[0], {})),
+            None,
+        )
+
+    def test_exact_phrase_search_without_text_index_regex_pattern(self):
+        regex_sub = self._exact_phrase_regex_sub()
+        self.assertIsNotNone(regex_sub)
+        field = list(regex_sub.keys())[0]
+        self.assertIn('\\bexact\\ phrase\\b', regex_sub[field]['$regex'])
+
+    def test_exact_phrase_search_without_text_index_regex_options(self):
+        regex_sub = self._exact_phrase_regex_sub()
+        self.assertIsNotNone(regex_sub)
+        field = list(regex_sub.keys())[0]
+        self.assertEqual(regex_sub[field]['$options'], 'i')
 
     def test_numeric_field_search(self):
         self.request_args['search']['value'] = '42'
