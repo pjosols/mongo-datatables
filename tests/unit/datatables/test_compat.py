@@ -141,3 +141,50 @@ class TestParseSearchFixedShim(BaseDataTablesTest):
             mp.setattr("mongo_datatables.datatables.search.fixed.parse_search_fixed", mock_fn)
             result = dt._parse_search_fixed()
         assert result == {"patched": True}
+
+
+class TestParseRowgroupConfig(BaseDataTablesTest):
+    """_parse_rowgroup_config strips startRender/endRender and validates dataSrc."""
+
+    def _dt_with_rowgroup(self, config: dict):
+        args = _base_args([_col("name")])
+        args["rowGroup"] = config
+        return _make_dt(self.mongo, args)
+
+    def test_returns_none_when_rowgroup_absent(self):
+        dt = _make_dt(self.mongo, _base_args([_col("name")]))
+        assert dt._parse_rowgroup_config() is None
+
+    def test_returns_none_when_no_datasrc(self):
+        dt = self._dt_with_rowgroup({"startRender": "fn()"})
+        assert dt._parse_rowgroup_config() is None
+
+    def test_strips_start_render(self):
+        dt = self._dt_with_rowgroup({"dataSrc": "status", "startRender": "fn()"})
+        result = dt._parse_rowgroup_config()
+        assert "startRender" not in result
+
+    def test_strips_end_render(self):
+        dt = self._dt_with_rowgroup({"dataSrc": "status", "endRender": "fn()"})
+        result = dt._parse_rowgroup_config()
+        assert "endRender" not in result
+
+    def test_strips_both_render_keys(self):
+        dt = self._dt_with_rowgroup({"dataSrc": "status", "startRender": "a", "endRender": "b"})
+        result = dt._parse_rowgroup_config()
+        assert "startRender" not in result
+        assert "endRender" not in result
+
+    def test_preserves_datasrc(self):
+        dt = self._dt_with_rowgroup({"dataSrc": "status"})
+        assert dt._parse_rowgroup_config() == {"dataSrc": "status"}
+
+    def test_result_contains_only_datasrc_after_strip(self):
+        # _parse_extension_config for rowGroup only surfaces dataSrc; strip keys are irrelevant
+        dt = self._dt_with_rowgroup({"dataSrc": "status", "startRender": "fn()", "endRender": "fn()"})
+        result = dt._parse_rowgroup_config()
+        assert result == {"dataSrc": "status"}
+
+    def test_no_rowgroup_strip_keys_constant_on_module(self):
+        import mongo_datatables.datatables.compat as compat_mod
+        assert not hasattr(compat_mod, "_ROWGROUP_STRIP_KEYS")

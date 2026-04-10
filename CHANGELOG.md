@@ -17,6 +17,7 @@ All notable changes to mongo-datatables are documented here.
 - `editor/validators/upload_security.py`: refined module docstring for conciseness
 - `datatables/_limits.py`: refined module docstring to include pagination
 - `datatables/compat.py`: added Wholeshoot docstrings to all methods and properties
+- `tests/unit/datatables/test_compat.py`: module docstring documents backward-compatible shim verification; added Wholeshoot docstrings to all test classes and methods
 - `datatables/core.py`: added Wholeshoot docstrings to all properties and methods
 - `datatables/request_validator.py`: refined module docstring for precision; refined function docstrings to specify exception conditions inline
 - Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`, `tests/unit/editor/test_editor_crud.py`, `tests/unit/editor/test_editor_upload.py`, `tests/unit/datatables/test_request_validator.py`

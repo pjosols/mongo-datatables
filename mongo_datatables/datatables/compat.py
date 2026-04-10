@@ -17,7 +17,6 @@ __all__ = [
     "DataTablesMixin",
 ]
 
-_ROWGROUP_STRIP_KEYS = {"startRender", "endRender"}
 
 
 class DataTablesMixin:
@@ -142,4 +141,4 @@ class DataTablesMixin:
         config = self._parse_extension_config("rowGroup")
         if config is None or "dataSrc" not in config:
             return None
-        return {k: v for k, v in config.items() if k not in _ROWGROUP_STRIP_KEYS}
+        return {k: v for k, v in config.items() if k not in {"startRender", "endRender"}}
