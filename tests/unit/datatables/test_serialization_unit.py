@@ -70,6 +70,8 @@ class TestFloatSerialization(BaseDataTablesTest):
 
 class TestDecimal128Serialization(BaseDataTablesTest):
     """Convert Decimal128 values to float in top-level, nested, and list contexts."""
+
+    def test_top_level_decimal128_converted(self):
         dt = self._make_dt()
         doc = {'price': Decimal128('19.99')}
         dt._format_result_values(doc)
