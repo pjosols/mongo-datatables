@@ -10,13 +10,13 @@ _MAX_PATTERN_LEN = 200
 _MAX_NESTING_DEPTH = 2
 
 # Reject patterns that can cause catastrophic backtracking:
-# - unescaped closing paren followed by a quantifier: (...)+ (...)*
+# - unescaped closing paren followed by any quantifier: (...)+ (...)* (...){n}
 # - lookahead/behind, named groups, inline flags
 # - stacked quantifiers: a++ a**
 # - very large bounded repetition
 _UNSAFE_PATTERNS = re.compile(
     r"""
-    (?<!\\)\)[\*\+\?]    |  # unescaped group close + quantifier: (...)+ (...)*
+    (?<!\\)\)[\*\+\?\{]  |  # group close + quantifier (including bounded): (...)+ (...){n}
     \(\?[Ppi<>!=]        |  # lookahead/behind, named groups, inline flags
     (?<!\\)[\*\+\?]{2,}  |  # stacked quantifiers: a++ a**
     \{[0-9]{4,}              # very large bounded repetition
@@ -29,9 +29,10 @@ def validate_regex(pattern: str) -> Optional[str]:
     """Validate a user-supplied regex pattern for safety.
 
     Rejects patterns that can cause catastrophic backtracking in Python's
-    re engine. Bans quantifiers on groups (covering (a+)+, (a|a)+, and all
-    similar constructs), lookahead/behind, stacked quantifiers, and very
-    large bounded repetitions. Also limits nesting depth.
+    re engine. Bans any quantifier (including bounded `{n}`) on groups,
+    covering (a+)+, (a+){2}, and all similar constructs, as well as
+    lookahead/behind, stacked quantifiers, and very large bounded repetitions.
+    Also limits nesting depth.
 
     pattern: The raw regex string from user input.
     Returns the pattern unchanged if valid.
