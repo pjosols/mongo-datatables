@@ -11,6 +11,26 @@ from mongo_datatables.datatables.search.panes import get_searchpanes_options
 from mongo_datatables.utils import FieldMapper
 
 
+def _make_dt(request_args: dict, data_fields: list | None = None, collection: MagicMock | None = None, **kwargs) -> DataTables:
+    """Construct a DataTables instance backed by a MagicMock collection.
+
+    request_args: partial request args; 'draw' is injected if absent.
+    data_fields: list of DataField instances; defaults to [].
+    collection: optional pre-configured MagicMock collection.
+    kwargs: extra keyword args forwarded to DataTables.
+    Returns a DataTables instance.
+    """
+    mongo = MagicMock()
+    mongo.db = MagicMock(spec=Database)
+    if collection is None:
+        collection = MagicMock(spec=Collection)
+        collection.estimated_document_count.return_value = 0
+    collection.list_indexes.return_value = []
+    mongo.db.__getitem__.return_value = collection
+    args = {"draw": 1, **request_args}
+    return DataTables(mongo, "test_collection", args, data_fields=data_fields or [], **kwargs)
+
+
 class TestSearchPanes:
     def setup_method(self):
         self.mongo = MagicMock()
@@ -96,64 +116,47 @@ class TestSearchPanes:
         assert filter_condition == {"$and": [{"age": {"$in": [25, 30]}}]}
 
 
-def _make_dt_new(data_fields: list, request_args: dict) -> DataTables:
-    """Construct a DataTables instance with minimal request_args for unit tests.
-
-    data_fields: list of DataField instances.
-    request_args: partial request args; 'draw' is injected if absent.
-    Returns a DataTables instance backed by a MagicMock collection.
-    """
-    mongo = MagicMock()
-    mongo.db = MagicMock(spec=Database)
-    collection = MagicMock(spec=Collection)
-    mongo.db.__getitem__.return_value = collection
-    collection.list_indexes.return_value = []
-    collection.estimated_document_count.return_value = 0
-    args = {"draw": 1, **request_args}
-    return DataTables(mongo, "test_collection", args, data_fields=data_fields)
-
-
 class TestSearchPanesDateFilter:
     def test_date_iso_date_string_converted_to_datetime(self):
-        dt = _make_dt_new([DataField('created_at', 'date')], {"searchPanes": {"created_at": ["2024-03-15"]}})
+        dt = _make_dt({"searchPanes": {"created_at": ["2024-03-15"]}}, [DataField('created_at', 'date')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"created_at": {"$in": [datetime(2024, 3, 15)]}}]}
 
     def test_date_iso_datetime_string_converted_to_datetime(self):
-        dt = _make_dt_new([DataField('created_at', 'date')], {"searchPanes": {"created_at": ["2024-03-15T00:00:00.000Z"]}})
+        dt = _make_dt({"searchPanes": {"created_at": ["2024-03-15T00:00:00.000Z"]}}, [DataField('created_at', 'date')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"created_at": {"$in": [datetime(2024, 3, 15)]}}]}
 
     def test_date_invalid_falls_back_to_string(self):
-        dt = _make_dt_new([DataField('created_at', 'date')], {"searchPanes": {"created_at": ["not-a-date"]}})
+        dt = _make_dt({"searchPanes": {"created_at": ["not-a-date"]}}, [DataField('created_at', 'date')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"created_at": {"$in": ["not-a-date"]}}]}
 
     def test_date_multiple_values(self):
-        dt = _make_dt_new([DataField('created_at', 'date')], {"searchPanes": {"created_at": ["2024-01-01", "2024-06-15T12:00:00Z"]}})
+        dt = _make_dt({"searchPanes": {"created_at": ["2024-01-01", "2024-06-15T12:00:00Z"]}}, [DataField('created_at', 'date')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"created_at": {"$in": [datetime(2024, 1, 1), datetime(2024, 6, 15)]}}]}
 
 
 class TestSearchPanesExceptionNarrowing:
     def test_invalid_objectid_falls_back_to_raw_string(self):
-        dt = _make_dt_new([DataField('ref', 'objectid')], {"searchPanes": {"ref": ["not-an-objectid"]}})
+        dt = _make_dt({"searchPanes": {"ref": ["not-an-objectid"]}}, [DataField('ref', 'objectid')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"ref": {"$in": ["not-an-objectid"]}}]}
 
     def test_valid_objectid_is_converted(self):
         oid = ObjectId()
-        dt = _make_dt_new([DataField('ref', 'objectid')], {"searchPanes": {"ref": [str(oid)]}})
+        dt = _make_dt({"searchPanes": {"ref": [str(oid)]}}, [DataField('ref', 'objectid')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"ref": {"$in": [oid]}}]}
 
     def test_invalid_date_falls_back_to_raw_string(self):
-        dt = _make_dt_new([DataField('created_at', 'date')], {"searchPanes": {"created_at": ["not-a-date"]}})
+        dt = _make_dt({"searchPanes": {"created_at": ["not-a-date"]}}, [DataField('created_at', 'date')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"created_at": {"$in": ["not-a-date"]}}]}
 
     def test_valid_date_is_converted_to_datetime(self):
-        dt = _make_dt_new([DataField('created_at', 'date')], {"searchPanes": {"created_at": ["2024-06-01"]}})
+        dt = _make_dt({"searchPanes": {"created_at": ["2024-06-01"]}}, [DataField('created_at', 'date')])
         result = dt._parse_searchpanes_filters()
         assert result == {"$and": [{"created_at": {"$in": [datetime(2024, 6, 1)]}}]}
 
@@ -169,26 +172,13 @@ BASE_ARGS = {
 }
 
 
-def _make_dt_full(request_args, data_fields=None, custom_filter=None):
-    mongo = MagicMock()
-    mongo.db = MagicMock(spec=Database)
-    collection = MagicMock(spec=Collection)
-    mongo.db.__getitem__.return_value = collection
-    collection.list_indexes.return_value = []
-    collection.estimated_document_count.return_value = 0
-    kwargs = {}
-    if custom_filter:
-        kwargs.update(custom_filter)
-    return DataTables(mongo, "test_collection", request_args, data_fields=data_fields or [], **kwargs)
-
-
 def _facet_result(col_name, rows):
     return [{col_name: rows}]
 
 
 class TestSearchPanesTotalCount:
     def test_options_include_total_and_count_keys(self):
-        dt = _make_dt_full(BASE_ARGS, [DataField("status", "string")])
+        dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
         dt.collection.aggregate.return_value = _facet_result("status", [
             {"_id": "Active", "count": 5}, {"_id": "Inactive", "count": 3},
         ])
@@ -199,7 +189,7 @@ class TestSearchPanesTotalCount:
             assert "count" in opt
 
     def test_total_equals_base_count_no_filter(self):
-        dt = _make_dt_full(BASE_ARGS, [DataField("status", "string")])
+        dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
         dt.collection.aggregate.return_value = _facet_result("status", [{"_id": "Active", "count": 7}])
         options = dt.get_searchpanes_options()
         opt = options["status"][0]
@@ -209,7 +199,7 @@ class TestSearchPanesTotalCount:
     def test_count_zero_when_filtered_out(self):
         args = dict(BASE_ARGS)
         args["search"] = {"value": "Active", "regex": False}
-        dt = _make_dt_full(args, [DataField("status", "string")])
+        dt = _make_dt(args, [DataField("status", "string")])
         dt.collection.aggregate.side_effect = [
             _facet_result("status", [{"_id": "Active", "count": 5}, {"_id": "Inactive", "count": 3}]),
             _facet_result("status", [{"_id": "Active", "count": 5}]),
@@ -222,7 +212,7 @@ class TestSearchPanesTotalCount:
         assert status_opts["Inactive"]["count"] == 0
 
     def test_two_aggregations_called_per_column(self):
-        dt = _make_dt_full(BASE_ARGS, [DataField("status", "string")])
+        dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
         dt.collection.aggregate.return_value = _facet_result("status", [{"_id": "Active", "count": 2}])
         dt.get_searchpanes_options()
         assert dt.collection.aggregate.call_count == 2
@@ -234,7 +224,7 @@ class TestSearchPanesTotalCount:
             {"data": "category", "searchable": True, "orderable": True, "search": {"value": "", "regex": False}},
             {"data": "region", "searchable": True, "orderable": True, "search": {"value": "", "regex": False}},
         ]
-        dt = _make_dt_full(args, [DataField("status", "string"), DataField("category", "string"), DataField("region", "string")])
+        dt = _make_dt(args, [DataField("status", "string"), DataField("category", "string"), DataField("region", "string")])
         dt.collection.aggregate.return_value = [{"status": [], "category": [], "region": []}]
         dt.get_searchpanes_options()
         assert dt.collection.aggregate.call_count == 2
@@ -242,7 +232,7 @@ class TestSearchPanesTotalCount:
     def test_total_pipeline_uses_custom_filter_only(self):
         args = dict(BASE_ARGS)
         args["search"] = {"value": "something", "regex": False}
-        dt = _make_dt_full(args, [DataField("status", "string")], custom_filter={"tenant": "acme"})
+        dt = _make_dt(args, [DataField("status", "string")], tenant="acme")
         dt.collection.aggregate.return_value = [{"status": []}]
         dt.get_searchpanes_options()
         calls = dt.collection.aggregate.call_args_list
@@ -256,7 +246,7 @@ class TestSearchPanesTotalCount:
     def test_count_pipeline_uses_full_filter(self):
         args = dict(BASE_ARGS)
         args["search"] = {"value": "Active", "regex": False}
-        dt = _make_dt_full(args, [DataField("status", "string")])
+        dt = _make_dt(args, [DataField("status", "string")])
         dt.collection.aggregate.return_value = [{"status": []}]
         dt.get_searchpanes_options()
         calls = dt.collection.aggregate.call_args_list
@@ -264,7 +254,7 @@ class TestSearchPanesTotalCount:
         assert count_pipeline[0]["$match"] == dt.filter
 
     def test_options_sorted_by_total_descending(self):
-        dt = _make_dt_full(BASE_ARGS, [DataField("status", "string")])
+        dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
         dt.collection.aggregate.return_value = _facet_result("status", [
             {"_id": "Rare", "count": 1}, {"_id": "Common", "count": 10}, {"_id": "Medium", "count": 5},
         ])
@@ -275,14 +265,14 @@ class TestSearchPanesTotalCount:
     def test_no_searchpanes_no_options_in_response(self):
         args = dict(BASE_ARGS)
         args.pop("searchPanes")
-        dt = _make_dt_full(args, [DataField("status", "string")])
+        dt = _make_dt(args, [DataField("status", "string")])
         dt.collection.aggregate.return_value = iter([])
         dt.collection.count_documents.return_value = 0
         response = dt.get_rows()
         assert "searchPanes" not in response
 
     def test_get_rows_includes_total_in_options(self):
-        dt = _make_dt_full(BASE_ARGS, [DataField("status", "string")])
+        dt = _make_dt(BASE_ARGS, [DataField("status", "string")])
         dt.collection.aggregate.side_effect = [
             iter([]),
             _facet_result("status", [{"_id": "Active", "count": 4}]),
@@ -299,12 +289,6 @@ class TestSearchPanesTotalCount:
 class TestSearchPanesCountMapFix:
     """Tests for the count_map _hashable key fix in get_searchpanes_options."""
 
-    def _make_dt(self, request_args, collection, data_fields=None):
-        mongo = MagicMock()
-        mongo.db = MagicMock(spec=Database)
-        mongo.db.__getitem__.return_value = collection
-        return DataTables(mongo, "test", request_args, data_fields or [])
-
     def test_count_map_uses_hashable_key_for_decimal128(self):
         """count_map lookup must use _hashable key so Decimal128 values match."""
 
@@ -320,20 +304,17 @@ class TestSearchPanesCountMapFix:
         collection.list_indexes.return_value = []
 
         d128 = Decimal128("9.99")
-        # total facet: price=9.99 appears 5 times
         total_facet = [{"price": [{"_id": d128, "count": 5}]}]
-        # count facet: price=9.99 appears 3 times (filtered)
         count_facet = [{"price": [{"_id": d128, "count": 3}]}]
         collection.aggregate.side_effect = [total_facet, count_facet]
 
-        dt = self._make_dt(request_args, collection)
+        dt = _make_dt(request_args, collection=collection)
         options = dt.get_searchpanes_options()
 
         assert "price" in options
         assert len(options["price"]) == 1
         opt = options["price"][0]
         assert opt["total"] == 5
-        # Before the fix this was 0; after the fix it must be 3
         assert opt["count"] == 3, f"count_map lookup failed: got {opt['count']}, expected 3"
 
     def test_count_map_non_decimal128_values_unaffected(self):
@@ -354,7 +335,7 @@ class TestSearchPanesCountMapFix:
         count_facet = [{"status": [{"_id": "active", "count": 7}]}]
         collection.aggregate.side_effect = [total_facet, count_facet]
 
-        dt = self._make_dt(request_args, collection)
+        dt = _make_dt(request_args, collection=collection)
         options = dt.get_searchpanes_options()
 
         assert options["status"][0]["count"] == 7
@@ -370,7 +351,6 @@ class TestSearchPanesCoverageGaps:
         mongo.db.__getitem__.return_value = collection
         collection.list_indexes.return_value = []
         collection.estimated_document_count.return_value = 0
-        self.collection = collection
         return DataTables(mongo, "test", request_args, data_fields=data_fields or [])
 
     # --- get_searchpanes_options ---
@@ -402,7 +382,6 @@ class TestSearchPanesCoverageGaps:
 
         result = get_searchpanes_options(columns, mapper, {}, {}, collection, False)
 
-        # Verify $unwind was included in at least one pipeline call
         calls = collection.aggregate.call_args_list
         all_stages = str(calls)
         assert "$unwind" in all_stages
@@ -483,5 +462,4 @@ class TestSearchPanesCoverageGaps:
             [DataField("status", "string"), DataField("name", "string")],
         )
         result = dt._parse_searchpanes_filters()
-        # status has no values after normalisation; only name produces a condition
         assert result == {"$and": [{"name": {"$in": ["Alice"]}}]}

@@ -1,8 +1,6 @@
 """SearchBuilder date-specific tests: _sb_date operators, ISO datetime, exception narrowing, DateHandler."""
 import pytest
-import unittest
 from datetime import datetime
-from unittest.mock import patch
 
 from mongo_datatables.exceptions import FieldMappingError
 from mongo_datatables.datatables.search.builder import _sb_date, _sb_number
@@ -13,33 +11,33 @@ from mongo_datatables.utils import DateHandler
 # _sb_date: ISO datetime string input
 # ---------------------------------------------------------------------------
 
-class TestSbDateIsoDatetime(unittest.TestCase):
-    def setUp(self):
+class TestSbDateIsoDatetime:
+    def setup_method(self):
         self.field = "created_at"
 
     def test_equal_iso_datetime_string(self):
         result = _sb_date(self.field, "=", "2024-01-15T00:00:00.000Z", None)
-        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}})
+        assert result == {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}}
 
     def test_greater_iso_datetime_string(self):
         result = _sb_date(self.field, ">", "2024-01-15T00:00:00.000Z", None)
-        self.assertEqual(result, {self.field: {"$gt": datetime(2024, 1, 15)}})
+        assert result == {self.field: {"$gt": datetime(2024, 1, 15)}}
 
     def test_less_iso_datetime_string(self):
         result = _sb_date(self.field, "<", "2024-01-15T00:00:00.000Z", None)
-        self.assertEqual(result, {self.field: {"$lt": datetime(2024, 1, 15)}})
+        assert result == {self.field: {"$lt": datetime(2024, 1, 15)}}
 
     def test_plain_date_string_unchanged(self):
         result = _sb_date(self.field, "=", "2024-01-15", None)
-        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}})
+        assert result == {self.field: {"$gte": datetime(2024, 1, 15), "$lt": datetime(2024, 1, 16)}}
 
 
 # ---------------------------------------------------------------------------
 # _sb_date: operator coverage
 # ---------------------------------------------------------------------------
 
-class TestSbDateOperators(unittest.TestCase):
-    def setUp(self):
+class TestSbDateOperators:
+    def setup_method(self):
         self.field = "created_at"
         self.date_str = "2024-03-15"
         self.day_start = datetime(2024, 3, 15)
@@ -47,31 +45,31 @@ class TestSbDateOperators(unittest.TestCase):
 
     def test_lte_returns_lt_next_day(self):
         result = _sb_date(self.field, "<=", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$lt": self.next_day}})
+        assert result == {self.field: {"$lt": self.next_day}}
 
     def test_gte_returns_gte_day_start(self):
         result = _sb_date(self.field, ">=", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$gte": self.day_start}})
+        assert result == {self.field: {"$gte": self.day_start}}
 
     def test_lt_still_works(self):
         result = _sb_date(self.field, "<", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$lt": self.day_start}})
+        assert result == {self.field: {"$lt": self.day_start}}
 
     def test_gt_still_works(self):
         result = _sb_date(self.field, ">", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$gt": self.day_start}})
+        assert result == {self.field: {"$gt": self.day_start}}
 
     def test_eq_still_works(self):
         result = _sb_date(self.field, "=", self.date_str, None)
-        self.assertEqual(result, {self.field: {"$gte": self.day_start, "$lt": self.next_day}})
+        assert result == {self.field: {"$gte": self.day_start, "$lt": self.next_day}}
 
     def test_between_still_works(self):
         result = _sb_date(self.field, "between", "2024-03-01", "2024-03-31")
-        self.assertEqual(result, {self.field: {"$gte": datetime(2024, 3, 1), "$lt": datetime(2024, 4, 1)}})
+        assert result == {self.field: {"$gte": datetime(2024, 3, 1), "$lt": datetime(2024, 4, 1)}}
 
     def test_invalid_date_returns_empty(self):
         result = _sb_date(self.field, "<=", "not-a-date", None)
-        self.assertEqual(result, {})
+        assert result == {}
 
 
 # ---------------------------------------------------------------------------

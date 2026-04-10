@@ -28,10 +28,6 @@ def _dt(sb_payload, extra_args=None):
     return DataTables(mock_db, "test", args)
 
 
-def _sb_dt(sb_payload):
-    return _dt(sb_payload)
-
-
 def _criterion(condition, field, type_, value, value2=None):
     c = {"condition": condition, "origData": field, "type": type_, "value": value}
     if value2 is not None:
@@ -232,17 +228,8 @@ class TestSearchBuilderLogic:
 
 class TestSearchBuilderFilterIntegration:
     def test_search_builder_included_in_filter(self):
-        args = {
-            "draw": "1", "start": "0", "length": "10",
-            "search": {"value": "", "regex": False},
-            "order": [], "columns": [],
-            "searchBuilder": {
-                "criteria": [{"condition": "=", "origData": "status", "type": "string", "value": ["active"]}],
-                "logic": "AND"
-            }
-        }
-        dt = DataTables(MagicMock(**{"__getitem__": MagicMock(return_value=MagicMock(list_indexes=MagicMock(return_value=[])))}), "test", args)
-        assert "status" in json.dumps(dt.filter)
+        sb = {"criteria": [{"condition": "=", "origData": "status", "type": "string", "value": ["active"]}], "logic": "AND"}
+        assert "status" in json.dumps(_dt(sb).filter)
 
     def test_search_builder_combined_with_custom_filter(self):
         mock_col = MagicMock()
@@ -284,39 +271,39 @@ class TestSearchBuilderFilterIntegration:
 
 class TestSbValue2:
     def test_number_between_value2(self):
-        result = _sb_dt({"criteria": [_criterion("between", "age", "num", ["20"], value2="40")],
-                         "logic": "AND"})._parse_search_builder()
+        result = _dt({"criteria": [_criterion("between", "age", "num", ["20"], value2="40")],
+                      "logic": "AND"})._parse_search_builder()
         assert result == {"age": {"$gte": 20.0, "$lte": 40.0}}
 
     def test_number_not_between_value2(self):
-        result = _sb_dt({"criteria": [_criterion("!between", "age", "num", ["20"], value2="30")],
-                         "logic": "AND"}).filter
+        result = _dt({"criteria": [_criterion("!between", "age", "num", ["20"], value2="30")],
+                      "logic": "AND"}).filter
         assert result == {"$or": [{"age": {"$lt": 20}}, {"age": {"$gt": 30}}]}
 
     def test_date_between_value2(self):
-        result = _sb_dt({"criteria": [_criterion("between", "created", "date",
-                                                  ["2024-01-01"], value2="2024-01-31")],
-                         "logic": "AND"})._parse_search_builder()
+        result = _dt({"criteria": [_criterion("between", "created", "date",
+                                              ["2024-01-01"], value2="2024-01-31")],
+                      "logic": "AND"})._parse_search_builder()
         assert result == {"created": {"$gte": datetime(2024, 1, 1), "$lt": datetime(2024, 2, 1)}}
 
     def test_date_not_between_value2(self):
-        result = _sb_dt({"criteria": [_criterion("!between", "created", "date",
-                                                  ["2024-01-01"], value2="2024-12-31")],
-                         "logic": "AND"}).filter
+        result = _dt({"criteria": [_criterion("!between", "created", "date",
+                                              ["2024-01-01"], value2="2024-12-31")],
+                      "logic": "AND"}).filter
         assert "$or" in result
         assert len(result["$or"]) == 2
         assert "$lt" in result["$or"][0].get("created", {})
         assert "$gte" in result["$or"][1].get("created", {})
 
     def test_between_value_array_still_works(self):
-        result = _sb_dt({"criteria": [_criterion("between", "age", "num", ["20", "40"])],
-                         "logic": "AND"})._parse_search_builder()
+        result = _dt({"criteria": [_criterion("between", "age", "num", ["20", "40"])],
+                      "logic": "AND"})._parse_search_builder()
         assert result == {"age": {"$gte": 20.0, "$lte": 40.0}}
 
     def test_between_value2_takes_precedence(self):
-        result = _sb_dt({"criteria": [_criterion("between", "price", "num",
-                                                  ["100"], value2="200")],
-                         "logic": "AND"})._parse_search_builder()
+        result = _dt({"criteria": [_criterion("between", "price", "num",
+                                              ["100"], value2="200")],
+                      "logic": "AND"})._parse_search_builder()
         assert result == {"price": {"$gte": 100.0, "$lte": 200.0}}
 
 
