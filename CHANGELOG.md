@@ -15,6 +15,7 @@ All notable changes to mongo-datatables are documented here.
 
 - `editor/document.py`: declared date fields were not being parsed due to wrong attribute name (`field_type` vs `data_type`)
 - `datatables/formatting.py`: `format_result_values()` docstring now follows Wholeshoot convention
+- `exceptions.py`: exception class docstrings now follow Wholeshoot convention (one-sentence, no examples)
 - Various type annotation corrections and import cleanup
 
 ## [2.1.0] - 2026-04-07
