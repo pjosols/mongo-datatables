@@ -21,7 +21,9 @@ def _fmt(doc: Dict[str, Any], row_class: Any, row_data: Any, row_attr: Any) -> D
     """Format a document for Editor response.
 
     doc: Raw MongoDB document.
-    row_class/row_data/row_attr: DT_Row* metadata providers.
+    row_class: DT_RowClass provider (string or callable).
+    row_data: DT_RowData provider (dict or callable).
+    row_attr: DT_RowAttr provider (dict or callable).
     Returns formatted document dict.
     """
     return format_response_document(doc, row_class, row_data, row_attr)
@@ -49,7 +51,9 @@ def run_create(
     field_mapper: FieldMapper instance.
     file_fields: Upload field names.
     storage_adapter: StorageAdapter instance or None.
-    row_class/row_data/row_attr: DT_Row* metadata providers.
+    row_class: DT_RowClass provider (string or callable).
+    row_data: DT_RowData provider (dict or callable).
+    row_attr: DT_RowAttr provider (dict or callable).
     pre_hook: callable(action, row_id, row_data) -> bool.
     Returns dict with created document data.
     Raises InvalidDataError if data is missing or malformed.
@@ -66,7 +70,7 @@ def run_create(
             if not pre_hook("create", key, row):
                 cancelled.append(key)
                 continue
-            main_data, dot_data = preprocess_document(row, fields, data_fields, field_mapper)
+            main_data, dot_data = preprocess_document(row, fields, data_fields)
             doc_obj = main_data.copy()
             for dot_key, value in dot_data.items():
                 parts = dot_key.split(".")
@@ -115,7 +119,9 @@ def run_edit(
     field_mapper: FieldMapper instance.
     file_fields: Upload field names.
     storage_adapter: StorageAdapter instance or None.
-    row_class/row_data/row_attr: DT_Row* metadata providers.
+    row_class: DT_RowClass provider (string or callable).
+    row_data: DT_RowData provider (dict or callable).
+    row_attr: DT_RowAttr provider (dict or callable).
     pre_hook: callable(action, row_id, row_data) -> bool.
     Returns dict with updated document data.
     Raises InvalidDataError if document IDs are missing or invalid.

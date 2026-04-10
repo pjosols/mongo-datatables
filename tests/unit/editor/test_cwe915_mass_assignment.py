@@ -1,86 +1,100 @@
-"""Tests for CWE-915: Mass assignment — field whitelist enforcement in preprocess_document.
+"""Tests for CWE-915 / CWE-20: Field whitelist enforcement in preprocess_document.
 
-Verifies that when data_fields is empty, all client-supplied fields pass through
-(documented opt-out), a warning is emitted, and that when a whitelist is configured
-only allowed fields are written to MongoDB.
+Verifies that:
+- Missing data_fields whitelist raises InvalidDataError (no unrestricted writes).
+- _id and __v are blocked even when whitelisted fields are configured.
+- Only whitelisted fields are written when a whitelist is configured.
 """
-import logging
 import pytest
-from unittest.mock import MagicMock
 
 from mongo_datatables.editor.document import preprocess_document
 from mongo_datatables.datatables import DataField
-from mongo_datatables.utils import FieldMapper
+from mongo_datatables.exceptions import InvalidDataError
 
 
 def _call(doc, fields=None, data_fields=None):
     df = data_fields or []
-    return preprocess_document(doc, fields or {}, df, FieldMapper(df))
+    return preprocess_document(doc, fields or {}, df)
+
+
+def _wl(*names):
+    df = [DataField(n, "string") for n in names]
+    return {f.alias: f for f in df}, df
 
 
 class TestNoWhitelist:
-    """When data_fields is empty, all fields pass through (opt-out mode)."""
+    """When data_fields is empty, preprocess_document must raise InvalidDataError."""
 
-    def test_arbitrary_fields_pass_through(self):
-        doc = {"name": "Alice", "__proto__": "evil", "admin": True, "role": "superuser"}
-        processed, _ = _call(doc)
-        assert "__proto__" in processed
-        assert processed["admin"] is True
-        assert processed["role"] == "superuser"
-
-    def test_warning_emitted_when_no_whitelist(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="mongo_datatables.editor.document"):
+    def test_raises_when_no_whitelist(self):
+        """Raise InvalidDataError when no whitelist is configured."""
+        with pytest.raises(InvalidDataError, match="whitelist"):
             _call({"name": "Alice"})
-        assert any("whitelist" in r.message.lower() or "data_fields" in r.message for r in caplog.records)
 
-    def test_no_warning_when_whitelist_configured(self, caplog):
-        df = [DataField("name", "string")]
-        with caplog.at_level(logging.WARNING, logger="mongo_datatables.editor.document"):
-            _call({"name": "Alice"}, fields={f.alias: f for f in df}, data_fields=df)
-        assert not any("whitelist" in r.message.lower() or "data_fields" in r.message for r in caplog.records)
+    def test_raises_with_empty_fields_and_data_fields(self):
+        """Raise InvalidDataError when fields and data_fields are both empty."""
+        with pytest.raises(InvalidDataError):
+            _call({"role": "admin"}, fields={}, data_fields=[])
 
-    def test_internal_metadata_field_passes_through(self):
-        doc = {"_internal": "secret", "name": "Bob"}
-        processed, _ = _call(doc)
-        assert "_internal" in processed
+    def test_raises_even_for_empty_doc(self):
+        """Raise InvalidDataError even for empty document."""
+        with pytest.raises(InvalidDataError):
+            _call({})
 
-    def test_privilege_escalation_field_passes_through(self):
-        doc = {"role": "admin", "is_superuser": True}
-        processed, _ = _call(doc)
-        assert processed["role"] == "admin"
-        assert processed["is_superuser"] is True
+    def test_raises_with_operator_injection_attempt(self):
+        """Raise InvalidDataError when document contains MongoDB operators."""
+        with pytest.raises(InvalidDataError):
+            _call({"$where": "1==1", "name": "Alice"})
+
+
+class TestProtectedFields:
+    """_id and __v must be blocked even when a whitelist is configured."""
+
+    def test_id_field_blocked(self):
+        """Block _id field from being written."""
+        fields, df = _wl("name")
+        processed, _ = _call({"name": "Alice", "_id": "overwrite"}, fields=fields, data_fields=df)
+        assert "_id" not in processed
+
+    def test_dunder_v_field_blocked(self):
+        """Block __v field from being written."""
+        fields, df = _wl("name")
+        processed, _ = _call({"name": "Alice", "__v": 99}, fields=fields, data_fields=df)
+        assert "__v" not in processed
+
+    def test_id_blocked_even_if_explicitly_in_whitelist(self):
+        """Block _id even when explicitly in whitelist."""
+        # _id should never be writable regardless of whitelist
+        df = [DataField("_id", "string"), DataField("name", "string")]
+        fields = {f.alias: f for f in df}
+        processed, _ = preprocess_document({"_id": "hack", "name": "Bob"}, fields, df)
+        assert "_id" not in processed
 
 
 class TestWithWhitelist:
     """When data_fields is configured, only whitelisted fields are written."""
 
-    def _fields(self, *names):
-        df = [DataField(n, "string") for n in names]
-        return {f.alias: f for f in df}, df
-
     def test_whitelisted_field_passes(self):
-        fields, df = self._fields("name")
+        """Allow whitelisted field to be written."""
+        fields, df = _wl("name")
         processed, _ = _call({"name": "Alice"}, fields=fields, data_fields=df)
         assert processed["name"] == "Alice"
 
     def test_non_whitelisted_field_blocked(self):
-        fields, df = self._fields("name")
+        """Block non-whitelisted field from being written."""
+        fields, df = _wl("name")
         processed, _ = _call({"name": "Alice", "role": "admin"}, fields=fields, data_fields=df)
         assert "role" not in processed
 
-    def test_proto_pollution_field_blocked(self):
-        fields, df = self._fields("name")
-        processed, _ = _call({"name": "Alice", "__proto__": "evil"}, fields=fields, data_fields=df)
-        assert "__proto__" not in processed
-
     def test_multiple_injected_fields_all_blocked(self):
-        fields, df = self._fields("title")
+        """Block all non-whitelisted fields when multiple are injected."""
+        fields, df = _wl("title")
         doc = {"title": "Post", "admin": True, "is_superuser": True, "_internal": "x"}
         processed, _ = _call(doc, fields=fields, data_fields=df)
         assert set(processed.keys()) == {"title"}
 
     def test_only_configured_fields_survive(self):
-        fields, df = self._fields("email", "username")
+        """Only configured fields survive; injected fields are blocked."""
+        fields, df = _wl("email", "username")
         doc = {"email": "a@b.com", "username": "alice", "password_hash": "abc", "role": "admin"}
         processed, _ = _call(doc, fields=fields, data_fields=df)
         assert "password_hash" not in processed
@@ -88,13 +102,10 @@ class TestWithWhitelist:
         assert processed["email"] == "a@b.com"
         assert processed["username"] == "alice"
 
-    def test_dot_notation_injected_field_blocked(self):
-        fields, df = self._fields("profile")
-        doc = {"profile": "ok", "profile.role": "admin"}
+    def test_unrelated_dot_notation_key_blocked(self):
+        """Block unrelated dot-notation keys from being written."""
+        fields, df = _wl("profile")
+        doc = {"profile": "ok", "admin.role": "superuser"}
         processed, dot = _call(doc, fields=fields, data_fields=df)
-        # dot-notation key root "profile" is allowed, but "profile.role" root is "profile" — allowed
-        # injected unrelated dot key should be blocked
-        doc2 = {"profile": "ok", "admin.role": "superuser"}
-        processed2, dot2 = _call(doc2, fields=fields, data_fields=df)
-        assert "admin.role" not in dot2
-        assert "admin.role" not in processed2
+        assert "admin.role" not in dot
+        assert "admin.role" not in processed

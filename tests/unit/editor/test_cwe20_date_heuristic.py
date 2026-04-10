@@ -10,16 +10,15 @@ from unittest.mock import MagicMock
 
 from mongo_datatables.editor.document import preprocess_document
 from mongo_datatables.data_field import DataField
-from mongo_datatables.utils import FieldMapper
 
 
 def _call(doc, data_fields=None):
     fields = {f.alias: f for f in (data_fields or [])}
-    fm = FieldMapper(data_fields or [])
-    return preprocess_document(doc, fields, data_fields or [], fm)
+    return preprocess_document(doc, fields, data_fields or [])
 
 
 # --- Heuristic suffix must NOT trigger date parsing ---
+
 
 def test_suffix_date_not_parsed_without_declaration():
     """Field ending in 'date' must NOT be auto-parsed as datetime."""
@@ -53,6 +52,7 @@ def test_dot_notation_suffix_not_parsed_without_declaration():
 
 # --- Declared date fields MUST be parsed ---
 
+
 def test_declared_date_field_is_parsed():
     """Field declared with data_type='date' must be parsed to datetime."""
     df = DataField("created_at", "date")
@@ -76,6 +76,7 @@ def test_non_date_declared_field_not_parsed():
 
 # --- No data_fields whitelist: no date parsing at all ---
 
+
 def test_no_data_fields_no_date_parsing():
     """Without data_fields, no date parsing should occur regardless of field name."""
     processed, _ = _call({"created_at": "2024-01-15T10:00:00", "end_date": "2024-06-01"})
@@ -84,6 +85,7 @@ def test_no_data_fields_no_date_parsing():
 
 
 # --- Multiple fields: only declared date fields parsed ---
+
 
 def test_only_declared_date_fields_parsed_among_many():
     """Only the field declared as date is parsed; undeclared fields are filtered when data_fields set."""

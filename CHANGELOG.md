@@ -7,8 +7,9 @@ All notable changes to mongo-datatables are documented here.
 ### Changed
 
 - Updated module docstrings to be more precise and imperative
-- `editor/crud.py`: refined module docstring for clarity
-- `editor/document.py`: refined module docstring to emphasize parsing and formatting
+- `editor/core.py`: refined `Editor.__init__` docstring; added Wholeshoot docstrings to all methods
+- `editor/crud.py`: refined module docstring; added Wholeshoot docstrings to `_fmt()`, `run_create()`, `run_edit()`, `run_remove()`, `resolve_collection()`, `resolve_db()`
+- `editor/document.py`: refined module docstring to emphasize CWE-20 and CWE-915 security fixes; added Wholeshoot docstrings to `format_response_document()`, `preprocess_document()`, `build_updates()`
 - `editor/validators/upload_security.py`: refined module docstring for conciseness
 - `datatables/_limits.py`: refined module docstring to include pagination
 - `datatables/compat.py`: added Wholeshoot docstrings to all methods and properties
@@ -17,6 +18,9 @@ All notable changes to mongo-datatables are documented here.
 - Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`, `tests/unit/editor/test_editor_crud.py`, `tests/unit/editor/test_editor_upload.py`, `tests/unit/datatables/test_request_validator.py`
 - Test helper methods documented: `_make_formatted_doc()`, `_setup_edit()`, `_partial_cancel_result()`
 - `tests/unit/datatables/test_datatables_pagination.py`: added class and method docstrings following Wholeshoot convention
+- `tests/unit/editor/test_cwe20_date_heuristic.py`: added module docstring; added Wholeshoot docstrings to all test functions
+- `tests/unit/editor/test_cwe915_mass_assignment.py`: added module docstring; added Wholeshoot docstrings to all test classes and methods
+- `tests/unit/editor/test_editor_document_processing.py`: added module docstring; added Wholeshoot docstrings to test classes and methods
 
 ### Added
 

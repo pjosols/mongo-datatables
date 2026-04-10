@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from bson.objectid import ObjectId
 from datetime import datetime
 
-from mongo_datatables.exceptions import FieldMappingError
+from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
 from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
 from mongo_datatables.editor.validators import validate_field_name, validate_document_payload
 from mongo_datatables.data_field import DataField
@@ -25,13 +25,16 @@ def format_response_document(
     row_data=None,
     row_attr=None,
 ) -> Dict[str, Any]:
-    """Format a MongoDB document for Editor response, converting ObjectId and datetime to strings.
+    """Format a MongoDB document for Editor response.
+
+    Converts ObjectId and datetime to strings, adds DT_RowId, DT_RowClass,
+    DT_RowData, DT_RowAttr as needed.
 
     doc: Document from MongoDB.
     row_class: Optional string or callable(row) -> str for DT_RowClass.
     row_data: Optional dict or callable(row) -> dict for DT_RowData.
     row_attr: Optional dict or callable(row) -> dict for DT_RowAttr.
-    Returns formatted document with DT_RowId, DT_RowClass, DT_RowData, DT_RowAttr as needed.
+    Returns formatted document with DT_Row* fields as needed.
     """
     response_doc = dict(doc)
 
@@ -77,32 +80,32 @@ def preprocess_document(
     doc: Dict[str, Any],
     fields: Dict[str, DataField],
     data_fields: List[DataField],
-    field_mapper: FieldMapper,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Parse JSON and dates in document data before database insert/update.
 
-    Converts JSON strings to objects, handles date field parsing, and separates
-    dot-notation keys for nested updates.
+    Enforces field whitelist (CWE-915), converts JSON strings to objects,
+    handles date field parsing (CWE-20: only for declared fields), and
+    separates dot-notation keys for nested updates.
 
     doc: Raw document data from Editor.
     fields: Dict of alias -> DataField for whitelist checking.
     data_fields: List of DataField objects.
-    field_mapper: FieldMapper instance.
     Returns (processed_document, dot_notation_updates).
-    Raises ValueError if document payload exceeds limits.
+    Raises InvalidDataError if no whitelist configured or payload exceeds limits.
     """
     validate_document_payload(doc)
     if not fields:
-        logger.warning(
-            "preprocess_document called with no data_fields whitelist — "
-            "all client-supplied fields will be written to MongoDB. "
+        raise InvalidDataError(
+            "preprocess_document requires a data_fields whitelist. "
             "Configure data_fields to restrict writable fields."
         )
 
+    _protected = {"_id", "__v"}
+
     def _allowed(key: str) -> bool:
-        if not fields:
-            return True
         root = key.split(".")[0]
+        if root in _protected:
+            return False
         return root in fields or root in {f.name.split(".")[0] for f in data_fields}
 
     processed_doc = {k: v for k, v in doc.items() if v is not None and _allowed(k)}
@@ -140,6 +143,9 @@ def preprocess_document(
                 if "." in key:
                     logger.warning("Date parse failed for field %s; storing raw value", key)
                     dot_notation_updates[key] = val
+                else:
+                    logger.warning("Date parse failed for field %s; storing raw value", key)
+                    mutations[key] = val
         elif "." in key:
             dot_notation_updates[key] = val
     processed_doc.update(mutations)
@@ -161,9 +167,9 @@ def build_updates(
 ) -> None:
     """Build a $set updates dict from nested Editor data, applying type conversions.
 
-    Recursively traverses nested dicts, applies field type conversions (date, number,
-    boolean, array), and populates the updates dict with dot-notation keys. Logs
-    non-fatal conversion errors and stores raw values on failure.
+    Recursively traverses nested dicts, applies field type conversions (date,
+    number, boolean, array), and populates the updates dict with dot-notation
+    keys. Logs non-fatal conversion errors and stores raw values on failure.
 
     data: Data to process (dict or scalar).
     field_mapper: FieldMapper for type lookups.

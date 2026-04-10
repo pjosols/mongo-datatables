@@ -55,24 +55,23 @@ class Editor:
         dependent_handlers: Optional[Dict[str, Any]] = None,
         virus_scanner: Optional[Any] = None,
     ) -> None:
-        """Initialise the Editor processor.
+        """Initialize the Editor processor.
 
         pymongo_object: PyMongo client, Flask-PyMongo instance, or Database.
         collection_name: Name of the MongoDB collection.
         request_args: Editor request parameters (from request.get_json()).
         doc_id: Comma-separated document IDs for edit/remove operations.
-        data_fields: DataField objects defining field mappings.
-        validators: Dict of field -> callable for field-level validation.
+        data_fields: DataField objects defining field mappings and write whitelist.
+        validators: Dict of field -> callable(value) -> str|None for field validation.
         storage_adapter: StorageAdapter instance for file uploads.
-        options: Options dict or callable returning one.
-        hooks: Dict of pre-action hooks keyed by 'pre_create', 'pre_edit', 'pre_remove'.
+        options: Options dict or zero-arg callable returning one.
+        hooks: Dict of pre_create, pre_edit, pre_remove callables; return falsy to cancel.
         row_class: String or callable(row) -> str for DT_RowClass.
         row_data: Dict or callable(row) -> dict for DT_RowData.
         row_attr: Dict or callable(row) -> dict for DT_RowAttr.
         file_fields: List of field names that are upload fields.
         dependent_handlers: Dict of field -> callable(field, values, rows).
-        virus_scanner: optional scanner implementing ``scan(filename, data) -> bool``.
-            Return ``False`` to reject the file.
+        virus_scanner: Optional scanner implementing scan(filename, data) -> bool; False rejects.
         """
         self._init_error: Optional[str] = None
         _validate_request_args_structure(request_args if request_args is not None else {})
@@ -114,10 +113,10 @@ class Editor:
         return self._collection
 
     def map_ui_field_to_db_field(self, field_name: str) -> str:
-        """Map a UI field name to its corresponding database field name.
+        """Map a UI field name to its database field name.
 
         field_name: The UI field name to map.
-        Returns the db field name, or the original if no mapping exists.
+        Returns the database field name, or the original if no mapping exists.
         """
         return self.field_mapper.get_db_field(field_name)
 
@@ -148,7 +147,13 @@ class Editor:
         return self._options() if callable(self._options) else self._options
 
     def _pre_hook(self, action: str, row_id: str, row_data: Dict[str, Any]) -> bool:
-        """Run a pre-action hook; returns False to cancel the row."""
+        """Run a pre-action hook; return False to cancel the row.
+
+        action: The action type (create, edit, remove).
+        row_id: The row identifier.
+        row_data: The row data dict.
+        Returns True to proceed, False to cancel.
+        """
         hook = self.hooks.get(f"pre_{action}")
         return bool(hook(row_id, row_data)) if hook else True
 
@@ -196,7 +201,7 @@ class Editor:
         doc: Raw document data from Editor.
         Returns (processed_document, dot_notation_updates).
         """
-        return preprocess_document(doc, self.fields, self.data_fields, self.field_mapper)
+        return preprocess_document(doc, self.fields, self.data_fields)
 
     def _process_updates(self, data: Any, updates: Dict[str, Any]) -> None:
         """Build $set updates dict from nested Editor data in-place.
@@ -237,9 +242,9 @@ class Editor:
         return result
 
     def process(self) -> Dict[str, Any]:
-        """Process the Editor request based on the action, returning protocol-compliant JSON.
+        """Process the Editor request based on the action.
 
-        Catches exceptions and returns error dict so the client can display errors inline.
-        Returns response data for the Editor client, or error dict on failure.
+        Returns protocol-compliant JSON response. Catches exceptions and returns
+        error dict so the client can display errors inline.
         """
         return process_request(self)
