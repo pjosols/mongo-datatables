@@ -1,4 +1,4 @@
-"""Test request validation for DataTables and Editor."""
+"""Test DataTables and Editor request validation."""
 import pytest
 from unittest.mock import MagicMock
 from bson.objectid import ObjectId
@@ -6,6 +6,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 
 from mongo_datatables.exceptions import InvalidDataError
+import mongo_datatables.datatables.request_validator as _rv_module
 from mongo_datatables.datatables.request_validator import (
     validate_request_args,
     _coerce_int,
@@ -61,8 +62,51 @@ def _make_editor(request_args, doc_id=""):
 
 
 # ---------------------------------------------------------------------------
-# validate_request_args — top-level structure
+# Module-level constants — no dead _REQUIRED_KEYS constant
 # ---------------------------------------------------------------------------
+
+class TestModuleConstants:
+    """Verify module-level constants are correct and _REQUIRED_KEYS is absent."""
+
+    def test_no_unused_required_keys_constant(self):
+        assert not hasattr(_rv_module, "_REQUIRED_KEYS"), (
+            "_REQUIRED_KEYS was removed; it should not exist on the module"
+        )
+
+    def test_column_required_keys_constant(self):
+        assert _rv_module._COLUMN_REQUIRED_KEYS == ("searchable", "orderable", "search")
+
+    def test_order_required_keys_constant(self):
+        assert _rv_module._ORDER_REQUIRED_KEYS == ("column", "dir")
+
+    def test_search_required_keys_constant(self):
+        assert _rv_module._SEARCH_REQUIRED_KEYS == ("value", "regex")
+
+    def test_validate_request_args_enforces_draw(self):
+        args = _make_valid_request_args()
+        del args["draw"]
+        with pytest.raises(InvalidDataError, match="'draw'"):
+            validate_request_args(args)
+
+    def test_validate_request_args_enforces_columns(self):
+        # columns is filled by _normalize_request_args, so force removal after normalization
+        # by passing a non-list to trigger validation failure
+        args = _make_valid_request_args(columns="bad")
+        with pytest.raises(InvalidDataError):
+            validate_request_args(args)
+
+    def test_validate_request_args_enforces_order(self):
+        args = _make_valid_request_args(order="bad")
+        with pytest.raises(InvalidDataError):
+            validate_request_args(args)
+
+    def test_validate_request_args_enforces_search(self):
+        args = _make_valid_request_args(search="bad")
+        with pytest.raises(InvalidDataError):
+            validate_request_args(args)
+
+
+
 
 class TestValidateRequestArgs:
     """Test top-level DataTables request structure validation and numeric coercion."""
