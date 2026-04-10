@@ -71,7 +71,8 @@ class Editor:
         row_attr: Dict or callable(row) -> dict for DT_RowAttr.
         file_fields: List of field names that are upload fields.
         dependent_handlers: Dict of field -> callable(field, values, rows).
-        virus_scanner: Optional scanner with a ``scan(filename, data) -> bool`` method.
+        virus_scanner: optional scanner implementing ``scan(filename, data) -> bool``.
+            Return ``False`` to reject the file.
         """
         self._init_error: Optional[str] = None
         _validate_request_args_structure(request_args if request_args is not None else {})
@@ -166,15 +167,15 @@ class Editor:
         )
 
     def create(self) -> Dict[str, Any]:
-        """Create one or more new documents. See editor_crud.run_create."""
+        """Create one or more new documents. See editor.crud.run_create."""
         return run_create(self.data, self.collection, **self._crud_kwargs())
 
     def edit(self) -> Dict[str, Any]:
-        """Edit one or more documents. See editor_crud.run_edit."""
+        """Edit one or more documents. See editor.crud.run_edit."""
         return run_edit(self.list_of_ids, self.data, self.collection, **self._crud_kwargs())
 
     def remove(self) -> Dict[str, Any]:
-        """Remove one or more documents. See editor_crud.run_remove."""
+        """Remove one or more documents. See editor.crud.run_remove."""
         return run_remove(self.list_of_ids, self.collection, self._pre_hook)
 
     def search(self) -> Dict[str, Any]:

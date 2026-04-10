@@ -16,6 +16,8 @@ from mongo_datatables.editor import StorageAdapter
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError
 
 class TestEditorUpload(unittest.TestCase):
+    """Test Editor file upload and storage adapter integration."""
+
     def setUp(self):
         self.mongo = MagicMock()
         self.mongo.db = MagicMock(spec=Database)
@@ -121,6 +123,8 @@ def mock_collection_upload():
 
 
 class TestEditorFilesInResponse:
+    """Test that file metadata is included in Editor responses when configured."""
+
     def _make_adapter_with_files(self, files_data):
         class Adapter(StorageAdapter):
             def store(self, field, filename, content_type, data): return "1"
@@ -215,5 +219,84 @@ class TestEditorFilesInResponse:
         result = editor.create()
         assert result["files"]["photo"] == {"1": {"web_path": "/uploads/1.png"}}
         assert result["files"]["doc"] == {"2": {"web_path": "/uploads/2.pdf"}}
+
+
+class TestVirusScannerParameter:
+    """Test virus_scanner parameter on Editor for upload validation."""
+
+    def _make_upload_args(self, filename: str = "photo.png", data: bytes = None) -> dict:
+        if data is None:
+            data = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        return {
+            "action": "upload",
+            "uploadField": "avatar",
+            "upload": {"filename": filename, "content_type": "image/png", "data": data},
+        }
+
+    def _make_adapter(self):
+        adapter = MagicMock(spec=StorageAdapter)
+        adapter.store.return_value = "file-id-1"
+        return adapter
+
+    def test_virus_scanner_stored_on_editor(self):
+        scanner = MagicMock()
+        scanner.scan.return_value = True
+        editor = Editor(MagicMock(), "files", {}, virus_scanner=scanner)
+        assert editor.virus_scanner is scanner
+
+    def test_no_virus_scanner_by_default(self):
+        editor = Editor(MagicMock(), "files", {})
+        assert editor.virus_scanner is None
+
+    def test_scanner_called_on_upload(self):
+        scanner = MagicMock()
+        scanner.scan.return_value = True
+        adapter = self._make_adapter()
+        png_data = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        editor = Editor(MagicMock(), "files", self._make_upload_args(data=png_data),
+                        storage_adapter=adapter, virus_scanner=scanner)
+        editor.upload()
+        scanner.scan.assert_called_once_with("photo.png", png_data)
+
+    def test_scanner_returning_false_rejects_upload(self):
+        scanner = MagicMock()
+        scanner.scan.return_value = False
+        adapter = self._make_adapter()
+        editor = Editor(MagicMock(), "files", self._make_upload_args(),
+                        storage_adapter=adapter, virus_scanner=scanner)
+        result = editor.process()
+        assert "error" in result
+        adapter.store.assert_not_called()
+
+    def test_scanner_returning_true_allows_upload(self):
+        scanner = MagicMock()
+        scanner.scan.return_value = True
+        adapter = self._make_adapter()
+        editor = Editor(MagicMock(), "files", self._make_upload_args(),
+                        storage_adapter=adapter, virus_scanner=scanner)
+        result = editor.upload()
+        assert result["upload"]["id"] == "file-id-1"
+        adapter.store.assert_called_once()
+
+    def test_upload_without_scanner_succeeds(self):
+        adapter = self._make_adapter()
+        editor = Editor(MagicMock(), "files", self._make_upload_args(),
+                        storage_adapter=adapter)
+        result = editor.upload()
+        assert result["upload"]["id"] == "file-id-1"
+
+    def test_scanner_receives_correct_filename_and_bytes(self):
+        scanner = MagicMock()
+        scanner.scan.return_value = True
+        adapter = self._make_adapter()
+        raw = b'\x89PNG\r\n\x1a\n' + b'\xab' * 50
+        args = {
+            "action": "upload",
+            "uploadField": "doc",
+            "upload": {"filename": "report.png", "content_type": "image/png", "data": raw},
+        }
+        editor = Editor(MagicMock(), "files", args, storage_adapter=adapter, virus_scanner=scanner)
+        editor.upload()
+        scanner.scan.assert_called_once_with("report.png", raw)
 
 

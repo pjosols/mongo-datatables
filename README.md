@@ -325,6 +325,12 @@ validate_upload_data({
 }, scanner=optional_scanner_instance)
 ```
 
+To plug in a virus scanner at the `Editor` level, pass it via `virus_scanner`. The scanner must implement `scan(filename: str, data: bytes) -> bool` — returning `False` rejects the file:
+
+```python
+editor = Editor(mongo, "files", request_args, data_fields, virus_scanner=my_scanner)
+```
+
 ---
 
 ## Performance & Indexes
@@ -374,7 +380,7 @@ db.albums.create_index([("artist", 1), ("year", -1)])  # compound
 
 **`row_id`, `row_class`, `row_data`, `row_attr`** — per-row `DT_Row*` metadata, accepts a static value or a callable receiving the raw document.
 
-See the [full documentation](https://mongo-datatables.readthedocs.io/) for details.
+See the [full documentation](https://docs.mongo-datatables.com) for details.
 
 ---
 
