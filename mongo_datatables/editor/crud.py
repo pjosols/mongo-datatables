@@ -17,6 +17,16 @@ from mongo_datatables.editor.document import (
 logger = logging.getLogger(__name__)
 
 
+def _fmt(doc: Dict[str, Any], row_class: Any, row_data: Any, row_attr: Any) -> Dict[str, Any]:
+    """Format a document for Editor response.
+
+    doc: Raw MongoDB document.
+    row_class/row_data/row_attr: DT_Row* metadata providers.
+    Returns formatted document dict.
+    """
+    return format_response_document(doc, row_class, row_data, row_attr)
+
+
 def run_create(
     data: Dict[str, Any],
     collection: Any,
@@ -48,9 +58,6 @@ def run_create(
     if not data:
         raise InvalidDataError("Data is required for create operation")
 
-    def _fmt(doc: Dict[str, Any]) -> Dict[str, Any]:
-        return format_response_document(doc, row_class, row_data, row_attr)
-
     try:
         results = []
         cancelled = []
@@ -69,7 +76,7 @@ def run_create(
                 cur[parts[-1]] = value
             result = collection.insert_one(doc_obj)
             created = collection.find_one({"_id": result.inserted_id})
-            results.append(_fmt(created))
+            results.append(_fmt(created, row_class, row_data, row_attr))
         response: Dict[str, Any] = {"data": results}
         if cancelled:
             response["cancelled"] = cancelled
@@ -117,9 +124,6 @@ def run_edit(
     if not list_of_ids:
         raise InvalidDataError("Document ID is required for edit operation")
 
-    def _fmt(doc: Dict[str, Any]) -> Dict[str, Any]:
-        return format_response_document(doc, row_class, row_data, row_attr)
-
     try:
         result_data = []
         cancelled = []
@@ -132,14 +136,14 @@ def run_edit(
                 continue
             try:
                 oid = ObjectId(doc_id)
+                updates: Dict[str, Any] = {}
+                build_updates(update_data, field_mapper, fields, data_fields, updates)
+                if updates:
+                    collection.update_one({"_id": oid}, {"$set": updates})
+                updated = collection.find_one({"_id": oid})
             except (ObjectIdError, ValueError) as e:
                 raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
-            updates: Dict[str, Any] = {}
-            build_updates(update_data, field_mapper, fields, data_fields, updates)
-            if updates:
-                collection.update_one({"_id": oid}, {"$set": updates})
-            updated = collection.find_one({"_id": oid})
-            result_data.append(_fmt(updated))
+            result_data.append(_fmt(updated, row_class, row_data, row_attr))
         response: Dict[str, Any] = {"data": result_data}
         if cancelled:
             response["cancelled"] = cancelled
