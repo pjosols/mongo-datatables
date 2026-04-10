@@ -1,4 +1,4 @@
-"""Create, edit, and remove operations for Editor."""
+"""Execute CRUD operations for Editor: create, edit, remove, and field validation."""
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
@@ -130,14 +130,15 @@ def run_edit(
             if not pre_hook("edit", doc_id, update_data):
                 cancelled.append(doc_id)
                 continue
+            try:
+                oid = ObjectId(doc_id)
+            except (ObjectIdError, ValueError) as e:
+                raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
             updates: Dict[str, Any] = {}
             build_updates(update_data, field_mapper, fields, data_fields, updates)
             if updates:
-                try:
-                    collection.update_one({"_id": ObjectId(doc_id)}, {"$set": updates})
-                except (ObjectIdError, ValueError) as e:
-                    raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
-            updated = collection.find_one({"_id": ObjectId(doc_id)})
+                collection.update_one({"_id": oid}, {"$set": updates})
+            updated = collection.find_one({"_id": oid})
             result_data.append(_fmt(updated))
         response: Dict[str, Any] = {"data": result_data}
         if cancelled:

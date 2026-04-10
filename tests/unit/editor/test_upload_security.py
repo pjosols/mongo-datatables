@@ -48,6 +48,23 @@ class TestValidateFileType:
     def test_csv_valid(self):
         validate_file_type("data.csv", "text/csv", b"a,b,c")
 
+    def test_text_plain_binary_content_raises(self):
+        # PHP webshell bytes are not valid UTF-8 — must be rejected
+        php_webshell = b"<?php system($_GET['cmd']); ?>\xff\xfe"
+        with pytest.raises(InvalidDataError, match="not valid UTF-8"):
+            validate_file_type("shell.txt", "text/plain", php_webshell)
+
+    def test_text_csv_binary_content_raises(self):
+        # Executable bytes declared as CSV must be rejected
+        exe_bytes = b"MZ\x90\x00\x03\x00\x00\x00"  # PE header
+        with pytest.raises(InvalidDataError, match="not valid UTF-8"):
+            validate_file_type("data.csv", "text/csv", exe_bytes)
+
+    def test_text_plain_arbitrary_binary_raises(self):
+        # Any non-UTF-8 binary content must not pass as text/plain
+        with pytest.raises(InvalidDataError, match="not valid UTF-8"):
+            validate_file_type("evil.txt", "text/plain", b"\x80\x81\x82\x83")
+
     def test_disallowed_content_type_raises(self):
         with pytest.raises(InvalidDataError, match="not allowed"):
             validate_file_type("evil.exe", "application/octet-stream", b"\x00")

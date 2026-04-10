@@ -1,9 +1,14 @@
-"""Security validation for file uploads: magic numbers, filename safety, and size limits."""
+"""Validate file uploads: magic numbers, filename safety, and size limits."""
 
 import re
-from typing import Optional
+from typing import Optional, Protocol, runtime_checkable
 
 from mongo_datatables.exceptions import InvalidDataError
+
+
+@runtime_checkable
+class ScannerProtocol(Protocol):
+    def scan(self, filename: str, data: bytes) -> bool: ...
 
 # Magic bytes: (offset, bytes) for each allowed MIME type
 _MAGIC: dict[str, tuple[int, bytes]] = {
@@ -70,6 +75,13 @@ def validate_file_type(filename: str, content_type: str, data: bytes) -> None:
             raise InvalidDataError(
                 f"File content does not match declared type {base_type!r}"
             )
+    elif base_type in ("text/plain", "text/csv"):
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise InvalidDataError(
+                f"File content is not valid UTF-8 for declared type {base_type!r}"
+            ) from exc
 
 
 def validate_filename_safety(filename: str) -> None:
@@ -115,7 +127,7 @@ def validate_file_size_for_type(content_type: str, data: bytes) -> None:
 def run_virus_scan_hook(
     filename: str,
     data: bytes,
-    scanner: Optional[object] = None,
+    scanner: Optional[ScannerProtocol] = None,
 ) -> None:
     """Integration point for virus scanning.
 
@@ -125,13 +137,10 @@ def run_virus_scan_hook(
 
     filename: original filename (used for logging/reporting only).
     data: raw file bytes.
-    scanner: optional scanner object with a ``scan`` method.
+    scanner: optional scanner implementing ScannerProtocol.
     Raises InvalidDataError if the scanner reports the file as infected.
     """
     if scanner is None:
         return
-    scan_fn = getattr(scanner, "scan", None)
-    if not callable(scan_fn):
-        raise InvalidDataError("Virus scanner must implement a callable 'scan' method")
-    if not scan_fn(filename, data):
+    if not scanner.scan(filename, data):
         raise InvalidDataError(f"File {filename!r} was rejected by the virus scanner")

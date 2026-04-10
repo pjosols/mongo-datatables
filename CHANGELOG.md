@@ -2,6 +2,19 @@
 
 All notable changes to mongo-datatables are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Updated module docstrings to be more precise and imperative
+- `editor/crud.py`: refined module docstring for clarity
+- `editor/document.py`: refined module docstring to emphasize parsing and formatting
+- `editor/validators/upload_security.py`: refined module docstring for conciseness
+
+### Added
+
+- **README**: File Uploads section documenting security validation (magic bytes, filename safety, size limits, virus scanning)
+
 ## [2.1.1] - 2026-04-10
 
 ### Changed

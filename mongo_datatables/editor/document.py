@@ -1,4 +1,4 @@
-"""Build and format Editor document updates for MongoDB insert/update operations.
+"""Parse and format Editor document payloads for MongoDB insert/update operations.
 
 Handles JSON parsing, date field conversion, nested field separation, and type coercion
 for Editor CRUD payloads. Enforces CWE-20 security: date parsing only for declared fields.
@@ -131,7 +131,7 @@ def preprocess_document(
                     mutations[key] = date_obj
             except FieldMappingError:
                 if "." in key:
-                    logger.warning("Date parse failed for %s, storing raw value: %s", key, val)
+                    logger.warning("Date parse failed for field %s; storing raw value", key)
                     dot_notation_updates[key] = val
         elif "." in key:
             dot_notation_updates[key] = val

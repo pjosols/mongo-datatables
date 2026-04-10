@@ -305,6 +305,26 @@ def editor_search():
 | `file_fields` + `storage_adapter` | file upload support (subclass `StorageAdapter`) |
 | `row_class`, `row_data`, `row_attr` | per-row metadata (static value or callable) |
 
+### File Uploads
+
+File uploads are validated for security before storage:
+
+- **Magic bytes**: verified against declared MIME type (JPEG, PNG, GIF, WebP, PDF, plain text, CSV)
+- **Filename safety**: rejects path traversal, null bytes, URL-encoded characters, Windows-reserved characters, and blocked executable extensions
+- **Size limits**: per-type limits (10 MB images, 25 MB PDF, 5 MB text/CSV) with 50 MB global cap
+- **Virus scanning**: optional integration point for antivirus/malware detection
+
+```python
+from mongo_datatables.editor.validators.upload_security import validate_upload_data
+
+# Validate before storage
+validate_upload_data({
+    "filename": "report.pdf",
+    "content_type": "application/pdf",
+    "data": file_bytes,
+}, scanner=optional_scanner_instance)
+```
+
 ---
 
 ## Performance & Indexes
