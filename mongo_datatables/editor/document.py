@@ -13,8 +13,11 @@ from datetime import datetime
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
 from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
 from mongo_datatables.editor.validators import validate_field_name, validate_document_payload
+from mongo_datatables.editor.validators.payload import _MAX_DOC_NESTING
 from mongo_datatables.data_field import DataField
 from mongo_datatables.editor.storage import StorageAdapter
+
+_MAX_JSON_PARSE_LEN = 64 * 1024  # 64 KB — prevents memory exhaustion from deeply-nested JSON
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +117,7 @@ def preprocess_document(
     mutations: Dict[str, Any] = {}
     for key, val in processed_doc.items():
         validate_field_name(key)
-        if isinstance(val, str):
+        if isinstance(val, str) and len(val) <= _MAX_JSON_PARSE_LEN:
             try:
                 parsed_val = json.loads(val)
                 if "." in key:
@@ -164,6 +167,7 @@ def build_updates(
     data_fields: List[DataField],
     updates: Dict[str, Any],
     prefix: str = "",
+    _depth: int = 0,
 ) -> None:
     """Build a $set updates dict from nested Editor data, applying type conversions.
 
@@ -177,9 +181,15 @@ def build_updates(
     data_fields: List of DataField objects.
     updates: Dict to populate in-place.
     prefix: Dot-notation prefix for the current nesting level.
+    _depth: Current recursion depth (internal).
+    Raises InvalidDataError if nesting exceeds _MAX_DOC_NESTING.
     """
     if not isinstance(data, dict):
         return
+    if _depth > _MAX_DOC_NESTING:
+        raise InvalidDataError(
+            f"Document nesting exceeds maximum depth of {_MAX_DOC_NESTING}"
+        )
 
     for key, value in data.items():
         if value is None:
@@ -188,7 +198,7 @@ def build_updates(
         validate_field_name(key)
 
         if isinstance(value, dict):
-            build_updates(value, field_mapper, fields, data_fields, updates, full_key)
+            build_updates(value, field_mapper, fields, data_fields, updates, full_key, _depth + 1)
             continue
 
         field_type = field_mapper.get_field_type(full_key)
