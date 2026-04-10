@@ -221,6 +221,8 @@ Set `search[regex]=true` to treat the search value as a raw MongoDB regex:
 (Floyd|Bowie)     →  matches either
 ```
 
+User-supplied regex patterns are validated for safety before execution to prevent ReDoS (Regular Expression Denial of Service) attacks. Patterns exceeding 200 characters or containing unsafe constructs (quantifiers on groups, lookahead/behind, stacked quantifiers, very large bounded repetitions) are rejected with a descriptive error.
+
 ### Case sensitivity
 
 Case-insensitive by default. Pass `search[caseInsensitive]=false` for case-sensitive matching.

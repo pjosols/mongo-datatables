@@ -6,7 +6,9 @@ All notable changes to mongo-datatables are documented here.
 
 ### Changed
 
+- `datatables/query/regex_utils.py`: refined module docstring for conciseness; all function docstrings follow Wholeshoot convention
 - Updated module docstrings to be more precise and imperative
+- **README**: Regex mode section now documents ReDoS protection and pattern validation limits
 - `editor/core.py`: refined `Editor.__init__` docstring; added Wholeshoot docstrings to all methods
 - `editor/crud.py`: refined module docstring; added Wholeshoot docstrings to `_fmt()`, `run_create()`, `run_edit()`, `run_remove()`, `resolve_collection()`, `resolve_db()`
 - `editor/document.py`: refined module docstring to emphasize CWE-20 and CWE-915 security fixes; added Wholeshoot docstrings to `format_response_document()`, `preprocess_document()`, `build_updates()`
