@@ -23,7 +23,7 @@ from mongo_datatables.datatables.results import (
 )
 from mongo_datatables.datatables.compat import DataTablesMixin
 from mongo_datatables.datatables.response import build_response, normalize_draw, parse_extension_config
-from mongo_datatables.datatables._limits import MAX_PIPELINE_STAGES
+from mongo_datatables.datatables._limits import MAX_PIPELINE_STAGES, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE
 from mongo_datatables.datatables._setup import get_collection, check_text_index
 
 logger = logging.getLogger(__name__)
@@ -114,13 +114,19 @@ class DataTables(DataTablesMixin):
 
     @property
     def columns(self) -> List[Dict[str, Any]]:
-        """Columns configuration from the request."""
+        """Columns configuration from the request.
+        
+        Returns list of column dicts from request_args.
+        """
         cols = self.request_args.get("columns", [])
         return cols if isinstance(cols, list) else []
 
     @property
     def searchable_columns(self) -> List[str]:
-        """List of searchable column data names."""
+        """List of searchable column data names.
+        
+        Returns list of column data names where searchable=true.
+        """
         return [
             col["data"]
             for col in self.columns
@@ -129,29 +135,44 @@ class DataTables(DataTablesMixin):
 
     @property
     def search_value(self) -> str:
-        """Global search value from the request."""
+        """Global search value from the request.
+        
+        Returns search[value] string.
+        """
         return self.request_args.get("search", {}).get("value", "")
 
     @property
     def search_terms(self) -> List[str]:
-        """Search terms parsed from the global search value, preserving quoted phrases."""
+        """Search terms parsed from the global search value, preserving quoted phrases.
+        
+        Returns list of terms with quoted phrases as single elements.
+        """
         if self._search_terms_cache is None:
             self._search_terms_cache = SearchTermParser.parse(self.search_value)
         return self._search_terms_cache
 
     @property
     def search_terms_without_a_colon(self) -> List[str]:
-        """Global search terms (no colon)."""
+        """Global search terms (no colon).
+        
+        Returns terms without field-specific colon syntax.
+        """
         return [t for t in self.search_terms if ":" not in t]
 
     @property
     def search_terms_with_a_colon(self) -> List[str]:
-        """Field-specific colon-syntax search terms."""
+        """Field-specific colon-syntax search terms.
+        
+        Returns terms with field:value syntax.
+        """
         return [t for t in self.search_terms if ":" in t]
 
     @property
     def filter(self) -> Dict[str, Any]:
-        """Combined MongoDB filter from all active conditions (cached)."""
+        """Combined MongoDB filter from all active conditions (cached).
+        
+        Returns MongoDB filter dict combining custom, search, and column filters.
+        """
         if self._filter_cache is None:
             self._filter_cache = build_filter(
                 self.custom_filter, self.query_builder, self.request_args,
@@ -163,30 +184,26 @@ class DataTables(DataTablesMixin):
 
     @property
     def sort_specification(self) -> Dict[str, int]:
-        """Sort specification derived from the request columns and order array."""
+        """Sort specification derived from the request columns and order array.
+        
+        Returns MongoDB sort dict {field: 1|-1}.
+        """
         return build_sort_specification(self.request_args, self.columns, self.field_mapper)
 
     @property
-    def global_search_condition(self) -> Dict[str, Any]:
-        """Global search condition built from the current request."""
-        search = self.request_args.get("search", {})
-        return self.query_builder.build_global_search(
-            self.search_terms_without_a_colon,
-            self.searchable_columns,
-            original_search=self.search_value,
-            search_regex=is_truthy(search.get("regex", False)),
-            search_smart=is_truthy(search.get("smart", True)),
-            case_insensitive=is_truthy(search.get("caseInsensitive", True)),
-        )
-
-    @property
     def projection(self) -> Dict[str, int]:
-        """MongoDB projection specification."""
+        """MongoDB projection specification.
+        
+        Returns MongoDB projection dict {field: 1|0}.
+        """
         return build_projection(self.columns, self.field_mapper, self.row_id)
 
     @property
     def start(self) -> int:
-        """Pagination start index."""
+        """Pagination start index.
+        
+        Returns start value, minimum 0.
+        """
         try:
             return max(0, int(self.request_args.get("start", 0)))
         except (ValueError, TypeError):
@@ -194,15 +211,24 @@ class DataTables(DataTablesMixin):
 
     @property
     def limit(self) -> int:
-        """Page size."""
+        """Page size, clamped to [1, MAX_PAGE_SIZE].
+        
+        Returns page size, minimum DEFAULT_PAGE_SIZE, maximum MAX_PAGE_SIZE.
+        """
         try:
-            return int(self.request_args.get("length", 10))
+            value = int(self.request_args.get("length", DEFAULT_PAGE_SIZE))
         except (ValueError, TypeError):
-            return 10
+            return DEFAULT_PAGE_SIZE
+        if value < 1:
+            return DEFAULT_PAGE_SIZE
+        return min(value, MAX_PAGE_SIZE)
 
     @property
     def draw(self) -> int:
-        """Draw counter echoed from the request."""
+        """Draw counter echoed from the request.
+        
+        Returns draw value, minimum 1.
+        """
         try:
             return max(1, int(self.request_args.get("draw", 1)))
         except (ValueError, TypeError):
@@ -212,19 +238,25 @@ class DataTables(DataTablesMixin):
         """Parse extension config from request_args for the given key.
 
         key: Extension key (e.g. 'buttons', 'fixedColumns', 'rowGroup', 'select').
-        Returns the parsed config dict or None if not present/applicable.
+        Returns parsed config dict or None if not present.
         """
         return parse_extension_config(self.request_args, key)
 
     def get_searchpanes_options(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Return option counts for each SearchPanes column."""
+        """Return option counts for each SearchPanes column.
+        
+        Returns dict mapping column names to lists of {label, total, count} dicts.
+        """
         return _get_searchpanes_options(
             self.columns, self.field_mapper, self.custom_filter,
             self.filter, self.collection, self.allow_disk_use,
         )
 
     def results(self) -> List[Dict[str, Any]]:
-        """Execute the MongoDB query and return formatted rows (cached)."""
+        """Execute the MongoDB query and return formatted rows (cached).
+        
+        Returns list of row dicts with pagination applied.
+        """
         if self._results is None:
             pipeline = build_pipeline(
                 self.filter, self.pipeline_stages, self.sort_specification,
@@ -237,13 +269,19 @@ class DataTables(DataTablesMixin):
         return self._results
 
     def count_total(self) -> int:
-        """Count total records in the collection (cached)."""
+        """Count total records in the collection (cached).
+        
+        Returns total record count before filtering.
+        """
         if self._recordsTotal is None:
             self._recordsTotal = _count_total(self.collection, self.custom_filter)
         return self._recordsTotal
 
     def count_filtered(self) -> int:
-        """Count records after applying filters (cached)."""
+        """Count records after applying filters (cached).
+        
+        Returns filtered record count.
+        """
         if self._recordsFiltered is None:
             self._recordsFiltered = _count_filtered(
                 self.collection, self.filter, self.pipeline_stages,
@@ -252,7 +290,10 @@ class DataTables(DataTablesMixin):
         return self._recordsFiltered
 
     def get_export_data(self) -> List[Dict[str, Any]]:
-        """Get all data for export without pagination limits."""
+        """Get all data for export without pagination limits.
+        
+        Returns list of all matching rows (no skip/limit).
+        """
         pipeline = build_pipeline(
             self.filter, self.pipeline_stages, self.sort_specification,
             self.projection, self.start, self.limit, paginate=False,
