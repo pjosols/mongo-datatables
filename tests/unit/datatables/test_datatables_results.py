@@ -14,7 +14,7 @@ from tests.unit.base_test import BaseDataTablesTest
 class TestResults(BaseDataTablesTest):
     """Test results() method and aggregation pipeline construction."""
 
-    def _get_results(self):
+    def _get_results(self) -> List[Dict[str, Any]]:
         """Execute results() with sample_docs and return the result list."""
         self.collection.aggregate.return_value = self.sample_docs
         self.collection.count_documents.return_value = len(self.sample_docs)
@@ -123,7 +123,7 @@ class TestDataTablesQueryPipeline(BaseDataTablesTest):
         self.request_args['start'] = 10
         self.request_args['length'] = 25
         datatables = DataTables(self.mongo, 'test_collection', self.request_args,
-                                data_fields=self.data_fields, debug_mode=True)
+                                data_fields=self.data_fields)
         mock_cursor = MagicMock()
         mock_cursor.__iter__.return_value = iter([])
         datatables.collection.aggregate = MagicMock(return_value=mock_cursor)
@@ -151,7 +151,7 @@ class TestDataTablesQueryPipeline(BaseDataTablesTest):
         self.assertEqual(len(limit_stages), 1)
         self.assertEqual(limit_stages[0]['$limit'], 25)
 
-    def _complex_result(self) -> dict:
+    def _complex_result(self) -> Dict[str, Any]:
         """Return the first result from a complex-data query."""
         datatables = DataTables(self.mongo, 'test_collection', self.request_args,
                                 data_fields=self.data_fields)
