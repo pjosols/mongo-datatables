@@ -1,5 +1,6 @@
 """Test DataTables results: pipeline construction, data formatting, complex types."""
 import unittest
+from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 from bson.objectid import ObjectId
 from datetime import datetime
@@ -11,20 +12,28 @@ from tests.unit.base_test import BaseDataTablesTest
 
 
 class TestResults(BaseDataTablesTest):
-    """Test results method and query pipeline."""
+    """Test results() method and aggregation pipeline construction."""
 
-    def test_results_method(self):
+    def _get_results(self):
+        """Execute results() with sample_docs and return the result list."""
         self.collection.aggregate.return_value = self.sample_docs
         self.collection.count_documents.return_value = len(self.sample_docs)
-        datatables = DataTables(self.mongo, 'users', self.request_args)
-        result = datatables.results()
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), len(self.sample_docs))
-        for doc in result:
-            self.assertIn('name', doc)
-            self.assertIn('email', doc)
-            self.assertIn('status', doc)
+        return DataTables(self.mongo, 'users', self.request_args).results()
+
+    def test_results_method_returns_list(self):
+        self.assertIsInstance(self._get_results(), list)
+
+    def test_results_method_returns_correct_length(self):
+        self.assertEqual(len(self._get_results()), len(self.sample_docs))
+
+    def test_results_method_includes_dt_row_id(self):
+        for doc in self._get_results():
             self.assertIn('DT_RowId', doc)
+
+    def test_results_method_includes_document_fields(self):
+        for doc in self._get_results():
+            for field in ('name', 'email', 'status'):
+                self.assertIn(field, doc)
 
     def test_results_with_empty_data(self):
         self.collection.aggregate.return_value = []
@@ -82,7 +91,7 @@ class TestResults(BaseDataTablesTest):
 
 
 class TestDataTablesQueryPipeline(BaseDataTablesTest):
-    """Test cases for query pipeline construction and results processing."""
+    """Test aggregation pipeline construction and complex data serialization."""
 
     def setUp(self):
         super().setUp()
@@ -107,7 +116,8 @@ class TestDataTablesQueryPipeline(BaseDataTablesTest):
             {'data': '_id', 'searchable': False, 'orderable': True, 'search': {'value': '', 'regex': False}},
         ]
 
-    def test_complete_query_pipeline(self):
+    def _complete_pipeline(self) -> List[Dict[str, Any]]:
+        """Build and return the aggregation pipeline for a complete query."""
         self.request_args['search']['value'] = 'test query'
         self.request_args['order'] = [{'column': 0, 'dir': 'asc'}]
         self.request_args['start'] = 10
@@ -119,18 +129,30 @@ class TestDataTablesQueryPipeline(BaseDataTablesTest):
         datatables.collection.aggregate = MagicMock(return_value=mock_cursor)
         datatables.results()
         args, _ = datatables.collection.aggregate.call_args
-        pipeline = args[0]
-        self.assertIsInstance(pipeline, list)
+        return args[0]
+
+    def test_complete_query_pipeline_has_match_stage(self):
+        pipeline = self._complete_pipeline()
         self.assertGreaterEqual(len([s for s in pipeline if '$match' in s]), 1)
+
+    def test_complete_query_pipeline_has_sort_stage(self):
+        pipeline = self._complete_pipeline()
         self.assertEqual(len([s for s in pipeline if '$sort' in s]), 1)
+
+    def test_complete_query_pipeline_skip_value(self):
+        pipeline = self._complete_pipeline()
         skip_stages = [s for s in pipeline if '$skip' in s]
         self.assertEqual(len(skip_stages), 1)
         self.assertEqual(skip_stages[0]['$skip'], 10)
+
+    def test_complete_query_pipeline_limit_value(self):
+        pipeline = self._complete_pipeline()
         limit_stages = [s for s in pipeline if '$limit' in s]
         self.assertEqual(len(limit_stages), 1)
         self.assertEqual(limit_stages[0]['$limit'], 25)
 
-    def test_results_with_complex_data_types(self):
+    def _complex_result(self) -> dict:
+        """Return the first result from a complex-data query."""
         datatables = DataTables(self.mongo, 'test_collection', self.request_args,
                                 data_fields=self.data_fields)
         mock_data = [{
@@ -144,16 +166,28 @@ class TestDataTablesQueryPipeline(BaseDataTablesTest):
         mock_cursor = MagicMock()
         mock_cursor.__iter__.return_value = iter(mock_data)
         datatables.collection.aggregate = MagicMock(return_value=mock_cursor)
-        results = datatables.results()
-        self.assertEqual(len(results), 1)
-        self.assertIn('DT_RowId', results[0])
-        self.assertIsInstance(results[0]['DT_RowId'], str)
-        self.assertIsInstance(results[0]['published_date'], str)
-        self.assertNotIn('_id', results[0])
-        self.assertIsInstance(results[0]['year'], int)
-        self.assertIsInstance(results[0]['rating'], float)
-        self.assertIsInstance(results[0]['tags'], list)
-        self.assertIsInstance(results[0]['metadata'], dict)
+        return datatables.results()[0]
+
+    def test_results_complex_data_sets_dt_row_id(self):
+        result = self._complex_result()
+        self.assertIn('DT_RowId', result)
+        self.assertIsInstance(result['DT_RowId'], str)
+
+    def test_results_complex_data_serializes_datetime(self):
+        self.assertIsInstance(self._complex_result()['published_date'], str)
+
+    def test_results_complex_data_removes_id_field(self):
+        self.assertNotIn('_id', self._complex_result())
+
+    def test_results_complex_data_preserves_numeric_types(self):
+        result = self._complex_result()
+        self.assertIsInstance(result['year'], int)
+        self.assertIsInstance(result['rating'], float)
+
+    def test_results_complex_data_preserves_collection_types(self):
+        result = self._complex_result()
+        self.assertIsInstance(result['tags'], list)
+        self.assertIsInstance(result['metadata'], dict)
 
     def test_empty_results(self):
         datatables = DataTables(self.mongo, 'test_collection', self.request_args,
@@ -193,8 +227,8 @@ class TestDataTablesQueryPipeline(BaseDataTablesTest):
         project_stages = [s for s in pipeline if '$project' in s]
         self.assertEqual(len(project_stages), 1)
         projection = project_stages[0]['$project']
-        for field in ['title', 'author', 'year', 'rating', 'published_date', 'tags', 'metadata', '_id']:
-            self.assertEqual(projection.get(field), 1)
+        expected = {f: 1 for f in ['title', 'author', 'year', 'rating', 'published_date', 'tags', 'metadata', '_id']}
+        self.assertEqual(projection, expected)
 
     def test_projection_with_alias_uses_db_field_name(self):
         data_fields = [DataField('author.fullName', 'string', alias='Author')]

@@ -6,6 +6,7 @@ All notable changes to mongo-datatables are documented here.
 
 ### Changed
 
+- `tests/unit/datatables/test_datatables_results.py`: refined class docstrings to Wholeshoot convention; updated helper method docstrings for precision
 - `tests/unit/datatables/test_datatables_error_handling.py`: module docstring documents error handling and edge case coverage
 - `datatables/query/regex_utils.py`: refined module docstring for conciseness; all function docstrings follow Wholeshoot convention
 - Updated module docstrings to be more precise and imperative
