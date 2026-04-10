@@ -1,4 +1,10 @@
-"""Tests for the datatables/search/ subpackage structure and imports."""
+"""Verify datatables/search/ subpackage structure, imports, and module paths.
+
+Validates that search modules (builder, fixed, panes) are correctly located in
+the subpackage, re-exported from __init__, and imported by consumers using new
+paths. Ensures old top-level shim files are removed and logger names reflect
+new module paths.
+"""
 from pathlib import Path
 
 _SEARCH_PKG = Path(__file__).parent.parent.parent.parent.parent / "mongo_datatables" / "datatables" / "search"
@@ -98,6 +104,22 @@ class TestConsumerImportSites:
         assert "from mongo_datatables.search_builder import" not in src
         assert "from mongo_datatables.search_fixed import" not in src
         assert "from mongo_datatables.search_panes import" not in src
+
+
+# ---------------------------------------------------------------------------
+# fixed.py uses canonical FieldMapper import path
+# ---------------------------------------------------------------------------
+
+class TestFixedImportPath:
+    _FIXED = Path(__file__).parent.parent.parent.parent.parent / "mongo_datatables" / "datatables" / "search" / "fixed.py"
+
+    def test_fieldmapper_imported_from_utils_not_field_utils(self):
+        src = self._FIXED.read_text()
+        assert "from mongo_datatables.utils import" in src and "FieldMapper" in src
+
+    def test_fieldmapper_not_imported_directly_from_field_utils(self):
+        src = self._FIXED.read_text()
+        assert "from mongo_datatables.field_utils import FieldMapper" not in src
 
 
 # ---------------------------------------------------------------------------

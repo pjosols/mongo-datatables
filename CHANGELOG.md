@@ -14,6 +14,8 @@ All notable changes to mongo-datatables are documented here.
 - Enhanced `editor/search.py` docstrings to clarify search/dependent/upload request handling and response formats
 - Enhanced test module docstrings to clarify security validation and test scope
 - Added Wholeshoot docstrings to helper functions and test classes in `tests/unit/datatables/test_datatables_misc.py` — clarifies regression fixes, test scope, and helper function contracts
+- Updated `datatables/search/fixed.py` module docstring and function docstrings to Wholeshoot convention — clarifies wire format support, parameter contracts, and return values
+- Updated `tests/unit/datatables/search/test_search_subpackage.py` module docstring to Wholeshoot convention — clarifies test scope and validation targets
 
 ### Fixed
 

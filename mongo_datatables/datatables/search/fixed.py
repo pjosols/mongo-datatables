@@ -1,20 +1,21 @@
-"""searchFixed support — parses DataTables 2.x fixed/named searches into MongoDB filters."""
+"""Parse DataTables 2.x fixed/named searches into MongoDB filters."""
 from typing import Any, Dict, List
 
 from mongo_datatables.datatables.query import MongoQueryBuilder
-from mongo_datatables.field_utils import FieldMapper
+from mongo_datatables.utils import FieldMapper
 from mongo_datatables.utils import SearchTermParser, is_truthy
 
 
 def parse_search_fixed(request_args: Dict[str, Any], query_builder: MongoQueryBuilder, searchable_columns: List[str]) -> Dict[str, Any]:
-    """Parse searchFixed named searches (DataTables 2.0+) into a MongoDB filter.
+    """Parse global fixed searches (DataTables 2.0+) into a MongoDB filter.
 
-    Supports both the DataTables 2.x wire format (``search.fixed`` array of
-    ``{name, term}`` objects) and the legacy dict format (``searchFixed`` dict).
-    Entries with ``term == "function"`` are skipped (client-side-only functions).
-
-    Each named fixed search is ANDed with the main query. Values are treated
-    as global search terms across all searchable columns.
+    request_args: DataTables request dict; reads ``search.fixed`` (array of
+    ``{name, term}`` objects) and legacy ``searchFixed`` dict. Entries with
+    ``term == "function"`` are skipped (client-side-only).
+    query_builder: MongoQueryBuilder instance for building search conditions.
+    searchable_columns: list of column names to search across.
+    Returns MongoDB filter dict, or ``{}`` if no fixed searches exist. Multiple
+    conditions are ANDed together.
     """
     # DataTables 2.x wire format: search.fixed is an array of {name, term}
     fixed_array = request_args.get("search", {}).get("fixed", [])
@@ -50,12 +51,15 @@ def parse_search_fixed(request_args: Dict[str, Any], query_builder: MongoQueryBu
 
 
 def parse_column_search_fixed(columns: List[Dict[str, Any]], field_mapper: FieldMapper, query_builder: MongoQueryBuilder) -> Dict[str, Any]:
-    """Parse per-column searchFixed (DataTables 2.0+) into a MongoDB filter.
+    """Parse per-column fixed searches (DataTables 2.0+) into a MongoDB filter.
 
-    Supports both the DataTables 2.x wire format (``columns[i].search.fixed``
-    array of ``{name, term}`` objects) and the legacy dict format
-    (``columns[i].searchFixed`` dict). Entries with ``term == "function"`` are
-    skipped. Returns MongoDB query condition, or ``{}`` if no column-level fixed searches exist.
+    columns: list of column dicts; reads ``search.fixed`` (array of ``{name, term}``
+    objects) and legacy ``searchFixed`` dict from each. Entries with ``term == "function"``
+    are skipped.
+    field_mapper: FieldMapper instance for resolving column data names to MongoDB fields.
+    query_builder: MongoQueryBuilder instance for building search conditions.
+    Returns MongoDB filter dict, or ``{}`` if no column-level fixed searches exist.
+    Multiple conditions are ANDed together.
     """
     conditions = []
     for col in columns:
