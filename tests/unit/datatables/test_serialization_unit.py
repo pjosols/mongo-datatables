@@ -1,6 +1,5 @@
 """Test DataTables serialization: float, Decimal128, Binary, Regex, formatting."""
 import json
-import unittest
 import uuid
 from decimal import Decimal
 from bson import Binary, Decimal128, ObjectId, Regex
@@ -17,8 +16,7 @@ from tests.unit.base_test import BaseDataTablesTest
 # ---------------------------------------------------------------------------
 
 class TestFloatSerialization(BaseDataTablesTest):
-    """Test NaN, Inf, and finite float serialization."""
-        return DataTables(self.mongo, 'test_collection', self.request_args)
+    """Verify NaN, Inf, and finite float serialization to None or unchanged."""
 
     def test_nan_converted_to_none(self):
         d = {"score": float("nan")}
@@ -40,17 +38,29 @@ class TestFloatSerialization(BaseDataTablesTest):
         self._make_dt()._format_result_values(d)
         self.assertEqual(d["score"], 3.14)
 
-    def test_nan_in_nested_dict(self):
+    def test_nan_in_nested_dict_avg_is_none(self):
         d = {"stats": {"avg": float("nan"), "count": 5}}
         self._make_dt()._format_result_values(d)
         self.assertIsNone(d["stats"]["avg"])
+
+    def test_nan_in_nested_dict_count_unchanged(self):
+        d = {"stats": {"avg": float("nan"), "count": 5}}
+        self._make_dt()._format_result_values(d)
         self.assertEqual(d["stats"]["count"], 5)
 
-    def test_nan_in_list_converted_to_none(self):
+    def test_nan_in_list_first_element_is_none(self):
         d = {"values": [float("nan"), float("inf"), 1.5]}
         self._make_dt()._format_result_values(d)
         self.assertIsNone(d["values"][0])
+
+    def test_inf_in_list_second_element_is_none(self):
+        d = {"values": [float("nan"), float("inf"), 1.5]}
+        self._make_dt()._format_result_values(d)
         self.assertIsNone(d["values"][1])
+
+    def test_finite_float_in_list_unchanged(self):
+        d = {"values": [float("nan"), float("inf"), 1.5]}
+        self._make_dt()._format_result_values(d)
         self.assertEqual(d["values"][2], 1.5)
 
 
@@ -59,10 +69,7 @@ class TestFloatSerialization(BaseDataTablesTest):
 # ---------------------------------------------------------------------------
 
 class TestDecimal128Serialization(BaseDataTablesTest):
-    def _make_dt(self):
-        return DataTables(self.mongo, 'test_collection', self.request_args)
-
-    def test_top_level_decimal128_converted_to_float(self):
+    """Convert Decimal128 values to float in top-level, nested, and list contexts."""
         dt = self._make_dt()
         doc = {'price': Decimal128('19.99')}
         dt._format_result_values(doc)
@@ -100,17 +107,31 @@ class TestDecimal128Serialization(BaseDataTablesTest):
         dt._format_result_values(doc)
         self.assertEqual(doc, {'name': 'Alice', 'count': 42, 'active': True})
 
-    def test_mixed_list_with_decimal128(self):
+    def test_mixed_list_decimal128_converted_to_float(self):
         dt = self._make_dt()
         oid = ObjectId()
         doc = {'items': [Decimal128('5.00'), oid, 'text']}
         dt._format_result_values(doc)
         self.assertAlmostEqual(doc['items'][0], 5.0, places=2)
+
+    def test_mixed_list_objectid_converted_to_str(self):
+        dt = self._make_dt()
+        oid = ObjectId()
+        doc = {'items': [Decimal128('5.00'), oid, 'text']}
+        dt._format_result_values(doc)
         self.assertEqual(doc['items'][1], str(oid))
+
+    def test_mixed_list_str_unchanged(self):
+        dt = self._make_dt()
+        oid = ObjectId()
+        doc = {'items': [Decimal128('5.00'), oid, 'text']}
+        dt._format_result_values(doc)
         self.assertEqual(doc['items'][2], 'text')
 
 
 class TestSearchPanesDecimal128(BaseDataTablesTest):
+    """Verify Decimal128 values display correctly in SearchPanes options."""
+
     def test_searchpanes_decimal128_display_value(self):
         request_args = dict(self.request_args)
         request_args['columns'][0]['searchable'] = 'true'
@@ -133,8 +154,7 @@ class TestSearchPanesDecimal128(BaseDataTablesTest):
 # ---------------------------------------------------------------------------
 
 class TestBinarySerializationTopLevel(BaseDataTablesTest):
-    def _make_dt(self):
-        return DataTables(self.mongo, 'test_collection', self.request_args)
+    """Serialize Binary fields to UUID string (subtypes 3/4) or hex."""
 
     def test_uuid_subtype4_serialized_as_uuid_string(self):
         uid = uuid.uuid4()
@@ -154,16 +174,19 @@ class TestBinarySerializationTopLevel(BaseDataTablesTest):
         self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["data"], raw.hex())
 
-    def test_non_binary_fields_unaffected(self):
+    def test_non_binary_name_field_unaffected(self):
         doc = {"name": "Alice", "age": 30}
         self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["name"], "Alice")
+
+    def test_non_binary_age_field_unaffected(self):
+        doc = {"name": "Alice", "age": 30}
+        self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["age"], 30)
 
 
 class TestBinarySerializationInList(BaseDataTablesTest):
-    def _make_dt(self):
-        return DataTables(self.mongo, 'test_collection', self.request_args)
+    """Serialize Binary values within lists to UUID string or hex."""
 
     def test_uuid_in_list_serialized(self):
         uid = uuid.uuid4()
@@ -179,6 +202,8 @@ class TestBinarySerializationInList(BaseDataTablesTest):
 
 
 class TestBinaryJsonSerializable(BaseDataTablesTest):
+    """Ensure serialized Binary fields produce valid JSON."""
+
     def test_result_is_json_serializable(self):
         uid = uuid.uuid4()
         doc = {"user_id": Binary(uid.bytes, 4), "data": Binary(b"\x01", 0)}
@@ -191,8 +216,7 @@ class TestBinaryJsonSerializable(BaseDataTablesTest):
 # ---------------------------------------------------------------------------
 
 class TestRegexSerialization(BaseDataTablesTest):
-    def _make_dt(self):
-        return DataTables(self.mongo, 'test_collection', self.request_args)
+    """Serialize Regex objects to `/pattern/flags` format."""
 
     def test_regex_with_flags_serialized(self):
         doc = {"pattern": Regex("foo.*bar", "i")}
@@ -212,10 +236,14 @@ class TestRegexSerialization(BaseDataTablesTest):
         self.assertIn("i", result)
         self.assertIn("m", result)
 
-    def test_regex_in_list(self):
+    def test_regex_in_list_first_element(self):
         doc = {"patterns": [Regex("alpha", "i"), Regex("beta")]}
         self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["patterns"][0], "/alpha/i")
+
+    def test_regex_in_list_second_element(self):
+        doc = {"patterns": [Regex("alpha", "i"), Regex("beta")]}
+        self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["patterns"][1], "/beta/")
 
     def test_regex_json_serializable(self):
@@ -224,11 +252,19 @@ class TestRegexSerialization(BaseDataTablesTest):
         result = json.dumps(doc)
         self.assertIn("/test/i", result)
 
-    def test_non_regex_fields_unaffected(self):
+    def test_non_regex_name_field_unaffected(self):
         doc = {"name": "Alice", "age": 30, "pattern": Regex("x")}
         self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["name"], "Alice")
+
+    def test_non_regex_age_field_unaffected(self):
+        doc = {"name": "Alice", "age": 30, "pattern": Regex("x")}
+        self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["age"], 30)
+
+    def test_regex_pattern_field_serialized(self):
+        doc = {"name": "Alice", "age": 30, "pattern": Regex("x")}
+        self._make_dt()._format_result_values(doc)
         self.assertEqual(doc["pattern"], "/x/")
 
     def test_regex_in_list_json_serializable(self):
@@ -239,8 +275,8 @@ class TestRegexSerialization(BaseDataTablesTest):
         self.assertIn("plain_string", result)
 
 
-class TestFormattingCoverageGaps(unittest.TestCase):
-    """Cover the 5 uncovered branches in formatting.py."""
+class TestFormattingCoverageGaps(BaseDataTablesTest):
+    """Cover uncovered branches in formatting.py: empty dict, nested dict, missing fields, row_id logic."""
 
     def test_format_result_values_empty_dict_returns_early(self):
         """L21: empty dict → early return, no error."""

@@ -5,7 +5,9 @@ from mongo_datatables import DataTables
 
 
 class TestMultiColumnSort(BaseDataTablesTest):
-    """Test multi-column sort specification."""
+    """Verify multi-column sort specification respects order array and orderable flag."""
+
+    def _make_dt(self):
         return DataTables(self.mongo, 'users', self.request_args)
 
     def test_single_column_sort_asc(self):
@@ -21,29 +23,46 @@ class TestMultiColumnSort(BaseDataTablesTest):
         spec = dt.sort_specification
         self.assertEqual(spec["email"], -1)
 
-    def test_multi_column_sort_two_columns(self):
+    def _two_column_sort_spec(self):
         self.request_args["order"] = [
             {"column": "0", "dir": "asc"},
             {"column": "1", "dir": "desc"},
         ]
-        dt = self._make_dt()
-        spec = dt.sort_specification
-        self.assertEqual(spec["name"], 1)
-        self.assertEqual(spec["email"], -1)
-        keys = list(spec.keys())
+        return self._make_dt().sort_specification
+
+    def test_multi_column_sort_name_direction(self):
+        self.assertEqual(self._two_column_sort_spec()["name"], 1)
+
+    def test_multi_column_sort_email_direction(self):
+        self.assertEqual(self._two_column_sort_spec()["email"], -1)
+
+    def test_multi_column_sort_key_order(self):
+        keys = list(self._two_column_sort_spec().keys())
         self.assertLess(keys.index("name"), keys.index("email"))
 
-    def test_multi_column_sort_three_columns(self):
+    def test_multi_column_sort_three_columns_status(self):
         self.request_args["order"] = [
             {"column": "2", "dir": "asc"},
             {"column": "0", "dir": "desc"},
             {"column": "1", "dir": "asc"},
         ]
-        dt = self._make_dt()
-        spec = dt.sort_specification
-        self.assertEqual(spec["status"], 1)
-        self.assertEqual(spec["name"], -1)
-        self.assertEqual(spec["email"], 1)
+        self.assertEqual(self._make_dt().sort_specification["status"], 1)
+
+    def test_multi_column_sort_three_columns_name(self):
+        self.request_args["order"] = [
+            {"column": "2", "dir": "asc"},
+            {"column": "0", "dir": "desc"},
+            {"column": "1", "dir": "asc"},
+        ]
+        self.assertEqual(self._make_dt().sort_specification["name"], -1)
+
+    def test_multi_column_sort_three_columns_email(self):
+        self.request_args["order"] = [
+            {"column": "2", "dir": "asc"},
+            {"column": "0", "dir": "desc"},
+            {"column": "1", "dir": "asc"},
+        ]
+        self.assertEqual(self._make_dt().sort_specification["email"], 1)
 
     def test_non_orderable_column_skipped(self):
         self.request_args["columns"][0]["orderable"] = "false"
@@ -94,10 +113,14 @@ class TestMultiColumnSort(BaseDataTablesTest):
             {"column": "1", "dir": "desc"},
         ]
         dt = self._make_dt()
-        self.assertEqual(dt.sort_specification, dt.sort_specification)
+        spec1 = dt.sort_specification
+        spec2 = dt.sort_specification
+        self.assertEqual(spec1, spec2)
 
 
 class TestSorting(BaseDataTablesTest):
+    """Verify orderable columns are correctly identified."""
+
     def test_orderable_columns(self):
         datatables = DataTables(self.mongo, 'users', self.request_args)
         orderable_columns = [col['data'] for col in datatables.columns if col.get('orderable', True)]
@@ -105,6 +128,8 @@ class TestSorting(BaseDataTablesTest):
 
 
 class TestColReorderNameBasedSort(BaseDataTablesTest):
+    """Support ColReorder name-based sort via `order[i][name]` field lookup."""
+
     def _make_dt(self, order, columns=None):
         if columns is None:
             columns = [
@@ -182,6 +207,8 @@ class TestColReorderNameBasedSort(BaseDataTablesTest):
 
 
 class TestColReorderColumnSearch(BaseDataTablesTest):
+    """Resolve column search fields via `name` (priority) or `data` (fallback)."""
+
     def _make_dt(self, columns):
         args = dict(self.request_args)
         args["columns"] = columns
@@ -234,6 +261,8 @@ class TestColReorderColumnSearch(BaseDataTablesTest):
 
 
 class TestRegexFlagStringCoercion(BaseDataTablesTest):
+    """Coerce string and bool regex flags to apply `re.escape()` or raw pattern."""
+
     def _make_dt(self, search_value, regex_flag):
         args = dict(self.request_args)
         args["columns"] = [{
@@ -275,6 +304,8 @@ class TestRegexFlagStringCoercion(BaseDataTablesTest):
 
 
 class TestOrderData(BaseDataTablesTest):
+    """Support `orderData` column redirect: sorting one column redirects to another."""
+
     def _make_columns(self, order_data_map=None):
         cols = [
             {"data": "name", "name": "", "searchable": True, "orderable": True, "search": {"value": "", "regex": False}},
@@ -358,6 +389,8 @@ class TestOrderData(BaseDataTablesTest):
 
 
 class TestOrderableCoercion(BaseDataTablesTest):
+    """Coerce string and bool `orderable` flag to include or exclude columns from sort."""
+
     def _make_dt(self, orderable_val, include_orderable=True):
         col = MagicMock()
         col.list_indexes.return_value = []

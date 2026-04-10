@@ -1,6 +1,6 @@
 """Base test fixtures for DataTables unit tests."""
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from bson.objectid import ObjectId
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -9,18 +9,16 @@ from mongo_datatables import DataTables
 
 
 class BaseDataTablesTest(unittest.TestCase):
-    """Base test class for DataTables tests"""
+    """Provide common fixtures for DataTables unit tests."""
 
     def setUp(self):
-        """Set up test fixtures before each test method"""
-        # Create a mock PyMongo object
+        """Initialize mock MongoDB collection and standard request arguments."""
         self.mongo = MagicMock()
         self.mongo.db = MagicMock(spec=Database)
         self.collection = MagicMock(spec=Collection)
         self.collection.estimated_document_count.return_value = 0
         self.mongo.db.__getitem__.return_value = self.collection
 
-        # Sample DataTables request parameters
         self.request_args = {
             "draw": "1",
             "start": 0,
@@ -37,9 +35,12 @@ class BaseDataTablesTest(unittest.TestCase):
             ]
         }
 
-        # Sample documents for mocked responses
         self.sample_docs = [
             {"_id": ObjectId(), "name": "John Doe", "email": "john@example.com", "status": "active"},
             {"_id": ObjectId(), "name": "Jane Smith", "email": "jane@example.com", "status": "inactive"},
             {"_id": ObjectId(), "name": "Bob Johnson", "email": "bob@example.com", "status": "active"}
         ]
+
+    def _make_dt(self) -> DataTables:
+        """Create a DataTables instance with default test fixtures."""
+        return DataTables(self.mongo, 'test_collection', self.request_args)
