@@ -12,7 +12,8 @@ from datetime import datetime
 
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
 from mongo_datatables.utils import FieldMapper, TypeConverter, DateHandler
-from mongo_datatables.editor.validators import validate_field_name, validate_document_payload
+from mongo_datatables.field_utils import validate_field_name
+from mongo_datatables.editor.validators import validate_document_payload
 from mongo_datatables.editor.validators.payload import _MAX_DOC_NESTING
 from mongo_datatables.data_field import DataField
 from mongo_datatables.editor.storage import StorageAdapter
@@ -44,11 +45,10 @@ def format_response_document(
     if "_id" in response_doc:
         response_doc["DT_RowId"] = str(response_doc.pop("_id"))
 
-    for key, val in response_doc.items():
-        if isinstance(val, ObjectId):
-            response_doc[key] = str(val)
-        elif isinstance(val, datetime):
-            response_doc[key] = val.isoformat()
+    response_doc = {
+        key: str(val) if isinstance(val, ObjectId) else val.isoformat() if isinstance(val, datetime) else val
+        for key, val in response_doc.items()
+    }
 
     if row_class is not None:
         response_doc["DT_RowClass"] = row_class(response_doc) if callable(row_class) else row_class
@@ -152,11 +152,10 @@ def preprocess_document(
                 else:
                     mutations[key] = date_obj
             except FieldMappingError:
+                logger.warning("Date parse failed for field %s; storing raw value", key)
                 if "." in key:
-                    logger.warning("Date parse failed for field %s; storing raw value", key)
                     dot_notation_updates[key] = val
                 else:
-                    logger.warning("Date parse failed for field %s; storing raw value", key)
                     mutations[key] = val
         elif "." in key:
             dot_notation_updates[key] = val

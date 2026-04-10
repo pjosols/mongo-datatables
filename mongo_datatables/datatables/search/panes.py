@@ -9,10 +9,19 @@ from pymongo.errors import PyMongoError
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper, is_truthy
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
-from mongo_datatables.editor.validators import validate_field_name
+from mongo_datatables.field_utils import validate_field_name
 from mongo_datatables.datatables._limits import MAX_FACET_BRANCHES, MAX_PANE_OPTIONS
 
 logger = logging.getLogger(__name__)
+
+
+def _hashable(v: Any) -> Any:
+    """Return a hashable representation of a MongoDB value.
+
+    v: value to convert.
+    Returns str representation for Decimal128, otherwise v unchanged.
+    """
+    return str(v.to_decimal()) if isinstance(v, Decimal128) else v
 
 
 def get_searchpanes_options(
@@ -73,9 +82,6 @@ def get_searchpanes_options(
     except PyMongoError as e:
         logger.error("Error generating SearchPanes options: %s", str(e))
         return {col_name: [] for col_name, *_ in eligible}
-
-    def _hashable(v: Any) -> Any:
-        return str(v.to_decimal()) if isinstance(v, Decimal128) else v
 
     options = {}
     for col_name, _, __ in eligible:

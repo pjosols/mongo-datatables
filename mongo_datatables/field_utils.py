@@ -1,10 +1,29 @@
-"""Field mapping and search term parsing utilities for mongo-datatables."""
+"""Field mapping, validation, and search term parsing utilities for mongo-datatables."""
 
 import logging
+import re
 import shlex
 from typing import Any, Dict, List, Optional
 
+from mongo_datatables.exceptions import InvalidDataError
+
+_FIELD_NAME_RE = re.compile(r"^[A-Za-z0-9_\-\.]+$")
 logger = logging.getLogger(__name__)
+
+
+def validate_field_name(name: str) -> None:
+    """Validate a single field name against the allowed character whitelist.
+
+    Rejects names containing special characters that could be used for injection.
+
+    name: field name string to validate.
+    Raises InvalidDataError if the name contains disallowed characters.
+    """
+    if not _FIELD_NAME_RE.match(name):
+        raise InvalidDataError(
+            f"Field name {name!r} contains invalid characters. "
+            "Only alphanumeric characters, underscores, hyphens, and dots are allowed."
+        )
 
 
 class FieldMapper:

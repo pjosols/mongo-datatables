@@ -6,8 +6,8 @@ from bson.objectid import ObjectId
 from bson.errors import InvalidId as ObjectIdError
 
 from mongo_datatables.exceptions import InvalidDataError
+from mongo_datatables.field_utils import validate_field_name  # noqa: F401 — re-exported
 
-_FIELD_NAME_RE = re.compile(r"^[A-Za-z0-9_\-\.]+$")
 _COLLECTION_NAME_RE = re.compile(r"^[^\x00$]{1,120}$")
 
 
@@ -47,16 +47,4 @@ def validate_doc_id(doc_id: str) -> None:
             ) from exc
 
 
-def validate_field_name(name: str) -> None:
-    """Validate a single field name against the allowed character whitelist.
 
-    Rejects names containing special characters that could be used for injection.
-
-    name: field name string to validate.
-    Raises InvalidDataError if the name contains disallowed characters.
-    """
-    if not _FIELD_NAME_RE.match(name):
-        raise InvalidDataError(
-            f"Field name {name!r} contains invalid characters. "
-            "Only alphanumeric characters, underscores, hyphens, and dots are allowed."
-        )

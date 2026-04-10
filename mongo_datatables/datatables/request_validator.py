@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from mongo_datatables.exceptions import InvalidDataError
-from mongo_datatables.editor.validators import validate_field_name
+from mongo_datatables.field_utils import validate_field_name
 
 # Required keys within each column dict; 'data' is optional (may be absent or None)
 _COLUMN_REQUIRED_KEYS = ("searchable", "orderable", "search")
@@ -93,15 +93,13 @@ def _validate_order(order: Any, num_columns: int) -> None:
             col_idx = int(entry["column"])
         except (ValueError, TypeError) as exc:
             raise InvalidDataError(f"'order[{i}][column]' must be an integer") from exc
-        # Skip range check when name is present (ColReorder sends out-of-range index + name).
-        # Also skip (don't raise) for bare out-of-range indices; sort logic handles fallback.
+        # Skip dir validation for bare out-of-range indices without a name; sort logic handles fallback.
         if num_columns > 0 and not (0 <= col_idx < num_columns) and not entry.get("name"):
             continue
-        else:
-            if entry.get("dir") not in ("asc", "desc"):
-                raise InvalidDataError(
-                    f"'order[{i}][dir]' must be 'asc' or 'desc', got {entry.get('dir')!r}"
-                )
+        if entry.get("dir") not in ("asc", "desc"):
+            raise InvalidDataError(
+                f"'order[{i}][dir]' must be 'asc' or 'desc', got {entry.get('dir')!r}"
+            )
 
 
 def _normalize_request_args(request_args: Dict[str, Any]) -> None:

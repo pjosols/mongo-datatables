@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from mongo_datatables.utils import TypeConverter, DateHandler, FieldMapper
 from mongo_datatables.exceptions import FieldMappingError, InvalidDataError
-from mongo_datatables.editor.validators import validate_field_name
+from mongo_datatables.field_utils import validate_field_name
 
 _log = logging.getLogger(__name__)
 
