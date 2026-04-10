@@ -25,6 +25,7 @@ All notable changes to mongo-datatables are documented here.
 - `tests/unit/editor/test_cwe20_date_heuristic.py`: added module docstring; added Wholeshoot docstrings to all test functions
 - `tests/unit/editor/test_cwe915_mass_assignment.py`: added module docstring; added Wholeshoot docstrings to all test classes and methods
 - `tests/unit/editor/test_editor_document_processing.py`: added module docstring; added Wholeshoot docstrings to test classes and methods
+- `tests/unit/datatables/test_sort_unit.py`: added Wholeshoot docstrings to all test classes and methods; documented helper methods `_make_dt()`, `_make_columns()`, `_col()`
 
 ### Added
 
