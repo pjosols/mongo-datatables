@@ -1,4 +1,4 @@
-"""Handle search, dependent-field, and upload requests for Editor."""
+"""Process Editor search, dependent-field, and upload actions."""
 import re
 import logging
 from typing import Any, Dict, List, Optional, Protocol
@@ -8,6 +8,7 @@ from mongo_datatables.editor.validators import validate_upload_data
 from mongo_datatables.utils import FieldMapper
 
 MAX_SEARCH_VALUES = 100
+MAX_SEARCH_TERM_LEN = 200
 _SCALAR_TYPES = (str, int, float, bool)
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ def handle_search(
     db_field = field_mapper.get_db_field(field) or field
 
     if search_term is not None:
+        if len(str(search_term)) > MAX_SEARCH_TERM_LEN:
+            raise InvalidDataError(f"search term exceeds maximum length of {MAX_SEARCH_TERM_LEN}")
         query = {db_field: {"$regex": re.escape(search_term), "$options": "i"}}
     elif values:
         safe_values = [v for v in values[:MAX_SEARCH_VALUES] if isinstance(v, _SCALAR_TYPES)]
@@ -61,12 +64,12 @@ def handle_search(
 
 
 def _coerce_values(field: str, values: List[Any], fields: Dict[str, Any]) -> List[Any]:
-    """Coerce string values from the request to the field's declared type.
+    """Coerce request values to the field's declared type.
 
     field: Field alias.
-    values: List of raw values from the request.
+    values: Raw values from the request.
     fields: Dict of alias -> DataField.
-    Returns coerced list.
+    Returns coerced list, converting strings to int/float/bool as needed.
     """
     data_field = fields.get(field)
     if data_field is None:
@@ -95,9 +98,7 @@ def handle_dependent(
     request_args: Dict[str, Any],
     dependent_handlers: Dict[str, DependentHandler],
 ) -> Dict[str, Any]:
-    """Handle dependent field Ajax requests.
-
-    Dispatches to a registered handler for the triggering field.
+    """Dispatch dependent field Ajax requests to registered handlers.
 
     request_args: Parsed Editor request dict.
     dependent_handlers: Dict of field -> callable(field, values, rows).
@@ -119,16 +120,15 @@ def handle_upload(
     storage_adapter: Optional[Any],
     scanner: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Handle action=upload — store a file via the pluggable storage adapter.
+    """Store a file via the pluggable storage adapter for action=upload.
 
-    Expects request_args to contain:
-        uploadField: name of the Editor field this file belongs to.
-        upload: dict with keys filename, content_type, data (bytes).
+    Expects request_args to contain uploadField (field name) and upload dict
+    with keys filename, content_type, data (bytes).
 
     request_args: Parsed Editor request dict.
     storage_adapter: StorageAdapter instance.
-    scanner: optional virus scanner with a ``scan(filename, data) -> bool`` method.
-    Returns ``{"upload": {"id": "<file_id>"}, "files": {...}}``.
+    scanner: Optional virus scanner with scan(filename, data) -> bool method.
+    Returns {"upload": {"id": "<file_id>"}, "files": {...}}.
     Raises InvalidDataError if adapter, uploadField, or upload data is missing.
     """
     if not storage_adapter:

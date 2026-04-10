@@ -9,6 +9,7 @@ All notable changes to mongo-datatables are documented here.
 - Moved search modules into `datatables/search/` subpackage — internal restructuring, no public API impact
 - Tightened input validation in Editor search and upload handlers
 - Updated all docstrings to Wholeshoot convention for consistency
+- `editor/search.py`: refined module and function docstrings for clarity and precision
 
 ### Fixed
 

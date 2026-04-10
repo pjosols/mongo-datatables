@@ -1,9 +1,10 @@
-"""Tests for CWE-400: unbounded $in array in handle_search() — query DoS prevention."""
+"""Tests for CWE-400: query DoS prevention in handle_search() — bounded search term and $in array."""
 import pytest
 from unittest.mock import MagicMock
 from pymongo.collection import Collection
 
-from mongo_datatables.editor.search import handle_search, MAX_SEARCH_VALUES
+from mongo_datatables.editor.search import handle_search, MAX_SEARCH_VALUES, MAX_SEARCH_TERM_LEN
+from mongo_datatables.exceptions import InvalidDataError
 from mongo_datatables.utils import FieldMapper
 
 
@@ -103,3 +104,51 @@ def test_max_search_values_constant_is_reasonable():
     """MAX_SEARCH_VALUES must be a positive integer no greater than 1000."""
     assert isinstance(MAX_SEARCH_VALUES, int)
     assert 1 <= MAX_SEARCH_VALUES <= 1000
+
+
+# --- search term length cap (CWE-400 regex DoS) ---
+
+def test_search_term_at_max_length_is_accepted():
+    """A search term exactly at MAX_SEARCH_TERM_LEN must not raise."""
+    col = _col()
+    term = "a" * MAX_SEARCH_TERM_LEN
+    handle_search({"field": "name", "search": term}, col, _mapper(), {})
+    col.find.assert_called_once()
+
+
+def test_search_term_over_max_length_raises():
+    """A search term one character over the limit must raise InvalidDataError."""
+    col = _col()
+    term = "a" * (MAX_SEARCH_TERM_LEN + 1)
+    with pytest.raises(InvalidDataError, match="search term exceeds maximum length"):
+        handle_search({"field": "name", "search": term}, col, _mapper(), {})
+    col.find.assert_not_called()
+
+
+def test_search_term_large_raises_without_querying():
+    """A 1 MB search term must raise before any MongoDB query."""
+    col = _col()
+    term = "x" * 1_000_000
+    with pytest.raises(InvalidDataError):
+        handle_search({"field": "name", "search": term}, col, _mapper(), {})
+    col.find.assert_not_called()
+
+
+def test_search_term_none_skips_length_check():
+    """None search term must not trigger the length check."""
+    col = _col()
+    result = handle_search({"field": "name"}, col, _mapper(), {})
+    assert result == {"data": []}
+
+
+def test_search_term_empty_string_is_accepted():
+    """Empty string is within the limit and must not raise."""
+    col = _col()
+    handle_search({"field": "name", "search": ""}, col, _mapper(), {})
+    col.find.assert_called_once()
+
+
+def test_max_search_term_len_constant_is_reasonable():
+    """MAX_SEARCH_TERM_LEN must be a positive integer."""
+    assert isinstance(MAX_SEARCH_TERM_LEN, int)
+    assert MAX_SEARCH_TERM_LEN > 0
