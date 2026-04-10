@@ -46,7 +46,8 @@ class TestJsonParseSizeGate:
         long_val = "x" * (_MAX_JSON_PARSE_LEN - len('{"k": ""}') - 1)
         payload = json.dumps({"k": long_val})
         assert len(payload) <= _MAX_JSON_PARSE_LEN
-        fields, df = _fields("data")
+        df = [DataField("data", "object")]
+        fields = {f.alias: f for f in df}
         processed, _ = preprocess_document({"data": payload}, fields, df)
         # parsed as dict
         assert isinstance(processed["data"], dict)
@@ -74,7 +75,8 @@ class TestJsonParseSizeGate:
 
     def test_small_json_string_is_still_parsed(self):
         """Small JSON strings well under the limit continue to be parsed."""
-        fields, df = _fields("tags")
+        df = [DataField("tags", "array")]
+        fields = {f.alias: f for f in df}
         processed, _ = preprocess_document({"tags": '["a","b"]'}, fields, df)
         assert processed["tags"] == ["a", "b"]
 

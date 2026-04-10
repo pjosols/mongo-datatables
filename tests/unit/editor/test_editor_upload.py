@@ -2,12 +2,10 @@
 import unittest
 import pytest
 from unittest.mock import MagicMock, patch
-from datetime import datetime
-from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from pymongo.collection import Collection
 from pymongo.database import Database
-from pymongo.results import InsertOneResult, UpdateResult, DeleteResult
+from pymongo.results import InsertOneResult
 from pymongo.errors import PyMongoError
 
 from mongo_datatables import Editor
@@ -110,7 +108,8 @@ class TestEditorUpload(unittest.TestCase):
         self.collection.find_one.return_value = {'_id': oid, 'name': 'Test'}
         editor = Editor(self.mongo, 'users',
                         {'action': 'create', 'data': {'0': {'name': 'Test'}}},
-                        storage_adapter=None)
+                        storage_adapter=None,
+                        data_fields=[DataField('name', 'string')])
         result = editor.process()
         self.assertIn('data', result)
 
@@ -139,7 +138,8 @@ class TestEditorFilesInResponse:
         mock_collection_upload.find_one.return_value = {"_id": ObjectId(), "name": "Alice", "photo": "1"}
         editor = Editor(MagicMock(), "col",
                         {"action": "create", "data": {"0": {"name": "Alice", "photo": "1"}}},
-                        storage_adapter=adapter, file_fields=["photo"])
+                        storage_adapter=adapter, file_fields=["photo"],
+                        data_fields=[DataField("name", "string"), DataField("photo", "string")])
         editor._collection = mock_collection_upload
         result = editor.create()
         assert "files" in result
@@ -153,7 +153,8 @@ class TestEditorFilesInResponse:
         mock_collection_upload.find_one.return_value = {"_id": ObjectId(doc_id), "name": "Bob", "photo": "1"}
         editor = Editor(MagicMock(), "col",
                         {"action": "edit", "data": {doc_id: {"name": "Bob", "photo": "1"}}},
-                        doc_id=doc_id, storage_adapter=adapter, file_fields=["photo"])
+                        doc_id=doc_id, storage_adapter=adapter, file_fields=["photo"],
+                        data_fields=[DataField("name", "string"), DataField("photo", "string")])
         editor._collection = mock_collection_upload
         result = editor.edit()
         assert "files" in result
@@ -165,7 +166,8 @@ class TestEditorFilesInResponse:
         mock_collection_upload.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
         editor = Editor(MagicMock(), "col",
                         {"action": "create", "data": {"0": {"name": "Alice"}}},
-                        storage_adapter=adapter)
+                        storage_adapter=adapter,
+                        data_fields=[DataField("name", "string")])
         editor._collection = mock_collection_upload
         result = editor.create()
         assert "files" not in result
@@ -175,7 +177,8 @@ class TestEditorFilesInResponse:
         mock_collection_upload.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
         editor = Editor(MagicMock(), "col",
                         {"action": "create", "data": {"0": {"name": "Alice"}}},
-                        file_fields=["photo"])
+                        file_fields=["photo"],
+                        data_fields=[DataField("name", "string")])
         editor._collection = mock_collection_upload
         result = editor.create()
         assert "files" not in result
@@ -188,7 +191,8 @@ class TestEditorFilesInResponse:
         mock_collection_upload.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
         editor = Editor(MagicMock(), "col",
                         {"action": "create", "data": {"0": {"name": "Alice"}}},
-                        storage_adapter=BasicAdapter(), file_fields=["photo"])
+                        storage_adapter=BasicAdapter(), file_fields=["photo"],
+                        data_fields=[DataField("name", "string")])
         editor._collection = mock_collection_upload
         result = editor.create()
         assert "files" not in result
@@ -199,7 +203,8 @@ class TestEditorFilesInResponse:
         mock_collection_upload.find_one.return_value = {"_id": ObjectId(), "name": "Alice"}
         editor = Editor(MagicMock(), "col",
                         {"action": "create", "data": {"0": {"name": "Alice"}}},
-                        storage_adapter=adapter, file_fields=["photo"])
+                        storage_adapter=adapter, file_fields=["photo"],
+                        data_fields=[DataField("name", "string")])
         editor._collection = mock_collection_upload
         result = editor.create()
         assert "files" not in result
@@ -214,7 +219,8 @@ class TestEditorFilesInResponse:
         mock_collection_upload.find_one.return_value = {"_id": ObjectId(), "photo": "1", "doc": "2"}
         editor = Editor(MagicMock(), "col",
                         {"action": "create", "data": {"0": {"photo": "1", "doc": "2"}}},
-                        storage_adapter=adapter, file_fields=["photo", "doc"])
+                        storage_adapter=adapter, file_fields=["photo", "doc"],
+                        data_fields=[DataField("photo", "string"), DataField("doc", "string")])
         editor._collection = mock_collection_upload
         result = editor.create()
         assert result["files"]["photo"] == {"1": {"web_path": "/uploads/1.png"}}

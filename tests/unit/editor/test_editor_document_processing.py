@@ -72,8 +72,9 @@ class TestPreprocessDocument(unittest.TestCase):
             "contact.phone": "123-456-7890"
         }}}
         data_fields = [
-            DataField("name", "string"), DataField("profile", "object"),
-            DataField("contact", "object"),
+            DataField("name", "string"), DataField("profile.bio", "string"),
+            DataField("profile.skills", "array"), DataField("contact.email", "string"),
+            DataField("contact.phone", "string"),
         ]
         editor = Editor(self.mongo, 'users', request_args, data_fields=data_fields)
         processed_doc, dot_notation = editor._preprocess_document(editor.data["0"])
@@ -195,7 +196,8 @@ class TestPreprocessDocumentInputValidation:
 
     def test_json_string_value_is_parsed(self):
         """Parse JSON string values to objects."""
-        processed, _ = self._call_with_wl({"tags": '["a", "b"]'}, "tags")
+        df = [DataField("tags", "array")]
+        processed, _ = preprocess_document({"tags": '["a", "b"]'}, {f.alias: f for f in df}, df)
         assert processed["tags"] == ["a", "b"]
 
     def test_non_dict_input_raises_or_passes_gracefully(self):

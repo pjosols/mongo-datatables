@@ -110,7 +110,9 @@ class TestEditorMutations(unittest.TestCase):
             "contact.email": "updated@example.com", "contact.phone": "987-654-3210"
         }}}
         editor = Editor(self.mongo, 'users', request_args, doc_id=doc_id,
-                        data_fields=[DataField('profile.skills', 'array')])
+                        data_fields=[DataField('name', 'string'), DataField('profile.bio', 'string'),
+                                     DataField('profile.skills', 'array'), DataField('contact.email', 'string'),
+                                     DataField('contact.phone', 'string')])
         result = editor.edit()
         self.collection.update_one.assert_called_once()
         args, _ = self.collection.update_one.call_args
@@ -136,7 +138,10 @@ class TestEditorMutations(unittest.TestCase):
             "contact.email": "new@example.com", "contact.phone": "123-456-7890",
             "created_at": "2023-06-15T10:30:00"
         }}}
-        editor = Editor(self.mongo, 'users', request_args)
+        editor = Editor(self.mongo, 'users', request_args,
+                        data_fields=[DataField("name", "string"), DataField("profile.bio", "string"),
+                                     DataField("profile.skills", "array"), DataField("contact.email", "string"),
+                                     DataField("contact.phone", "string"), DataField("created_at", "date")])
         result = editor.create()
         self.collection.insert_one.assert_called_once()
         args, _ = self.collection.insert_one.call_args

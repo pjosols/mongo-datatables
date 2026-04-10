@@ -2,53 +2,18 @@
 
 All notable changes to mongo-datatables are documented here.
 
-## [Unreleased]
-
-### Changed
-
-- `tests/unit/datatables/test_datatables_results.py`: refined class docstrings to Wholeshoot convention; updated helper method docstrings for precision
-- `tests/unit/datatables/test_datatables_error_handling.py`: module docstring documents error handling and edge case coverage
-- `datatables/query/regex_utils.py`: refined module docstring for conciseness; all function docstrings follow Wholeshoot convention
-- Updated module docstrings to be more precise and imperative
-- **README**: Regex mode section now documents ReDoS protection and pattern validation limits
-- `editor/core.py`: refined `Editor.__init__` docstring; added Wholeshoot docstrings to all methods
-- `editor/crud.py`: refined module docstring; added Wholeshoot docstrings to `_fmt()`, `run_create()`, `run_edit()`, `run_remove()`, `resolve_collection()`, `resolve_db()`
-- `editor/document.py`: refined module docstring to emphasize CWE-20 and CWE-915 security fixes; added Wholeshoot docstrings to `format_response_document()`, `preprocess_document()`, `build_updates()`
-- `editor/validators/upload_security.py`: refined module docstring for conciseness
-- `datatables/_limits.py`: refined module docstring to include pagination
-- `datatables/compat.py`: added Wholeshoot docstrings to all methods and properties
-- `tests/unit/datatables/test_compat.py`: module docstring documents backward-compatible shim verification; added Wholeshoot docstrings to all test classes and methods
-- `datatables/core.py`: added Wholeshoot docstrings to all properties and methods
-- `datatables/request_validator.py`: refined module docstring for precision; refined function docstrings to specify exception conditions inline
-- Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`, `tests/unit/editor/test_editor_crud.py`, `tests/unit/editor/test_editor_upload.py`, `tests/unit/datatables/test_request_validator.py`
-- Test helper methods documented: `_make_formatted_doc()`, `_setup_edit()`, `_partial_cancel_result()`
-- `tests/unit/datatables/test_datatables_pagination.py`: added class and method docstrings following Wholeshoot convention
-- `tests/unit/editor/test_cwe20_date_heuristic.py`: added module docstring; added Wholeshoot docstrings to all test functions
-- `tests/unit/editor/test_cwe915_mass_assignment.py`: refined module docstring to Wholeshoot convention (imperative, no filler)
-- `tests/unit/editor/test_editor_document_processing.py`: added module docstring; added Wholeshoot docstrings to test classes and methods
-- `tests/unit/datatables/test_sort_unit.py`: added Wholeshoot docstrings to all test classes and methods; documented helper methods `_make_dt()`, `_make_columns()`, `_col()`
-- `tests/unit/datatables/test_request_validator.py`: refined all test class docstrings to Wholeshoot convention (imperative, no filler)
-- `tests/unit/datatables/test_specific_exception_handling.py`: refined module docstring to Wholeshoot convention (imperative, no filler)
-
-### Added
-
-- **README**: File Uploads section documenting security validation (magic bytes, filename safety, size limits, virus scanning)
-
 ## [2.1.1] - 2026-04-10
 
 ### Changed
 
 - Moved search modules into `datatables/search/` subpackage — internal restructuring, no public API impact
-- Tightened input validation in Editor search and upload handlers
-- Updated all docstrings to Wholeshoot convention for consistency
-- `editor/search.py`: refined module and function docstrings for clarity and precision
+- Dead code, unused parameters, and stale module references removed throughout
+- Type annotations completed on remaining unannotated functions
 
 ### Fixed
 
 - `editor/document.py`: declared date fields were not being parsed due to wrong attribute name (`field_type` vs `data_type`)
-- `datatables/formatting.py`: `format_result_values()` docstring now follows Wholeshoot convention
-- `exceptions.py`: exception class docstrings now follow Wholeshoot convention (one-sentence, no examples)
-- Various type annotation corrections and import cleanup
+- `editor/crud.py`: second `ObjectId()` call in `run_edit` now reuses the already-constructed object, eliminating an unguarded exception path
 
 ## [2.1.0] - 2026-04-07
 

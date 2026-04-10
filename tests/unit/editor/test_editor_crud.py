@@ -93,7 +93,8 @@ class TestEditor(unittest.TestCase):
         self.assertEqual(editor.list_of_ids, [self.sample_id, self.sample_id2])
 
     def test_preprocess_document_removes_none_fields(self):
-        editor = Editor(self.mongo, 'users', self.create_args)
+        editor = Editor(self.mongo, 'users', self.create_args,
+                        data_fields=[DataField("name", "string"), DataField("status", "string"), DataField("email", "string")])
         doc = {"name": "John Doe", "status": None, "email": None}
         result = editor._preprocess_document(doc)
         processed = result[0] if isinstance(result, tuple) else result
@@ -102,7 +103,8 @@ class TestEditor(unittest.TestCase):
         self.assertIn("name", processed)
 
     def test_preprocess_document_parses_json_strings(self):
-        editor = Editor(self.mongo, 'users', self.create_args)
+        editor = Editor(self.mongo, 'users', self.create_args,
+                        data_fields=[DataField("tags", "array"), DataField("meta", "object")])
         doc = {"tags": '["tag1", "tag2"]', "meta": '{"key": "val"}'}
         result = editor._preprocess_document(doc)
         processed = result[0] if isinstance(result, tuple) else result
@@ -184,7 +186,9 @@ class TestEditor(unittest.TestCase):
             editor.create()
 
     def test_create_method_with_data(self):
-        editor = Editor(self.mongo, 'users', self.create_args)
+        editor = Editor(self.mongo, 'users', self.create_args,
+                        data_fields=[DataField("name", "string"), DataField("email", "string"),
+                                     DataField("status", "string"), DataField("created_at", "date")])
         insert_result = MagicMock(spec=InsertOneResult)
         insert_result.inserted_id = ObjectId(self.sample_id)
         self.collection.insert_one.return_value = insert_result
@@ -197,7 +201,9 @@ class TestEditor(unittest.TestCase):
         self.assertEqual(result["data"][0]["DT_RowId"], self.sample_id)
 
     def test_create_method_exception(self):
-        editor = Editor(self.mongo, 'users', self.create_args)
+        editor = Editor(self.mongo, 'users', self.create_args,
+                        data_fields=[DataField("name", "string"), DataField("email", "string"),
+                                     DataField("status", "string"), DataField("created_at", "date")])
         self.collection.insert_one.side_effect = PyMongoError("Database error")
         with self.assertRaises(DatabaseOperationError) as context:
             editor.create()
@@ -316,7 +322,9 @@ class TestEditor(unittest.TestCase):
 
     def test_create_with_hook_all_proceed(self):
         hook = MagicMock(return_value=True)
-        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook})
+        editor = Editor(self.mongo, 'users', self.create_args, hooks={"pre_create": hook},
+                        data_fields=[DataField("name", "string"), DataField("email", "string"),
+                                     DataField("status", "string"), DataField("created_at", "date")])
         insert_result = MagicMock()
         insert_result.inserted_id = ObjectId(self.sample_id)
         self.collection.insert_one.return_value = insert_result
@@ -339,7 +347,8 @@ class TestEditor(unittest.TestCase):
         """Execute multi-row create with partial hook cancellation."""
         multi_create_args = {"action": "create", "data": {"0": {"name": "Alice"}, "1": {"name": "Bob"}}}
         hook = MagicMock(side_effect=lambda row_id, _: row_id == "0")
-        editor = Editor(self.mongo, 'users', multi_create_args, hooks={"pre_create": hook})
+        editor = Editor(self.mongo, 'users', multi_create_args, hooks={"pre_create": hook},
+                        data_fields=[DataField("name", "string")])
         insert_result = MagicMock()
         insert_result.inserted_id = ObjectId(self.sample_id)
         self.collection.insert_one.return_value = insert_result

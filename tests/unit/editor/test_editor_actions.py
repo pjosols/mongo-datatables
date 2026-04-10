@@ -164,7 +164,8 @@ class TestEditorErrorResponseFormat(unittest.TestCase):
         self.collection.find_one.return_value = {'_id': oid, 'name': 'Alice'}
         editor = Editor(self.mongo, 'users',
                         {'action': 'create', 'data': {'0': {'name': 'Alice'}}},
-                        validators={'name': lambda v: None})
+                        validators={'name': lambda v: None},
+                        data_fields=[DataField('name', 'string')])
         result = editor.process()
         self.assertIn('data', result)
         self.assertNotIn('fieldErrors', result)
@@ -204,7 +205,8 @@ class TestEditorErrorResponseFormat(unittest.TestCase):
         insert_result.inserted_id = oid
         self.collection.insert_one.return_value = insert_result
         self.collection.find_one.return_value = {'_id': oid, 'name': 'Bob'}
-        editor = Editor(self.mongo, 'users', {'action': 'create', 'data': {'0': {'name': 'Bob'}}})
+        editor = Editor(self.mongo, 'users', {'action': 'create', 'data': {'0': {'name': 'Bob'}}},
+                        data_fields=[DataField('name', 'string')])
         result = editor.process()
         self.assertIn('data', result)
         self.assertNotIn('fieldErrors', result)
@@ -227,7 +229,8 @@ class TestEditorOptions(unittest.TestCase):
         self.collection.delete_one.return_value = MagicMock()
 
     def _make_editor(self, request_args, doc_id='', options=None):
-        return Editor(self.mongo, 'users', request_args, doc_id=doc_id, options=options)
+        return Editor(self.mongo, 'users', request_args, doc_id=doc_id, options=options,
+                      data_fields=[DataField('name', 'string')])
 
     def test_no_options_key_absent_by_default(self):
         editor = self._make_editor({'action': 'create', 'data': {'0': {'name': 'Alice'}}})

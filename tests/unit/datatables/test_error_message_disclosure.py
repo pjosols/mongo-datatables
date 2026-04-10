@@ -84,7 +84,8 @@ def _make_editor(action: str = "create") -> tuple:
     mongo.db = MagicMock(spec=Database)
     mongo.db.__getitem__ = MagicMock(return_value=col)
     request_args = {"action": action, "data": {"0": {"name": "Alice"}}}
-    editor = Editor(mongo, "users", request_args)
+    editor = Editor(mongo, "users", request_args,
+                    data_fields=[DataField("name", "string")])
     editor._collection = col
     return editor, col
 

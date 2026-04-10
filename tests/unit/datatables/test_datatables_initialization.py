@@ -60,13 +60,14 @@ class TestInitialization(BaseDataTablesTest):
         self.assertEqual(datatables.start, 20)
 
     def test_limit(self):
+        from mongo_datatables.datatables._limits import DEFAULT_PAGE_SIZE
         self.request_args["length"] = 25
         datatables = DataTables(self.mongo, 'users', self.request_args)
         self.assertEqual(datatables.limit, 25)
 
         self.request_args["length"] = -1
         datatables = DataTables(self.mongo, 'users', self.request_args)
-        self.assertEqual(datatables.limit, -1)
+        self.assertEqual(datatables.limit, DEFAULT_PAGE_SIZE)
 
     def test_count_total(self):
         self.collection.count_documents.return_value = 100

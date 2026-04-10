@@ -35,7 +35,7 @@ class TestEditorCRUD(unittest.TestCase):
         editor = Editor(self.mongo, 'users', {
             "action": "create",
             "data": {"0": {"name": "Test User", "email": "test@example.com", "age": "30"}}
-        })
+        }, data_fields=[DataField("name", "string"), DataField("email", "string"), DataField("age", "number")])
         result = editor.create()
         self.collection.insert_one.assert_called_once()
         self.assertIn("data", result)
@@ -55,7 +55,8 @@ class TestEditorCRUD(unittest.TestCase):
             "action": "edit",
             "data": {doc_id: {"DT_RowId": doc_id, "name": "Updated Name",
                                "email": "updated@example.com", "age": "35"}}
-        }, doc_id=doc_id)
+        }, doc_id=doc_id,
+        data_fields=[DataField("name", "string"), DataField("email", "string"), DataField("age", "number")])
         result = editor.edit()
         self.collection.update_one.assert_called_once()
         args, _ = self.collection.update_one.call_args
@@ -100,7 +101,8 @@ class TestEditorCRUD(unittest.TestCase):
                 doc_id1: {"DT_RowId": doc_id1, "status": "approved"},
                 doc_id2: {"DT_RowId": doc_id2, "status": "approved"}
             }
-        }, doc_id=f"{doc_id1},{doc_id2}")
+        }, doc_id=f"{doc_id1},{doc_id2}",
+        data_fields=[DataField("status", "string")])
         result = editor.edit()
         self.assertEqual(self.collection.update_one.call_count, 2)
         self.assertIn("data", result)
@@ -125,7 +127,8 @@ class TestEditorMultiRowCreate(unittest.TestCase):
         oid = ObjectId()
         self.collection.insert_one.return_value = self._make_insert_mock(oid)
         self.collection.find_one.return_value = {'_id': oid, 'name': 'Alice'}
-        editor = Editor(self.mongo, 'users', {'action': 'create', 'data': {'0': {'name': 'Alice'}}})
+        editor = Editor(self.mongo, 'users', {'action': 'create', 'data': {'0': {'name': 'Alice'}}},
+                        data_fields=[DataField('name', 'string')])
         result = editor.create()
         self.assertEqual(len(result['data']), 1)
         self.collection.insert_one.assert_called_once()
@@ -140,7 +143,7 @@ class TestEditorMultiRowCreate(unittest.TestCase):
         editor = Editor(self.mongo, 'users', {
             'action': 'create',
             'data': {'0': {'name': 'Alice'}, '1': {'name': 'Bob'}, '2': {'name': 'Carol'}}
-        })
+        }, data_fields=[DataField('name', 'string')])
         result = editor.create()
         self.assertEqual(len(result['data']), 3)
         self.assertEqual(self.collection.insert_one.call_count, 3)
@@ -153,7 +156,7 @@ class TestEditorMultiRowCreate(unittest.TestCase):
         ]
         editor = Editor(self.mongo, 'users', {
             'action': 'create', 'data': {'0': {'name': 'Alice'}, '1': {'name': 'Bob'}}
-        })
+        }, data_fields=[DataField('name', 'string')])
         result = editor.create()
         row_ids = [r['DT_RowId'] for r in result['data']]
         self.assertEqual(row_ids, [str(oids[0]), str(oids[1])])
@@ -177,7 +180,7 @@ class TestEditorMultiRowCreate(unittest.TestCase):
         editor = Editor(self.mongo, 'users', {
             'action': 'create',
             'data': {'2': {'name': 'Third'}, '0': {'name': 'First'}, '1': {'name': 'Second'}}
-        })
+        }, data_fields=[DataField('name', 'string')])
         editor.create()
         self.assertEqual(names_inserted, ['First', 'Second', 'Third'])
 
@@ -194,7 +197,7 @@ class TestEditorMultiRowCreate(unittest.TestCase):
         ]
         editor = Editor(self.mongo, 'users', {
             'action': 'create', 'data': {'0': {'name': 'X'}, '1': {'name': 'Y'}}
-        })
+        }, data_fields=[DataField('name', 'string')])
         result = editor.process()
         self.assertIn('data', result)
         self.assertEqual(len(result['data']), 2)
@@ -221,6 +224,7 @@ class TestEditDTRowFieldsStripped(unittest.TestCase):
             self.mongo, "users",
             {"action": "edit", "data": {self.doc_id: row_data}},
             doc_id=self.doc_id,
+            data_fields=[DataField("name", "string"), DataField("status", "string")],
         )
         return editor.edit()
 
@@ -276,6 +280,7 @@ class TestEditDTRowFieldsStripped(unittest.TestCase):
             {"action": "edit", "data": {self.doc_id: {"DT_RowId": self.doc_id, "name": "Alice"}}},
             doc_id=self.doc_id,
             hooks={"pre_edit": hook},
+            data_fields=[DataField("name", "string")],
         )
         editor.edit()
         self.assertNotIn("DT_RowId", received)

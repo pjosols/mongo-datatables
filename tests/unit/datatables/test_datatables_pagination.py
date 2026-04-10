@@ -14,11 +14,6 @@ class TestPagination(BaseDataTablesTest):
     """
 
     def _get_pipeline(self, datatables):
-        """Extract aggregation pipeline from DataTables results call.
-        
-        datatables: DataTables instance.
-        Returns list of pipeline stages.
-        """
         with patch.object(datatables.collection, 'aggregate', return_value=[]) as mock_agg:
             datatables.results()
             args, _ = mock_agg.call_args
@@ -98,10 +93,11 @@ class TestPagination(BaseDataTablesTest):
         self.assertLessEqual(limit_stage['$limit'], MAX_PAGE_SIZE)
 
     def test_invalid_string_length_returns_default(self):
-        """Non-numeric length string returns DEFAULT_PAGE_SIZE."""
+        """Non-numeric length string raises InvalidDataError."""
+        from mongo_datatables.exceptions import InvalidDataError
         self.request_args["length"] = "abc"
-        dt = DataTables(self.mongo, 'users', self.request_args)
-        self.assertEqual(dt.limit, DEFAULT_PAGE_SIZE)
+        with self.assertRaises(InvalidDataError):
+            DataTables(self.mongo, 'users', self.request_args)
 
     def test_none_length_returns_default(self):
         """Missing length returns DEFAULT_PAGE_SIZE."""

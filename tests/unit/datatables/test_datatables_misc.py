@@ -69,7 +69,9 @@ class TestInputValidation(_BaseDataTablesTest):
         self.assertEqual(self._make({"start": "20"}).start, 20)
 
     def test_start_invalid_string(self):
-        self.assertEqual(self._make({"start": "abc"}).start, 0)
+        from mongo_datatables.exceptions import InvalidDataError
+        with self.assertRaises(InvalidDataError):
+            self._make({"start": "abc"})
 
     def test_start_negative(self):
         self.assertEqual(self._make({"start": "-5"}).start, 0)
@@ -85,10 +87,13 @@ class TestInputValidation(_BaseDataTablesTest):
         self.assertEqual(self._make({"length": "25"}).limit, 25)
 
     def test_limit_minus_one(self):
-        self.assertEqual(self._make({"length": "-1"}).limit, -1)
+        from mongo_datatables.datatables._limits import DEFAULT_PAGE_SIZE
+        self.assertEqual(self._make({"length": "-1"}).limit, DEFAULT_PAGE_SIZE)
 
     def test_limit_invalid_string(self):
-        self.assertEqual(self._make({"length": "abc"}).limit, 10)
+        from mongo_datatables.exceptions import InvalidDataError
+        with self.assertRaises(InvalidDataError):
+            self._make({"length": "abc"})
 
     def test_limit_none(self):
         self.assertEqual(self._make({"length": None}).limit, 10)
@@ -141,11 +146,6 @@ class TestInit(unittest.TestCase):
 
 
 def _make_regression_dt(data_fields=None):
-    """Create a DataTables instance for regression testing.
-    
-    data_fields: optional list of DataField objects. Defaults to empty list.
-    Returns DataTables instance with mocked MongoDB collection.
-    """
     mongo = MagicMock()
     mongo.db = MagicMock(spec=Database)
     collection = MagicMock(spec=Collection)
@@ -162,10 +162,6 @@ def _make_regression_dt(data_fields=None):
 
 
 def _make_qb():
-    """Create a MongoQueryBuilder with mocked FieldMapper.
-    
-    Returns MongoQueryBuilder configured for text field type.
-    """
     fm = MagicMock(spec=FieldMapper)
     fm.get_field_type.return_value = "text"
     fm.get_db_field.side_effect = lambda x: x
@@ -241,11 +237,6 @@ class TestHashableOutsideLoop(unittest.TestCase):
 
 
 def _sb_args(group: dict) -> dict:
-    """Wrap a SearchBuilder group dict into request_args.
-    
-    group: SearchBuilder criteria group with logic and criteria keys.
-    Returns dict with searchBuilder key for parse_search_builder.
-    """
     return {"searchBuilder": group}
 
 
@@ -256,20 +247,9 @@ class TestSbDateBetweenSemantics(unittest.TestCase):
     """
 
     def _fm(self):
-        """Create a FieldMapper with no fields.
-        
-        Returns FieldMapper instance for SearchBuilder parsing tests.
-        """
         return FieldMapper([])
 
     def _parse(self, condition: str, v0: str, v1: str) -> dict:
-        """Parse a SearchBuilder date condition into MongoDB query.
-        
-        condition: SearchBuilder condition string (e.g. "between", "!between").
-        v0: start date as ISO string (YYYY-MM-DD).
-        v1: end date as ISO string (YYYY-MM-DD).
-        Returns MongoDB query dict with date operators.
-        """
         group = {"logic": "AND", "criteria": [
             {"condition": condition, "origData": "created", "type": "date", "value": [v0, v1]},
         ]}
@@ -312,18 +292,9 @@ class TestSbGroup(unittest.TestCase):
     """
 
     def _fm(self):
-        """Create a FieldMapper with no fields.
-        
-        Returns FieldMapper instance for SearchBuilder parsing tests.
-        """
         return FieldMapper([])
 
     def _parse(self, group: dict) -> dict:
-        """Parse a SearchBuilder group into MongoDB query.
-        
-        group: SearchBuilder group dict with logic and criteria keys.
-        Returns MongoDB query dict with $and/$or operators as needed.
-        """
         return parse_search_builder(_sb_args(group), self._fm())
 
     def test_empty_group_returns_empty(self):
@@ -358,7 +329,7 @@ class TestSbGroup(unittest.TestCase):
         self.assertEqual(result, {})
 
 
-class TestGetRowgroupData(unittest.TestCase):
+class TestGetRowgroupData(_BaseDataTablesTest):
     """RowGroup extension data retrieval with filtering and error handling.
     
     Validates pipeline construction, datasrc mapping, and error recovery.
@@ -372,66 +343,50 @@ class TestGetRowgroupData(unittest.TestCase):
                       "search": {"value": "", "regex": False}}],
     }
 
-    def _make_dt(self, request_args, data_fields=None, **custom_filter):
-        """Create a DataTables instance with mocked collection.
-        
-        request_args: DataTables request dict.
-        data_fields: optional list of DataField objects.
-        custom_filter: additional keyword arguments passed to DataTables.
-        Returns tuple of (DataTables instance, mocked Collection).
-        """
-        col = MagicMock(spec=Collection)
-        col.list_indexes = MagicMock(return_value=[])
-        col.aggregate = MagicMock(return_value=iter([]))
-        col.count_documents = MagicMock(return_value=0)
-        col.estimated_document_count = MagicMock(return_value=0)
-        db = {"test": col}
-        return DataTables(db, "test", request_args, data_fields or [], **custom_filter), col
-
     def test_no_rowgroup_config_returns_none(self):
-        dt, col = self._make_dt(self._BASE_ARGS)
-        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
+        dt = DataTables(self.mongo, "users", self._BASE_ARGS, [])
+        self.assertIsNone(get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_string_datasrc_builds_pipeline(self):
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
-        dt, col = self._make_dt(args)
-        col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
-        result = get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
+        dt = DataTables(self.mongo, "users", args, [])
+        self.collection.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
+        result = get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
         self.assertIsNotNone(result)
         self.assertIn("dataSrc", result)
         self.assertIn("groups", result)
 
     def test_numeric_datasrc_maps_to_column(self):
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": 0}}
-        dt, col = self._make_dt(args)
-        col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
-        result = get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
+        dt = DataTables(self.mongo, "users", args, [])
+        self.collection.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
+        result = get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
         self.assertIsNotNone(result)
         self.assertEqual(result["dataSrc"], 0)
 
     def test_out_of_range_datasrc_returns_none(self):
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": 99}}
-        dt, col = self._make_dt(args)
-        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
+        dt = DataTables(self.mongo, "users", args, [])
+        self.assertIsNone(get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_pymongo_error_returns_none(self):
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"}}
-        dt, col = self._make_dt(args)
-        col.aggregate = MagicMock(side_effect=PyMongoError("db error"))
-        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
+        dt = DataTables(self.mongo, "users", args, [])
+        self.collection.aggregate = MagicMock(side_effect=PyMongoError("db error"))
+        self.assertIsNone(get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_empty_field_name_returns_none(self):
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": ""}}
-        dt, col = self._make_dt(args)
-        self.assertIsNone(get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
+        dt = DataTables(self.mongo, "users", args, [])
+        self.assertIsNone(get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use))
 
     def test_rowgroup_with_active_filter(self):
         args = {**self._BASE_ARGS, "rowGroup": {"dataSrc": "Title"},
                 "search": {"value": "foo", "regex": False}}
-        dt, col = self._make_dt(args)
-        col.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
-        get_rowgroup_data(col, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
-        pipeline_arg = col.aggregate.call_args[0][0]
+        dt = DataTables(self.mongo, "users", args, [])
+        self.collection.aggregate = MagicMock(return_value=iter([{"_id": "1984", "count": 1}]))
+        get_rowgroup_data(self.collection, dt.columns, dt.field_mapper, dt.filter, dt.request_args, dt.allow_disk_use)
+        pipeline_arg = self.collection.aggregate.call_args[0][0]
         self.assertTrue(any("$match" in stage for stage in pipeline_arg))
 
 
@@ -442,11 +397,6 @@ class TestGlobalSearchPerf(unittest.TestCase):
     """
 
     def _make_perf_qb(self, columns):
-        """Create a MongoQueryBuilder without text index.
-        
-        columns: list of DataField objects.
-        Returns MongoQueryBuilder configured for regex-based search.
-        """
         fm = FieldMapper(columns)
         return MongoQueryBuilder(fm, use_text_index=False, has_text_index=False)
 

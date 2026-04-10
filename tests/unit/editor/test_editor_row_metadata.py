@@ -19,7 +19,8 @@ def _make_row_metadata_editor(request_args, row_class=None, row_data=None, row_a
     mongo = MagicMock()
     doc_id = str(ObjectId())
     editor = Editor(mongo, "test", request_args, doc_id=doc_id,
-                    row_class=row_class, row_data=row_data, row_attr=row_attr)
+                    row_class=row_class, row_data=row_data, row_attr=row_attr,
+                    data_fields=[DataField("name", "string")])
     return editor
 
 
@@ -65,7 +66,8 @@ class TestEditorRowClassStatic:
         mongo = MagicMock()
         editor = Editor(mongo, "test",
                         {"action": "edit", "data": {doc_id: {"name": "Bob"}}},
-                        doc_id=doc_id, row_class="active")
+                        doc_id=doc_id, row_class="active",
+                        data_fields=[DataField("name", "string")])
         editor._collection.find_one.return_value = {"_id": oid, "name": "Bob"}
         result = editor.edit()
         assert result["data"][0]["DT_RowClass"] == "active"

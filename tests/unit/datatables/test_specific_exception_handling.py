@@ -18,6 +18,7 @@ from mongo_datatables.datatables.results import (
 )
 from mongo_datatables.editor.crud import run_create, run_edit, run_remove
 from mongo_datatables.editor.core import Editor
+from mongo_datatables.datatables import DataField
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError
 
 
@@ -38,9 +39,10 @@ def _field_mapper():
 
 
 def _crud_kwargs(**overrides):
+    _df = [DataField("name", "string")]
     defaults = dict(
-        fields={},
-        data_fields=[],
+        fields={f.alias: f for f in _df},
+        data_fields=_df,
         file_fields=[],
         storage_adapter=None,
         row_class=None,

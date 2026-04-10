@@ -59,13 +59,15 @@ class TestEditorValidation(unittest.TestCase):
 
     def test_create_wraps_pymongo_error(self):
         self.collection.insert_one.side_effect = PyMongoError("db error")
-        editor = Editor(self.mongo, 'test', {"action": "create", "data": {"0": {"name": "x"}}})
+        editor = Editor(self.mongo, 'test', {"action": "create", "data": {"0": {"name": "x"}}},
+                        data_fields=[DataField("name", "string")])
         with self.assertRaises(DatabaseOperationError):
             editor.create()
 
     def test_create_wraps_unexpected_exception(self):
         self.collection.insert_one.side_effect = RuntimeError("unexpected")
-        editor = Editor(self.mongo, 'test', {"action": "create", "data": {"0": {"name": "x"}}})
+        editor = Editor(self.mongo, 'test', {"action": "create", "data": {"0": {"name": "x"}}},
+                        data_fields=[DataField("name", "string")])
         with self.assertRaises(RuntimeError):
             editor.create()
 

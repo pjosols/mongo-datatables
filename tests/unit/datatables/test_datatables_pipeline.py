@@ -5,6 +5,7 @@ from pymongo.errors import PyMongoError
 
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables.results import build_pipeline
+from mongo_datatables.datatables._limits import DEFAULT_PAGE_SIZE
 from tests.unit.base_test import BaseDataTablesTest
 
 
@@ -28,13 +29,6 @@ _P2_BASE_ARGS = {
 
 
 def _make_dt(request_args=None, data_fields=None, **kwargs):
-    """Build a DataTables instance backed by a dict-based mock db.
-
-    request_args: DataTables request dict. Defaults to _BASE_ARGS.
-    data_fields: optional list of DataField instances.
-    kwargs: forwarded to DataTables (custom filters, options).
-    Returns (dt, col) tuple.
-    """
     col = MagicMock(spec=Collection)
     col.list_indexes = MagicMock(return_value=[])
     col.aggregate = MagicMock(return_value=iter([]))
@@ -85,7 +79,8 @@ class TestBuildPipelineStructure:
         dt, _ = _make_dt(args)
         pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         stages = [list(s.keys())[0] for s in pipeline]
-        assert "$limit" not in stages
+        assert "$limit" in stages
+        assert pipeline[[list(s.keys())[0] for s in pipeline].index("$limit")]["$limit"] == DEFAULT_PAGE_SIZE
 
     def test_default_paginate_is_true(self):
         args = {**_BASE_ARGS, "start": "5", "length": "10"}
