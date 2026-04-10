@@ -2,25 +2,25 @@
 
 
 class MongoDataTablesError(Exception):
-    """Base exception for all mongo-datatables errors."""
+    """Indicate a mongo-datatables error."""
     pass
 
 
 class InvalidDataError(MongoDataTablesError):
-    """Raised when input data is invalid or malformed."""
+    """Indicate invalid or malformed input data."""
     pass
 
 
 class DatabaseOperationError(MongoDataTablesError):
-    """Raised when a MongoDB operation fails."""
+    """Indicate a MongoDB operation failure."""
     pass
 
 
 class FieldMappingError(MongoDataTablesError):
-    """Raised when field mapping or type conversion fails."""
+    """Indicate field mapping or type conversion failure."""
     pass
 
 
 class QueryBuildError(MongoDataTablesError):
-    """Raised when query construction fails."""
+    """Indicate query construction failure."""
     pass

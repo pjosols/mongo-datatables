@@ -6,7 +6,7 @@ All notable changes to mongo-datatables are documented here.
 
 ### Changed
 
-- Docstrings updated to Wholeshoot convention in `request_validator.py` — improved clarity and consistency
+- Exception class docstrings in `exceptions.py` updated to Wholeshoot convention (imperative form)
 
 ## [2.1.1] - 2026-04-10
 
