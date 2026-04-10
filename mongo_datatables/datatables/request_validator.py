@@ -27,7 +27,7 @@ def _coerce_int(value: Any, name: str, default: int, minimum: int | None = None)
     name: parameter name for error messages.
     default: fallback when value is missing or None.
     minimum: if set, clamp result to this floor.
-    Returns coerced int. Raises InvalidDataError if value cannot be converted.
+    Returns coerced int or raises InvalidDataError if value cannot be converted.
     """
     if value is None:
         return default
@@ -45,7 +45,7 @@ def _validate_search_dict(search: Any, context: str) -> None:
 
     search: the value to validate.
     context: description for error messages (e.g. 'search', 'columns[0][search]').
-    Raises InvalidDataError if invalid.
+    Raises InvalidDataError if search is not a dict or missing required keys.
     """
     if not isinstance(search, dict):
         raise InvalidDataError(f"'{context}' must be a dict, got {type(search).__name__}")
@@ -58,7 +58,7 @@ def _validate_columns(columns: Any) -> None:
     """Validate the columns list from request_args.
 
     columns: the value to validate.
-    Raises InvalidDataError if invalid.
+    Raises InvalidDataError if columns is not a list, contains non-dict entries, missing required keys, or invalid field names.
     """
     if not isinstance(columns, list):
         raise InvalidDataError(f"'columns' must be a list, got {type(columns).__name__}")
@@ -82,7 +82,7 @@ def _validate_order(order: Any, num_columns: int) -> None:
 
     order: the value to validate.
     num_columns: number of columns for index bounds checking.
-    Raises InvalidDataError if invalid.
+    Raises InvalidDataError if order is not a list, contains non-dict entries, missing required keys, invalid column indices, or invalid sort directions.
     """
     if not isinstance(order, list):
         raise InvalidDataError(f"'order' must be a list, got {type(order).__name__}")
@@ -96,14 +96,15 @@ def _validate_order(order: Any, num_columns: int) -> None:
             col_idx = int(entry["column"])
         except (ValueError, TypeError) as exc:
             raise InvalidDataError(f"'order[{i}][column]' must be an integer") from exc
-        if num_columns > 0 and not (0 <= col_idx < num_columns):
-            raise InvalidDataError(
-                f"'order[{i}][column]' index {col_idx} is out of range (0–{num_columns - 1})"
-            )
-        if entry.get("dir") not in ("asc", "desc"):
-            raise InvalidDataError(
-                f"'order[{i}][dir]' must be 'asc' or 'desc', got {entry.get('dir')!r}"
-            )
+        # Skip range check when name is present (ColReorder sends out-of-range index + name).
+        # Also skip (don't raise) for bare out-of-range indices; sort logic handles fallback.
+        if num_columns > 0 and not (0 <= col_idx < num_columns) and not entry.get("name"):
+            continue
+        else:
+            if entry.get("dir") not in ("asc", "desc"):
+                raise InvalidDataError(
+                    f"'order[{i}][dir]' must be 'asc' or 'desc', got {entry.get('dir')!r}"
+                )
 
 
 def _normalize_request_args(request_args: Dict[str, Any]) -> None:
@@ -154,8 +155,7 @@ def validate_request_args(request_args: Any) -> Dict[str, Any]:
     Missing optional keys are filled with defaults before validation.
 
     request_args: raw request parameters from the DataTables Ajax call.
-    Returns the validated dict (same object, numeric fields coerced).
-    Raises InvalidDataError if validation fails.
+    Returns the validated dict (same object, numeric fields coerced) or raises InvalidDataError if validation fails.
     """
     if not isinstance(request_args, dict):
         raise InvalidDataError(

@@ -65,7 +65,7 @@ def _make_editor(request_args, doc_id=""):
 # ---------------------------------------------------------------------------
 
 class TestValidateRequestArgs:
-    """Validate top-level DataTables request structure and numeric coercion."""
+    """Test top-level DataTables request structure validation and numeric coercion."""
 
     def test_non_dict_raises(self):
         with pytest.raises(InvalidDataError, match="must be a dict"):
@@ -117,11 +117,19 @@ class TestValidateRequestArgs:
         with pytest.raises(InvalidDataError, match="'length' must be an integer"):
             validate_request_args(args)
 
-    def test_order_out_of_range_raises_via_validate_request_args(self):
+    def test_order_out_of_range_bare_index_skipped(self):
+        # Bare out-of-range index with no name is silently skipped (not raised).
         args = _make_valid_request_args()
         args["order"] = [{"column": 99, "dir": "asc"}]
-        with pytest.raises(InvalidDataError, match="out of range"):
-            validate_request_args(args)
+        result = validate_request_args(args)
+        assert isinstance(result, dict)
+
+    def test_order_out_of_range_with_name_passes(self):
+        # ColReorder: out-of-range index paired with name is accepted.
+        args = _make_valid_request_args()
+        args["order"] = [{"column": 99, "name": "name", "dir": "asc"}]
+        result = validate_request_args(args)
+        assert isinstance(result, dict)
 
     def test_order_invalid_dir_raises_via_validate_request_args(self):
         args = _make_valid_request_args()
@@ -141,7 +149,7 @@ class TestValidateRequestArgs:
 # ---------------------------------------------------------------------------
 
 class TestValidateSearchDict:
-    """Validate search dict structure and required keys."""
+    """Test search dict structure validation and required key checks."""
 
     def test_non_dict_raises(self):
         with pytest.raises(InvalidDataError, match="must be a dict"):
@@ -164,7 +172,7 @@ class TestValidateSearchDict:
 # ---------------------------------------------------------------------------
 
 class TestValidateColumns:
-    """Validate columns list structure, types, and field names."""
+    """Test columns list validation, types, and field name sanitization."""
 
     def test_non_list_raises(self):
         with pytest.raises(InvalidDataError, match="'columns' must be a list"):
@@ -204,7 +212,7 @@ class TestValidateColumns:
 # ---------------------------------------------------------------------------
 
 class TestValidateOrder:
-    """Validate order list structure, column indices, and sort directions."""
+    """Test order list validation, column indices, and sort direction checks."""
 
     def test_non_list_raises(self):
         with pytest.raises(InvalidDataError, match="'order' must be a list"):
@@ -218,9 +226,13 @@ class TestValidateOrder:
         with pytest.raises(InvalidDataError, match="missing required key 'column'"):
             _validate_order([{"dir": "asc"}], 1)
 
-    def test_out_of_range_column_index_raises(self):
-        with pytest.raises(InvalidDataError, match="out of range"):
-            _validate_order([{"column": 5, "dir": "asc"}], 3)
+    def test_out_of_range_column_index_bare_skipped(self):
+        # Bare out-of-range index (no name) is silently skipped, not raised.
+        _validate_order([{"column": 5, "dir": "asc"}], 3)  # no exception
+
+    def test_out_of_range_column_index_with_name_passes(self):
+        # ColReorder: out-of-range index + name skips range check entirely.
+        _validate_order([{"column": 99, "name": "email", "dir": "asc"}], 3)  # no exception
 
     def test_invalid_dir_raises(self):
         with pytest.raises(InvalidDataError, match="'asc' or 'desc'"):
@@ -239,7 +251,7 @@ class TestValidateOrder:
 # ---------------------------------------------------------------------------
 
 class TestDataTablesValidation:
-    """Validate DataTables initialization with request_args validation."""
+    """Test DataTables initialization with request_args validation integration."""
 
     def test_missing_draw_raises_on_init(self):
         args = _make_valid_request_args()
@@ -267,7 +279,7 @@ class TestDataTablesValidation:
 # ---------------------------------------------------------------------------
 
 class TestValidateFieldName:
-    """Validate field name format and reject injection patterns."""
+    """Test field name format validation and injection pattern rejection."""
 
     def test_valid_names_pass(self):
         for name in ("field", "field_name", "field.nested", "field-name", "Field123"):
@@ -295,7 +307,7 @@ class TestValidateFieldName:
 # ---------------------------------------------------------------------------
 
 class TestValidateEditorRequestArgs:
-    """Validate Editor request structure and action values."""
+    """Test Editor request structure validation and action value checks."""
 
     def test_non_dict_raises(self):
         with pytest.raises(InvalidDataError, match="must be a dict"):
@@ -318,7 +330,7 @@ class TestValidateEditorRequestArgs:
 # ---------------------------------------------------------------------------
 
 class TestValidateDocId:
-    """Validate document ID format and ObjectId parsing."""
+    """Test document ID format validation and ObjectId parsing."""
 
     def test_empty_string_passes(self):
         validate_doc_id("")  # no exception
@@ -345,7 +357,7 @@ class TestValidateDocId:
 # ---------------------------------------------------------------------------
 
 class TestValidateDataFieldsWhitelist:
-    """Validate data fields against allowed field list."""
+    """Test data field validation against allowed field list."""
 
     def test_no_whitelist_allows_anything(self):
         validate_data_fields_whitelist({"any_field": "val"}, {}, [])  # no exception
@@ -372,7 +384,7 @@ class TestValidateDataFieldsWhitelist:
 # ---------------------------------------------------------------------------
 
 class TestValidateUploadData:
-    """Validate upload file metadata and content."""
+    """Test upload file metadata validation and content checks."""
 
     def test_valid_upload_passes(self):
         validate_upload_data({
@@ -407,7 +419,7 @@ class TestValidateUploadData:
 # ---------------------------------------------------------------------------
 
 class TestEditorWhitelistEnforcement:
-    """Enforce data field whitelist on Editor create and edit actions."""
+    """Test data field whitelist enforcement on Editor create and edit actions."""
 
     def _editor_with_fields(self, action, data):
         mongo = MagicMock()
@@ -455,7 +467,7 @@ from mongo_datatables.editor.validators import validate_document_payload
 
 
 class TestValidateDocumentPayload:
-    """Validate document payload bounds and structure safety."""
+    """Test document payload bounds and structure safety validation."""
 
     def test_valid_doc_passes(self):
         validate_document_payload({"name": "Alice", "age": "30"})  # no exception

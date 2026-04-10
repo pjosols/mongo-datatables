@@ -18,7 +18,7 @@ All notable changes to mongo-datatables are documented here.
 - `datatables/_limits.py`: refined module docstring to include pagination
 - `datatables/compat.py`: added Wholeshoot docstrings to all methods and properties
 - `datatables/core.py`: added Wholeshoot docstrings to all properties and methods
-- `datatables/request_validator.py`: refined module docstring for precision
+- `datatables/request_validator.py`: refined module docstring for precision; refined function docstrings to specify exception conditions inline
 - Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`, `tests/unit/editor/test_editor_crud.py`, `tests/unit/editor/test_editor_upload.py`, `tests/unit/datatables/test_request_validator.py`
 - Test helper methods documented: `_make_formatted_doc()`, `_setup_edit()`, `_partial_cancel_result()`
 - `tests/unit/datatables/test_datatables_pagination.py`: added class and method docstrings following Wholeshoot convention
@@ -26,6 +26,7 @@ All notable changes to mongo-datatables are documented here.
 - `tests/unit/editor/test_cwe915_mass_assignment.py`: added module docstring; added Wholeshoot docstrings to all test classes and methods
 - `tests/unit/editor/test_editor_document_processing.py`: added module docstring; added Wholeshoot docstrings to test classes and methods
 - `tests/unit/datatables/test_sort_unit.py`: added Wholeshoot docstrings to all test classes and methods; documented helper methods `_make_dt()`, `_make_columns()`, `_col()`
+- `tests/unit/datatables/test_request_validator.py`: refined all test class docstrings to Wholeshoot convention (imperative, no filler)
 
 ### Added
 
