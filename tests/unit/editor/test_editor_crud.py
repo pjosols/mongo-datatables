@@ -16,6 +16,8 @@ from mongo_datatables.editor import StorageAdapter
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError
 
 class TestEditor(unittest.TestCase):
+    """Test Editor initialization, CRUD operations, and pre-operation hooks."""
+
     def setUp(self):
         self.mongo = MagicMock()
         self.mongo.db = MagicMock(spec=Database)
@@ -90,30 +92,55 @@ class TestEditor(unittest.TestCase):
         editor = Editor(self.mongo, 'users', self.create_args, ids)
         self.assertEqual(editor.list_of_ids, [self.sample_id, self.sample_id2])
 
-    def test_preprocess_document(self):
+    def test_preprocess_document_removes_none_fields(self):
         editor = Editor(self.mongo, 'users', self.create_args)
-        doc = {
-            "name": "John Doe", "email": "john@example.com",
-            "status": None, "tags": '[\"tag1\", \"tag2\"]',
-            "created_at": "2023-01-01T12:00:00"
-        }
+        doc = {"name": "John Doe", "status": None, "email": None}
         result = editor._preprocess_document(doc)
         processed = result[0] if isinstance(result, tuple) else result
         self.assertNotIn("status", processed)
+        self.assertNotIn("email", processed)
+        self.assertIn("name", processed)
+
+    def test_preprocess_document_parses_json_strings(self):
+        editor = Editor(self.mongo, 'users', self.create_args)
+        doc = {"tags": '["tag1", "tag2"]', "meta": '{"key": "val"}'}
+        result = editor._preprocess_document(doc)
+        processed = result[0] if isinstance(result, tuple) else result
         self.assertEqual(processed["tags"], ["tag1", "tag2"])
+        self.assertEqual(processed["meta"], {"key": "val"})
+
+    def test_preprocess_document_converts_date_fields(self):
+        date_field = DataField(name="created_at", data_type="date")
+        editor = Editor(self.mongo, 'users', self.create_args, data_fields=[date_field])
+        doc = {"created_at": "2023-01-01T12:00:00"}
+        result = editor._preprocess_document(doc)
+        processed = result[0] if isinstance(result, tuple) else result
         self.assertIsInstance(processed["created_at"], datetime)
 
-    def test_format_response_document(self):
+    def _make_formatted_doc(self) -> dict:
+        """Format a sample document for response serialization testing."""
         editor = Editor(self.mongo, 'users', self.create_args)
         doc = {
             "_id": ObjectId(self.sample_id), "name": "John Doe",
             "created_at": datetime(2023, 1, 1, 12, 0, 0), "ref_id": ObjectId()
         }
-        formatted = editor._format_response_document(doc)
+        return editor._format_response_document(doc)
+
+    def test_format_response_document_sets_dt_row_id(self):
+        formatted = self._make_formatted_doc()
         self.assertIn("DT_RowId", formatted)
         self.assertEqual(formatted["DT_RowId"], self.sample_id)
+
+    def test_format_response_document_removes_id_field(self):
+        formatted = self._make_formatted_doc()
         self.assertNotIn("_id", formatted)
+
+    def test_format_response_document_serializes_datetime(self):
+        formatted = self._make_formatted_doc()
         self.assertIsInstance(formatted["created_at"], str)
+
+    def test_format_response_document_serializes_objectid(self):
+        formatted = self._make_formatted_doc()
         self.assertIsInstance(formatted["ref_id"], str)
 
     def test_remove_method_no_id(self):
@@ -181,21 +208,47 @@ class TestEditor(unittest.TestCase):
         with self.assertRaises(InvalidDataError):
             editor.edit()
 
-    def test_edit_method_with_id(self):
+    def _setup_edit(self):
+        """Set up mocked edit operation with update and find results."""
         editor = Editor(self.mongo, 'users', self.edit_args, self.sample_id)
         update_result = MagicMock(spec=UpdateResult)
         update_result.modified_count = 1
         self.collection.update_one.return_value = update_result
         self.collection.find_one.return_value = self.updated_doc
-        result = editor.edit()
+        return editor
+
+    def test_edit_method_calls_update_one(self):
+        self._setup_edit().edit()
         self.collection.update_one.assert_called_once()
-        args, kwargs = self.collection.update_one.call_args
+
+    def test_edit_method_filter_uses_object_id(self):
+        self._setup_edit().edit()
+        args, _ = self.collection.update_one.call_args
         self.assertEqual(args[0], {"_id": ObjectId(self.sample_id)})
+
+    def test_edit_method_update_contains_set(self):
+        self._setup_edit().edit()
+        args, _ = self.collection.update_one.call_args
         self.assertIn("$set", args[1])
+
+    def test_edit_method_calls_find_one(self):
+        self._setup_edit().edit()
         self.collection.find_one.assert_called_once_with({"_id": ObjectId(self.sample_id)})
+
+    def test_edit_method_response_has_data_key(self):
+        result = self._setup_edit().edit()
         self.assertIn("data", result)
+
+    def test_edit_method_response_has_one_row(self):
+        result = self._setup_edit().edit()
         self.assertEqual(len(result["data"]), 1)
+
+    def test_edit_method_response_dt_row_id(self):
+        result = self._setup_edit().edit()
         self.assertEqual(result["data"][0]["DT_RowId"], self.sample_id)
+
+    def test_edit_method_response_field_value(self):
+        result = self._setup_edit().edit()
         self.assertEqual(result["data"][0]["name"], "Jane Smith")
 
     def test_edit_method_missing_data_for_id(self):
@@ -282,7 +335,8 @@ class TestEditor(unittest.TestCase):
         self.assertIn("0", result["cancelled"])
         self.assertEqual(result["data"], [])
 
-    def test_create_with_hook_partial_cancel(self):
+    def _partial_cancel_result(self):
+        """Execute multi-row create with partial hook cancellation."""
         multi_create_args = {"action": "create", "data": {"0": {"name": "Alice"}, "1": {"name": "Bob"}}}
         hook = MagicMock(side_effect=lambda row_id, _: row_id == "0")
         editor = Editor(self.mongo, 'users', multi_create_args, hooks={"pre_create": hook})
@@ -290,9 +344,18 @@ class TestEditor(unittest.TestCase):
         insert_result.inserted_id = ObjectId(self.sample_id)
         self.collection.insert_one.return_value = insert_result
         self.collection.find_one.return_value = self.sample_doc
-        result = editor.create()
+        return editor.create()
+
+    def test_create_partial_cancel_inserts_only_allowed_rows(self):
+        self._partial_cancel_result()
         self.assertEqual(self.collection.insert_one.call_count, 1)
+
+    def test_create_partial_cancel_returns_allowed_data(self):
+        result = self._partial_cancel_result()
         self.assertEqual(len(result["data"]), 1)
+
+    def test_create_partial_cancel_lists_cancelled_ids(self):
+        result = self._partial_cancel_result()
         self.assertIn("cancelled", result)
         self.assertEqual(result["cancelled"], ["1"])
 

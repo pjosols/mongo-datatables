@@ -10,7 +10,8 @@ All notable changes to mongo-datatables are documented here.
 - `editor/crud.py`: refined module docstring for clarity
 - `editor/document.py`: refined module docstring to emphasize parsing and formatting
 - `editor/validators/upload_security.py`: refined module docstring for conciseness
-- Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`
+- Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`, `tests/unit/editor/test_editor_crud.py`
+- Test helper methods documented: `_make_formatted_doc()`, `_setup_edit()`, `_partial_cancel_result()`
 
 ### Added
 
