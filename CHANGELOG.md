@@ -13,7 +13,8 @@ All notable changes to mongo-datatables are documented here.
 - `datatables/_limits.py`: refined module docstring to include pagination
 - `datatables/compat.py`: added Wholeshoot docstrings to all methods and properties
 - `datatables/core.py`: added Wholeshoot docstrings to all properties and methods
-- Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`, `tests/unit/editor/test_editor_crud.py`, `tests/unit/editor/test_editor_upload.py`
+- `datatables/request_validator.py`: refined module docstring for precision
+- Test class docstrings updated to Wholeshoot convention: `tests/unit/base_test.py`, `tests/unit/datatables/test_serialization_unit.py`, `tests/unit/datatables/test_sort_unit.py`, `tests/unit/editor/test_editor_crud.py`, `tests/unit/editor/test_editor_upload.py`, `tests/unit/datatables/test_request_validator.py`
 - Test helper methods documented: `_make_formatted_doc()`, `_setup_edit()`, `_partial_cancel_result()`
 - `tests/unit/datatables/test_datatables_pagination.py`: added class and method docstrings following Wholeshoot convention
 

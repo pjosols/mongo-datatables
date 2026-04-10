@@ -1,4 +1,4 @@
-"""Test DataTables and Editor request validation."""
+"""Test request validation for DataTables and Editor."""
 import pytest
 from unittest.mock import MagicMock
 from bson.objectid import ObjectId
@@ -65,6 +65,8 @@ def _make_editor(request_args, doc_id=""):
 # ---------------------------------------------------------------------------
 
 class TestValidateRequestArgs:
+    """Validate top-level DataTables request structure and numeric coercion."""
+
     def test_non_dict_raises(self):
         with pytest.raises(InvalidDataError, match="must be a dict"):
             validate_request_args("not a dict")
@@ -105,12 +107,42 @@ class TestValidateRequestArgs:
         with pytest.raises(InvalidDataError, match="'draw' must be an integer"):
             validate_request_args(args)
 
+    def test_non_integer_start_raises(self):
+        args = _make_valid_request_args(start="abc")
+        with pytest.raises(InvalidDataError, match="'start' must be an integer"):
+            validate_request_args(args)
+
+    def test_non_integer_length_raises(self):
+        args = _make_valid_request_args(length="abc")
+        with pytest.raises(InvalidDataError, match="'length' must be an integer"):
+            validate_request_args(args)
+
+    def test_order_out_of_range_raises_via_validate_request_args(self):
+        args = _make_valid_request_args()
+        args["order"] = [{"column": 99, "dir": "asc"}]
+        with pytest.raises(InvalidDataError, match="out of range"):
+            validate_request_args(args)
+
+    def test_order_invalid_dir_raises_via_validate_request_args(self):
+        args = _make_valid_request_args()
+        args["order"] = [{"column": 0, "dir": "sideways"}]
+        with pytest.raises(InvalidDataError, match="'asc' or 'desc'"):
+            validate_request_args(args)
+
+    def test_column_without_data_key_passes(self):
+        args = _make_valid_request_args()
+        del args["columns"][0]["data"]
+        result = validate_request_args(args)
+        assert isinstance(result, dict)
+
 
 # ---------------------------------------------------------------------------
 # _validate_search_dict
 # ---------------------------------------------------------------------------
 
 class TestValidateSearchDict:
+    """Validate search dict structure and required keys."""
+
     def test_non_dict_raises(self):
         with pytest.raises(InvalidDataError, match="must be a dict"):
             _validate_search_dict("bad", "search")
@@ -132,6 +164,8 @@ class TestValidateSearchDict:
 # ---------------------------------------------------------------------------
 
 class TestValidateColumns:
+    """Validate columns list structure, types, and field names."""
+
     def test_non_list_raises(self):
         with pytest.raises(InvalidDataError, match="'columns' must be a list"):
             _validate_columns("bad")
@@ -170,6 +204,8 @@ class TestValidateColumns:
 # ---------------------------------------------------------------------------
 
 class TestValidateOrder:
+    """Validate order list structure, column indices, and sort directions."""
+
     def test_non_list_raises(self):
         with pytest.raises(InvalidDataError, match="'order' must be a list"):
             _validate_order("bad", 1)
@@ -203,6 +239,8 @@ class TestValidateOrder:
 # ---------------------------------------------------------------------------
 
 class TestDataTablesValidation:
+    """Validate DataTables initialization with request_args validation."""
+
     def test_missing_draw_raises_on_init(self):
         args = _make_valid_request_args()
         del args["draw"]
@@ -229,6 +267,8 @@ class TestDataTablesValidation:
 # ---------------------------------------------------------------------------
 
 class TestValidateFieldName:
+    """Validate field name format and reject injection patterns."""
+
     def test_valid_names_pass(self):
         for name in ("field", "field_name", "field.nested", "field-name", "Field123"):
             validate_field_name(name)  # no exception
@@ -255,6 +295,8 @@ class TestValidateFieldName:
 # ---------------------------------------------------------------------------
 
 class TestValidateEditorRequestArgs:
+    """Validate Editor request structure and action values."""
+
     def test_non_dict_raises(self):
         with pytest.raises(InvalidDataError, match="must be a dict"):
             validate_editor_request_args("bad")
@@ -276,6 +318,8 @@ class TestValidateEditorRequestArgs:
 # ---------------------------------------------------------------------------
 
 class TestValidateDocId:
+    """Validate document ID format and ObjectId parsing."""
+
     def test_empty_string_passes(self):
         validate_doc_id("")  # no exception
 
@@ -301,6 +345,8 @@ class TestValidateDocId:
 # ---------------------------------------------------------------------------
 
 class TestValidateDataFieldsWhitelist:
+    """Validate data fields against allowed field list."""
+
     def test_no_whitelist_allows_anything(self):
         validate_data_fields_whitelist({"any_field": "val"}, {}, [])  # no exception
 
@@ -326,6 +372,8 @@ class TestValidateDataFieldsWhitelist:
 # ---------------------------------------------------------------------------
 
 class TestValidateUploadData:
+    """Validate upload file metadata and content."""
+
     def test_valid_upload_passes(self):
         validate_upload_data({
             "filename": "file.txt",
@@ -359,6 +407,8 @@ class TestValidateUploadData:
 # ---------------------------------------------------------------------------
 
 class TestEditorWhitelistEnforcement:
+    """Enforce data field whitelist on Editor create and edit actions."""
+
     def _editor_with_fields(self, action, data):
         mongo = MagicMock()
         mongo.db = MagicMock(spec=Database)
@@ -405,6 +455,8 @@ from mongo_datatables.editor.validators import validate_document_payload
 
 
 class TestValidateDocumentPayload:
+    """Validate document payload bounds and structure safety."""
+
     def test_valid_doc_passes(self):
         validate_document_payload({"name": "Alice", "age": "30"})  # no exception
 

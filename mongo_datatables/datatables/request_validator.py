@@ -1,4 +1,4 @@
-"""Validate DataTables request_args parameters."""
+"""Validate and sanitize DataTables request parameters."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from mongo_datatables.editor.validators import validate_field_name
 # Keys that must be present in a valid DataTables request
 _REQUIRED_KEYS = ("draw", "start", "length", "columns", "order", "search")
 
-# Required keys within each column dict
-_COLUMN_REQUIRED_KEYS = ("data", "searchable", "orderable", "search")
+# Required keys within each column dict; 'data' is optional (may be absent or None)
+_COLUMN_REQUIRED_KEYS = ("searchable", "orderable", "search")
 
 # Required keys within each order dict
 _ORDER_REQUIRED_KEYS = ("column", "dir")
@@ -66,8 +66,6 @@ def _validate_columns(columns: Any) -> None:
         if not isinstance(col, dict):
             raise InvalidDataError(f"'columns[{i}]' must be a dict, got {type(col).__name__}")
         for key in _COLUMN_REQUIRED_KEYS:
-            if key in ("data",):
-                continue  # data is optional
             if key not in col:
                 raise InvalidDataError(f"'columns[{i}]' is missing required key '{key}'")
         _validate_search_dict(col["search"], f"columns[{i}][search]")
@@ -178,30 +176,11 @@ def validate_request_args(request_args: Any) -> Dict[str, Any]:
 
     _validate_search_dict(request_args["search"], "search")
     _validate_columns(request_args["columns"])
-
-    # Order validation: skip out-of-range index check (handled gracefully by sort builder)
-    if not isinstance(request_args["order"], list):
-        raise InvalidDataError(
-            f"'order' must be a list, got {type(request_args['order']).__name__}"
-        )
-    for i, entry in enumerate(request_args["order"]):
-        if not isinstance(entry, dict):
-            raise InvalidDataError(
-                f"'order[{i}]' must be a dict, got {type(entry).__name__}"
-            )
+    _validate_order(request_args["order"], len(request_args["columns"]))
 
     # Sanitize numeric parameters in-place
     request_args["draw"] = _coerce_int(request_args.get("draw"), "draw", default=1, minimum=1)
-    # start and length use lenient coercion (return default on invalid input)
-    start_raw = request_args.get("start")
-    try:
-        request_args["start"] = max(0, int(start_raw)) if start_raw is not None else 0
-    except (ValueError, TypeError):
-        request_args["start"] = 0
-    length_raw = request_args.get("length")
-    try:
-        request_args["length"] = int(length_raw) if length_raw is not None else 10
-    except (ValueError, TypeError):
-        request_args["length"] = 10
+    request_args["start"] = _coerce_int(request_args.get("start"), "start", default=0, minimum=0)
+    request_args["length"] = _coerce_int(request_args.get("length"), "length", default=10)
 
     return request_args
