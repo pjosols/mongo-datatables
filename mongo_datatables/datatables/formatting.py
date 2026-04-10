@@ -6,8 +6,32 @@ from typing import Any, Dict, List, Optional
 
 from bson import Binary, Decimal128, ObjectId, Regex
 
+from mongo_datatables.field_utils import FieldMapper
+
 # Bitmask → regex flag letter mapping for BSON Regex serialization
 _REGEX_FLAGS = ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re.VERBOSE, 'x'))
+
+
+def _convert_scalar(val: Any) -> Any:
+    """Convert a single BSON scalar to a JSON-serializable Python value.
+
+    val: value to convert.
+    Returns converted value, or the original if no conversion applies.
+    """
+    if isinstance(val, ObjectId):
+        return str(val)
+    if hasattr(val, 'isoformat'):
+        return val.isoformat()
+    if isinstance(val, float) and not math.isfinite(val):
+        return None
+    if isinstance(val, Decimal128):
+        return float(val.to_decimal())
+    if isinstance(val, Binary):
+        return str(uuid.UUID(bytes=bytes(val))) if val.subtype in (3, 4) else val.hex()
+    if isinstance(val, Regex):
+        flags = ''.join(v for k, v in _REGEX_FLAGS if int(val.flags) & int(k))
+        return f'/{val.pattern}/{flags}'
+    return val
 
 
 def format_result_values(result_dict: Dict[str, Any], parent_key: str = "") -> None:
@@ -29,83 +53,79 @@ def format_result_values(result_dict: Dict[str, Any], parent_key: str = "") -> N
             for i, item in enumerate(val):
                 if isinstance(item, dict):
                     format_result_values(item, f"{full_key}[{i}]")
-                elif isinstance(item, ObjectId):
-                    val[i] = str(item)
-                elif hasattr(item, 'isoformat'):
-                    val[i] = item.isoformat()
-                elif isinstance(item, Decimal128):
-                    val[i] = float(item.to_decimal())
-                elif isinstance(item, Binary):
-                    val[i] = str(uuid.UUID(bytes=bytes(item))) if item.subtype in (3, 4) else item.hex()
-                elif isinstance(item, Regex):
-                    flags = ''.join(v for k, v in _REGEX_FLAGS if int(item.flags) & int(k))
-                    val[i] = f'/{item.pattern}/{flags}'
-                elif isinstance(item, float) and not math.isfinite(item):
-                    val[i] = None
-        elif isinstance(val, ObjectId):
-            result_dict[key] = str(val)
-        elif hasattr(val, 'isoformat'):
-            result_dict[key] = val.isoformat()
-        elif isinstance(val, float) and not math.isfinite(val):
-            result_dict[key] = None
-        elif isinstance(val, Decimal128):
-            result_dict[key] = float(val.to_decimal())
-        elif isinstance(val, Binary):
-            result_dict[key] = str(uuid.UUID(bytes=bytes(val))) if val.subtype in (3, 4) else val.hex()
-        elif isinstance(val, Regex):
-            flags = ''.join(v for k, v in _REGEX_FLAGS if int(val.flags) & int(k))
-            result_dict[key] = f'/{val.pattern}/{flags}'
+                else:
+                    val[i] = _convert_scalar(item)
+        else:
+            result_dict[key] = _convert_scalar(val)
+
+
+def _extract_nested(doc: Dict[str, Any], parts: List[str]) -> Any:
+    """Walk dot-notation path parts into a nested dict.
+
+    doc: top-level document.
+    parts: path segments split on '.'.
+    Returns the value at the path, or None if any segment is missing.
+    """
+    val: Any = doc
+    for part in parts:
+        if isinstance(val, dict) and part in val:
+            val = val[part]
+        else:
+            return None
+    return val
+
+
+def _should_remove_parent(top: str, db_field: str, field_mapper) -> bool:
+    """Return True when no other mapped field shares the same top-level parent.
+
+    top: top-level key (first segment of db_field).
+    db_field: the field being remapped.
+    field_mapper: FieldMapper whose db_to_ui mapping is checked.
+    """
+    return not any(f != db_field and f.startswith(top + '.') for f in field_mapper.db_to_ui)
 
 
 def remap_aliases(doc: Dict[str, Any], field_mapper) -> Dict[str, Any]:
     """Remap DB field names to UI aliases in a result document.
 
-    For DataFields with dot-notation names (e.g. 'PublisherInfo.Date'),
-    MongoDB returns nested dicts. This method extracts the value and
-    stores it under the UI alias key, removing the intermediate nesting
-    when no other fields from that parent are needed.
+    doc: document returned from MongoDB.
+    field_mapper: FieldMapper with db_to_ui alias mapping.
+    Returns doc with keys replaced by their UI aliases.
     """
     if not field_mapper.db_to_ui:
         return doc
     for db_field, ui_alias in field_mapper.db_to_ui.items():
         if db_field == ui_alias:
-            continue  # no remapping needed
+            continue
         if '.' in db_field:
-            # Extract value from nested structure
             parts = db_field.split('.')
-            val = doc
-            for part in parts:
-                if isinstance(val, dict) and part in val:
-                    val = val[part]
-                else:
-                    val = None
-                    break
+            val = _extract_nested(doc, parts)
             if val is not None:
                 doc[ui_alias] = val
-                # Remove top-level parent key only if it's no longer needed
                 top = parts[0]
-                other_uses = any(
-                    f != db_field and f.startswith(top + '.')
-                    for f in field_mapper.db_to_ui
-                )
-                if not other_uses:
+                if _should_remove_parent(top, db_field, field_mapper):
                     del doc[top]
-        else:
-            # Simple rename: db_field key -> ui_alias key
-            if db_field in doc:
-                doc[ui_alias] = doc.pop(db_field)
+        elif db_field in doc:
+            doc[ui_alias] = doc.pop(db_field)
     return doc
 
 
 def process_cursor(
-    cursor,
+    cursor: Any,
     row_id: Optional[str],
-    field_mapper,
-    row_class=None,
-    row_data=None,
-    row_attr=None,
+    field_mapper: FieldMapper,
+    row_class: Any = None,
+    row_data: Any = None,
+    row_attr: Any = None,
 ) -> List[Dict[str, Any]]:
-    """Convert aggregation cursor to DataTables-formatted list."""
+    """Convert aggregation cursor to DataTables-formatted list.
+
+    cursor: MongoDB aggregation cursor or iterable of documents.
+    row_id: optional field name to use as DT_RowId.
+    field_mapper: FieldMapper for alias resolution.
+    row_class/row_data/row_attr: DT_Row* metadata providers.
+    Returns list of formatted document dicts.
+    """
     processed = []
     for result in cursor:
         d = dict(result)
