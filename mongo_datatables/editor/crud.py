@@ -7,6 +7,8 @@ from bson.errors import InvalidId as ObjectIdError
 from pymongo.errors import PyMongoError
 
 from mongo_datatables.exceptions import InvalidDataError, DatabaseOperationError, FieldMappingError
+from mongo_datatables.utils import FieldMapper
+from mongo_datatables.editor.validators import validate_data_fields_whitelist
 from mongo_datatables.editor.document import (
     format_response_document,
     collect_files,
@@ -34,7 +36,6 @@ def run_create(
     collection: Any,
     fields: Dict[str, Any],
     data_fields: list,
-    field_mapper: Any,
     file_fields: List[str],
     storage_adapter: Any,
     row_class: Any,
@@ -48,7 +49,6 @@ def run_create(
     collection: PyMongo collection.
     fields: Dict of alias -> DataField.
     data_fields: List of DataField objects.
-    field_mapper: FieldMapper instance.
     file_fields: Upload field names.
     storage_adapter: StorageAdapter instance or None.
     row_class: DT_RowClass provider (string or callable).
@@ -61,6 +61,9 @@ def run_create(
     """
     if not data:
         raise InvalidDataError("Data is required for create operation")
+
+    for row in data.values():
+        validate_data_fields_whitelist(row, fields, data_fields)
 
     try:
         results = []
@@ -101,7 +104,6 @@ def run_edit(
     collection: Any,
     fields: Dict[str, Any],
     data_fields: list,
-    field_mapper: Any,
     file_fields: List[str],
     storage_adapter: Any,
     row_class: Any,
@@ -116,7 +118,6 @@ def run_edit(
     collection: PyMongo collection.
     fields: Dict of alias -> DataField.
     data_fields: List of DataField objects.
-    field_mapper: FieldMapper instance.
     file_fields: Upload field names.
     storage_adapter: StorageAdapter instance or None.
     row_class: DT_RowClass provider (string or callable).
@@ -129,6 +130,10 @@ def run_edit(
     """
     if not list_of_ids:
         raise InvalidDataError("Document ID is required for edit operation")
+
+    for doc_id in list_of_ids:
+        if doc_id in data:
+            validate_data_fields_whitelist(data[doc_id], fields, data_fields)
 
     try:
         result_data = []
@@ -143,13 +148,14 @@ def run_edit(
             try:
                 oid = ObjectId(doc_id)
                 updates: Dict[str, Any] = {}
-                build_updates(update_data, field_mapper, fields, data_fields, updates)
+                build_updates(update_data, FieldMapper(data_fields), fields, data_fields, updates)
                 if updates:
                     collection.update_one({"_id": oid}, {"$set": updates})
                 updated = collection.find_one({"_id": oid})
             except (ObjectIdError, ValueError) as e:
                 raise InvalidDataError(f"Invalid document ID format: {doc_id}") from e
-            result_data.append(_fmt(updated, row_class, row_data, row_attr))
+            if updated is not None:
+                result_data.append(_fmt(updated, row_class, row_data, row_attr))
         response: Dict[str, Any] = {"data": result_data}
         if cancelled:
             response["cancelled"] = cancelled

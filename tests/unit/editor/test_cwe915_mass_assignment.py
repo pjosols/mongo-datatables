@@ -1,13 +1,14 @@
-"""Tests for CWE-915 / CWE-20: Field whitelist enforcement in preprocess_document.
+"""Verify CWE-915 / CWE-20: Field whitelist enforcement.
 
-Verifies that:
-- Missing data_fields whitelist raises InvalidDataError (no unrestricted writes).
-- _id and __v are blocked even when whitelisted fields are configured.
-- Only whitelisted fields are written when a whitelist is configured.
+Confirms missing data_fields whitelist raises InvalidDataError; _id and __v
+are blocked even when whitelisted; only whitelisted fields are written.
 """
 import pytest
+from unittest.mock import MagicMock
+from bson.objectid import ObjectId
 
 from mongo_datatables.editor.document import preprocess_document
+from mongo_datatables.editor.crud import run_create, run_edit
 from mongo_datatables.datatables import DataField
 from mongo_datatables.exceptions import InvalidDataError
 
@@ -109,3 +110,189 @@ class TestWithWhitelist:
         processed, dot = _call(doc, fields=fields, data_fields=df)
         assert "admin.role" not in dot
         assert "admin.role" not in processed
+
+
+def _wl(*names):
+    df = [DataField(n, "string") for n in names]
+    return {f.alias: f for f in df}, df
+
+
+def _noop_hook(*_):
+    return True
+
+
+def _make_collection(doc):
+    col = MagicMock()
+    inserted = MagicMock()
+    inserted.inserted_id = doc["_id"]
+    col.insert_one.return_value = inserted
+    col.find_one.return_value = doc
+    col.update_one.return_value = MagicMock()
+    return col
+
+
+class TestRunCreateWhitelist:
+    """run_create must enforce the whitelist when called directly."""
+
+    def test_raises_for_non_whitelisted_field(self):
+        """run_create raises InvalidDataError when data contains a non-whitelisted field."""
+        fields, df = _wl("name")
+        col = MagicMock()
+        with pytest.raises(InvalidDataError):
+            run_create(
+                data={"0": {"name": "Alice", "role": "admin"}},
+                collection=col,
+                fields=fields,
+                data_fields=df,
+                file_fields=[],
+                storage_adapter=None,
+                row_class=None,
+                row_data=None,
+                row_attr=None,
+                pre_hook=_noop_hook,
+            )
+
+    def test_allows_whitelisted_fields(self):
+        """run_create succeeds when data contains only whitelisted fields."""
+        fields, df = _wl("name")
+        doc = {"_id": ObjectId(), "name": "Alice"}
+        col = _make_collection(doc)
+        result = run_create(
+            data={"0": {"name": "Alice"}},
+            collection=col,
+            fields=fields,
+            data_fields=df,
+            file_fields=[],
+            storage_adapter=None,
+            row_class=None,
+            row_data=None,
+            row_attr=None,
+            pre_hook=_noop_hook,
+        )
+        assert "data" in result
+
+    def test_raises_without_whitelist_configured(self):
+        """run_create raises InvalidDataError when no whitelist is configured."""
+        col = MagicMock()
+        with pytest.raises(InvalidDataError):
+            run_create(
+                data={"0": {"name": "Alice", "role": "admin"}},
+                collection=col,
+                fields={},
+                data_fields=[DataField("name", "string")],
+                file_fields=[],
+                storage_adapter=None,
+                row_class=None,
+                row_data=None,
+                row_attr=None,
+                pre_hook=_noop_hook,
+            )
+
+    def test_no_db_write_on_whitelist_violation(self):
+        """run_create must not write to the database when whitelist is violated."""
+        fields, df = _wl("name")
+        col = MagicMock()
+        with pytest.raises(InvalidDataError):
+            run_create(
+                data={"0": {"name": "Alice", "is_admin": True}},
+                collection=col,
+                fields=fields,
+                data_fields=df,
+                file_fields=[],
+                storage_adapter=None,
+                row_class=None,
+                row_data=None,
+                row_attr=None,
+                pre_hook=_noop_hook,
+            )
+        col.insert_one.assert_not_called()
+
+
+class TestRunEditWhitelist:
+    """run_edit must enforce the whitelist when called directly."""
+
+    def test_raises_for_non_whitelisted_field(self):
+        """run_edit raises InvalidDataError when data contains a non-whitelisted field."""
+        fields, df = _wl("name")
+        doc_id = str(ObjectId())
+        col = MagicMock()
+        with pytest.raises(InvalidDataError):
+            run_edit(
+                list_of_ids=[doc_id],
+                data={doc_id: {"name": "Alice", "role": "admin"}},
+                collection=col,
+                fields=fields,
+                data_fields=df,
+                file_fields=[],
+                storage_adapter=None,
+                row_class=None,
+                row_data=None,
+                row_attr=None,
+                pre_hook=_noop_hook,
+            )
+
+    def test_allows_whitelisted_fields(self):
+        """run_edit succeeds when data contains only whitelisted fields."""
+        fields, df = _wl("name")
+        doc_id = str(ObjectId())
+        doc = {"_id": ObjectId(doc_id), "name": "Alice"}
+        col = _make_collection(doc)
+        result = run_edit(
+            list_of_ids=[doc_id],
+            data={doc_id: {"name": "Alice"}},
+            collection=col,
+            fields=fields,
+            data_fields=df,
+            file_fields=[],
+            storage_adapter=None,
+            row_class=None,
+            row_data=None,
+            row_attr=None,
+            pre_hook=_noop_hook,
+        )
+        assert "data" in result
+
+    def test_no_db_write_on_whitelist_violation(self):
+        """run_edit must not write to the database when whitelist is violated."""
+        fields, df = _wl("name")
+        doc_id = str(ObjectId())
+        col = MagicMock()
+        with pytest.raises(InvalidDataError):
+            run_edit(
+                list_of_ids=[doc_id],
+                data={doc_id: {"name": "Alice", "password_hash": "x"}},
+                collection=col,
+                fields=fields,
+                data_fields=df,
+                file_fields=[],
+                storage_adapter=None,
+                row_class=None,
+                row_data=None,
+                row_attr=None,
+                pre_hook=_noop_hook,
+            )
+        col.update_one.assert_not_called()
+
+    def test_raises_for_multiple_ids_with_violation(self):
+        """run_edit raises InvalidDataError when any row violates the whitelist."""
+        fields, df = _wl("name")
+        id1 = str(ObjectId())
+        id2 = str(ObjectId())
+        col = MagicMock()
+        with pytest.raises(InvalidDataError):
+            run_edit(
+                list_of_ids=[id1, id2],
+                data={
+                    id1: {"name": "Alice"},
+                    id2: {"name": "Bob", "role": "superuser"},
+                },
+                collection=col,
+                fields=fields,
+                data_fields=df,
+                file_fields=[],
+                storage_adapter=None,
+                row_class=None,
+                row_data=None,
+                row_attr=None,
+                pre_hook=_noop_hook,
+            )

@@ -162,7 +162,6 @@ class Editor:
         return dict(
             fields=self.fields,
             data_fields=self.data_fields,
-            field_mapper=self.field_mapper,
             file_fields=self.file_fields,
             storage_adapter=self.storage_adapter,
             row_class=self.row_class,

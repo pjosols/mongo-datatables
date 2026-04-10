@@ -1,7 +1,7 @@
-"""Tests verifying specific exception handling (not bare except Exception).
+"""Verify specific exception handling, not bare except Exception.
 
-Confirms that PyMongoError and domain errors are caught specifically, and that
-unrelated exception types propagate rather than being silently swallowed.
+Confirms PyMongoError and domain errors are caught specifically; unrelated
+exception types propagate rather than being silently swallowed.
 """
 import pytest
 from unittest.mock import MagicMock, patch
@@ -41,7 +41,6 @@ def _crud_kwargs(**overrides):
     defaults = dict(
         fields={},
         data_fields=[],
-        field_mapper=_field_mapper(),
         file_fields=[],
         storage_adapter=None,
         row_class=None,
