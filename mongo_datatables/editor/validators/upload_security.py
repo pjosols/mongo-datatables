@@ -48,6 +48,15 @@ _MALICIOUS_FILENAME_RE = re.compile(
 )
 
 
+def _base_type(content_type: str) -> str:
+    """Return the base MIME type, stripping parameters and normalising case.
+
+    content_type: raw Content-Type value (may include parameters).
+    Returns the base type string, e.g. 'image/jpeg'.
+    """
+    return content_type.split(";")[0].strip().lower()
+
+
 def validate_file_type(filename: str, content_type: str, data: bytes) -> None:
     """Validate file type via whitelist and magic number verification.
 
@@ -59,8 +68,7 @@ def validate_file_type(filename: str, content_type: str, data: bytes) -> None:
     data: raw file bytes.
     Raises InvalidDataError if the file type is not allowed or magic bytes mismatch.
     """
-    # Normalise: strip parameters (e.g. "text/plain; charset=utf-8")
-    base_type = content_type.split(";")[0].strip().lower()
+    base_type = _base_type(content_type)
 
     if base_type not in _MAGIC:
         raise InvalidDataError(
@@ -77,11 +85,19 @@ def validate_file_type(filename: str, content_type: str, data: bytes) -> None:
             )
     elif base_type in ("text/plain", "text/csv"):
         try:
-            data.decode("utf-8")
+            text = data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise InvalidDataError(
                 f"File content is not valid UTF-8 for declared type {base_type!r}"
             ) from exc
+        # Reject null bytes or non-printable control characters outside CR/LF/TAB
+        if any(
+            ord(ch) < 0x20 and ch not in ("\t", "\n", "\r")
+            for ch in text
+        ):
+            raise InvalidDataError(
+                f"File content contains disallowed control characters for type {base_type!r}"
+            )
 
 
 def validate_filename_safety(filename: str) -> None:
@@ -116,7 +132,7 @@ def validate_file_size_for_type(content_type: str, data: bytes) -> None:
     data: raw file bytes.
     Raises InvalidDataError if the file exceeds the per-type limit.
     """
-    base_type = content_type.split(";")[0].strip().lower()
+    base_type = _base_type(content_type)
     limit = _TYPE_SIZE_LIMITS.get(base_type)
     if limit is not None and len(data) > limit:
         raise InvalidDataError(
@@ -142,5 +158,7 @@ def run_virus_scan_hook(
     """
     if scanner is None:
         return
+    if not callable(getattr(scanner, "scan", None)):
+        raise InvalidDataError("scanner must implement a callable 'scan' method")
     if not scanner.scan(filename, data):
         raise InvalidDataError(f"File {filename!r} was rejected by the virus scanner")
