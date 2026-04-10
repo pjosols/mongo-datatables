@@ -2,25 +2,19 @@
 
 All notable changes to mongo-datatables are documented here.
 
-## [Unreleased]
+## [2.1.1] - 2026-04-10
 
 ### Changed
 
-- Moved search modules into `datatables/search/` subpackage (`builder.py`, `fixed.py`, `panes.py`) — follows `datatables/query/` pattern; no public API impact
-- Extracted collection/text-index helpers from `datatables/core.py` into `datatables/_setup.py`
-- Updated docstrings in `datatables/query/regex_utils.py`, `editor/document.py`, `editor/search.py`, and test files to Wholeshoot convention
-- Enhanced `editor/document.py` module docstring to clarify CWE-20 security fix and JSON/date handling
-- Enhanced `build_updates()` docstring to document recursive traversal, type conversions, and error handling
-- Enhanced `editor/search.py` docstrings to clarify search/dependent/upload request handling and response formats
-- Enhanced test module docstrings to clarify security validation and test scope
-- Added Wholeshoot docstrings to helper functions and test classes in `tests/unit/datatables/test_datatables_misc.py` — clarifies regression fixes, test scope, and helper function contracts
-- Updated `datatables/search/fixed.py` module docstring and function docstrings to Wholeshoot convention — clarifies wire format support, parameter contracts, and return values
-- Updated `tests/unit/datatables/search/test_search_subpackage.py` module docstring to Wholeshoot convention — clarifies test scope and validation targets
+- Moved search modules into `datatables/search/` subpackage — internal restructuring, no public API impact
+- Tightened input validation in Editor search and upload handlers
+- Updated all docstrings to Wholeshoot convention for consistency
 
 ### Fixed
 
-- `build_projection`: corrected `row_id` annotation from `str` to `Optional[str]`
-- `search/fixed.py`: added missing type hints on `query_builder` and `field_mapper` parameters
+- `editor/document.py`: declared date fields were not being parsed due to wrong attribute name (`field_type` vs `data_type`)
+- `datatables/formatting.py`: `format_result_values()` docstring now follows Wholeshoot convention
+- Various type annotation corrections and import cleanup
 
 ## [2.1.0] - 2026-04-07
 

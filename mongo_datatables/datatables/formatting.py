@@ -13,9 +13,8 @@ _REGEX_FLAGS = ((re.IGNORECASE, 'i'), (re.MULTILINE, 'm'), (re.DOTALL, 's'), (re
 def format_result_values(result_dict: Dict[str, Any], parent_key: str = "") -> None:
     """Recursively format values in result dictionary for JSON serialization.
 
-    Args:
-        result_dict: Dictionary to process
-        parent_key: Key of parent for nested dictionaries
+    result_dict: dictionary to process.
+    parent_key: key of parent for nested dictionaries.
     """
     if not result_dict:
         return
