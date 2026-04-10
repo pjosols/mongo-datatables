@@ -1,15 +1,12 @@
-"""Global search condition tests: search terms, text index, search_fixed."""
+"""Test global search: search terms, text index, search_fixed (legacy and wire format)."""
 import unittest
 from unittest.mock import MagicMock, patch
-
-from pymongo.collection import Collection
-from pymongo.database import Database
 
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables.query import MongoQueryBuilder
 from mongo_datatables.datatables.search.fixed import parse_column_search_fixed, parse_search_fixed
 from mongo_datatables.utils import FieldMapper
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 from tests.unit.datatables.conftest import make_dt_wire
 
 
@@ -37,23 +34,11 @@ def _base_request(search_value="", columns=None, extra=None):
     return args
 
 
-def _mock_mongo():
-    mongo = MagicMock()
-    mongo.db = MagicMock(spec=Database)
-    col = MagicMock(spec=Collection)
-    col.estimated_document_count.return_value = 0
-    mongo.db.__getitem__.return_value = col
-    return mongo, col
-
-
 # ---------------------------------------------------------------------------
 # Search terms and searchable columns
 # ---------------------------------------------------------------------------
 
-class TestSearchTerms(unittest.TestCase):
-    def setUp(self):
-        self.mongo, self.col = _mock_mongo()
-
+class TestSearchTerms(BaseDataTablesTest):
     def _dt(self, search_value=""):
         args = _base_request(search_value)
         return DataTables(self.mongo, "users", args)

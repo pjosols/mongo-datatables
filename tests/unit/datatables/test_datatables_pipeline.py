@@ -1,11 +1,11 @@
-"""Test DataTables pipeline building, count optimization, and pipeline_stages."""
-from unittest.mock import MagicMock, Mock, patch
+"""Test DataTables pipeline: build_pipeline, count optimization, pipeline_stages."""
+from unittest.mock import MagicMock, Mock
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 
 from mongo_datatables import DataTables, DataField
 from mongo_datatables.datatables.results import build_pipeline
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 
 
 _BASE_ARGS = {
@@ -27,32 +27,28 @@ _P2_BASE_ARGS = {
 }
 
 
-def _make_dt(args=None, **kwargs):
-    mongo = MagicMock()
-    col = MagicMock()
-    col.list_indexes.return_value = []
-    mongo.__getitem__ = MagicMock(return_value=col)
-    with patch.object(DataTables, '_check_text_index'):
-        dt = DataTables(mongo, 'test', args or _BASE_ARGS, **kwargs)
-        dt.collection = col
-        dt._has_text_index = False
-    return dt
+def _make_dt(request_args=None, data_fields=None, **kwargs):
+    """Build a DataTables instance backed by a dict-based mock db.
 
-
-def _make_p2_dt(request_args, data_fields=None, **custom_filter):
+    request_args: DataTables request dict. Defaults to _BASE_ARGS.
+    data_fields: optional list of DataField instances.
+    kwargs: forwarded to DataTables (custom filters, options).
+    Returns (dt, col) tuple.
+    """
     col = MagicMock(spec=Collection)
     col.list_indexes = MagicMock(return_value=[])
     col.aggregate = MagicMock(return_value=iter([]))
     col.count_documents = MagicMock(return_value=0)
     col.estimated_document_count = MagicMock(return_value=0)
     db = {"test": col}
-    return DataTables(db, "test", request_args, data_fields or [], **custom_filter), col
+    dt = DataTables(db, "test", request_args or _BASE_ARGS, data_fields or [], **kwargs)
+    return dt, col
 
 
 class TestBuildPipelineStructure:
     def test_paginate_true_includes_skip_and_limit(self):
         args = {**_BASE_ARGS, "start": "20", "length": "10"}
-        dt = _make_dt(args)
+        dt, _ = _make_dt(args)
         pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$skip" in stages
@@ -60,46 +56,46 @@ class TestBuildPipelineStructure:
 
     def test_paginate_false_excludes_skip_and_limit(self):
         args = {**_BASE_ARGS, "start": "20", "length": "10"}
-        dt = _make_dt(args)
+        dt, _ = _make_dt(args)
         pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$skip" not in stages
         assert "$limit" not in stages
 
     def test_always_ends_with_project(self):
-        dt = _make_dt()
+        dt, _ = _make_dt()
         for paginate in (True, False):
             pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=paginate)
             assert list(pipeline[-1].keys())[0] == "$project"
 
     def test_no_match_when_no_filter(self):
-        dt = _make_dt()
+        dt, _ = _make_dt()
         pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$match" not in stages
 
     def test_skip_omitted_when_start_is_zero(self):
-        dt = _make_dt()
+        dt, _ = _make_dt()
         pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$skip" not in stages
 
     def test_limit_omitted_when_length_is_negative_one(self):
         args = {**_BASE_ARGS, "length": "-1"}
-        dt = _make_dt(args)
+        dt, _ = _make_dt(args)
         pipeline = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         stages = [list(s.keys())[0] for s in pipeline]
         assert "$limit" not in stages
 
     def test_default_paginate_is_true(self):
         args = {**_BASE_ARGS, "start": "5", "length": "10"}
-        dt = _make_dt(args)
+        dt, _ = _make_dt(args)
         assert build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit) == build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
 
 
 class TestBuildPipelineConsistency:
     def test_results_and_export_share_match_stage(self):
-        dt = _make_dt()
+        dt, _ = _make_dt()
         paginated = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         export = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         p_match = next((s for s in paginated if "$match" in s), None)
@@ -107,7 +103,7 @@ class TestBuildPipelineConsistency:
         assert p_match == e_match
 
     def test_results_and_export_share_sort_stage(self):
-        dt = _make_dt()
+        dt, _ = _make_dt()
         paginated = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         export = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         p_sort = next((s for s in paginated if "$sort" in s), None)
@@ -115,7 +111,7 @@ class TestBuildPipelineConsistency:
         assert p_sort == e_sort
 
     def test_results_and_export_share_project_stage(self):
-        dt = _make_dt()
+        dt, _ = _make_dt()
         paginated = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=True)
         export = build_pipeline(dt.filter, dt.pipeline_stages, dt.sort_specification, dt.projection, dt.start, dt.limit, paginate=False)
         assert paginated[-1] == export[-1]
@@ -252,14 +248,7 @@ class TestPipelineStages:
         }
 
     def _make_dt(self, pipeline_stages=None, search_value=""):
-        col = MagicMock()
-        col.aggregate = MagicMock(return_value=iter([]))
-        col.count_documents = MagicMock(return_value=0)
-        col.estimated_document_count = MagicMock(return_value=0)
-        col.list_indexes = MagicMock(return_value=[])
-        db = {"test": col}
-        return DataTables(db, "test", self._base_args(search_value), self.FIELDS,
-                          pipeline_stages=pipeline_stages), col
+        return _make_dt(self._base_args(search_value), self.FIELDS, pipeline_stages=pipeline_stages)
 
     def test_default_none_no_extra_stages(self):
         dt, _ = self._make_dt()
@@ -328,7 +317,7 @@ class TestDataTablesCoverageGaps:
                  "search": {"value": "", "regex": False}},
             ],
         }
-        dt, _ = _make_p2_dt(args)
+        dt, _ = _make_dt(args)
         assert "_id" in dt.sort_specification
 
     def test_orderdata_duplicate_field_skipped(self):
@@ -342,7 +331,7 @@ class TestDataTablesCoverageGaps:
                  "search": {"value": "", "regex": False}, "orderData": [0]},
             ],
         }
-        dt, _ = _make_p2_dt(args)
+        dt, _ = _make_dt(args)
         assert list(dt.sort_specification.keys()).count("Title") == 1
 
     def test_projection_skips_column_without_data(self):
@@ -355,7 +344,7 @@ class TestDataTablesCoverageGaps:
                  "search": {"value": "", "regex": False}},
             ],
         }
-        dt, _ = _make_p2_dt(args)
+        dt, _ = _make_dt(args)
         assert "Title" in dt.projection
         assert "_id" in dt.projection
 
@@ -368,14 +357,14 @@ class TestDataTablesCoverageGaps:
         assert DataTables._filter_has_text(f) is False
 
     def test_results_cached_on_second_call(self):
-        dt, col = _make_p2_dt(_P2_BASE_ARGS)
+        dt, col = _make_dt(_P2_BASE_ARGS)
         col.aggregate.return_value = iter([])
         dt.results()
         dt.results()
         assert col.aggregate.call_count == 1
 
     def test_count_filtered_cached_on_second_call(self):
-        dt, col = _make_p2_dt({**_P2_BASE_ARGS, "search": {"value": "x", "regex": False}})
+        dt, col = _make_dt({**_P2_BASE_ARGS, "search": {"value": "x", "regex": False}})
         col.aggregate.return_value = iter([{"total": 5}])
         first = dt.count_filtered()
         col.aggregate.return_value = iter([{"total": 99}])
@@ -383,12 +372,12 @@ class TestDataTablesCoverageGaps:
         assert first == second
 
     def test_get_export_data_pymongo_error_returns_empty(self):
-        dt, col = _make_p2_dt(_P2_BASE_ARGS)
+        dt, col = _make_dt(_P2_BASE_ARGS)
         col.aggregate.side_effect = PyMongoError("db error")
         assert dt.get_export_data() == []
 
     def test_get_export_data_unexpected_exception_returns_empty(self):
-        dt, col = _make_p2_dt(_P2_BASE_ARGS)
+        dt, col = _make_dt(_P2_BASE_ARGS)
         col.aggregate.side_effect = RuntimeError("unexpected")
         assert dt.get_export_data() == []
 

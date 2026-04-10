@@ -1,25 +1,8 @@
-"""Verify DataTablesMixin backward-compatible shims and import correctness."""
+"""Verify backward-compatible shims: column_search_conditions, _parse_search_fixed, imports."""
 import pytest
 from unittest.mock import MagicMock
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 from mongo_datatables import DataTables
-
-
-class TestCompatImports:
-    """compat.py imports get_searchpanes_options from search_panes, not filter."""
-
-    def test_get_searchpanes_options_importable_from_compat(self):
-        from mongo_datatables.datatables.compat import get_searchpanes_options
-        assert callable(get_searchpanes_options)
-
-    def test_get_searchpanes_options_is_same_as_search_panes(self):
-        from mongo_datatables.datatables.compat import get_searchpanes_options as compat_fn
-        from mongo_datatables.datatables.search.panes import get_searchpanes_options as sp_fn
-        assert compat_fn is sp_fn
-
-    def test_filter_module_does_not_export_get_searchpanes_options(self):
-        import mongo_datatables.datatables.filter as filter_mod
-        assert not hasattr(filter_mod, "get_searchpanes_options")
 
 
 def _make_dt(mongo, request_args):
@@ -40,6 +23,23 @@ def _base_args(columns, search_value=""):
         "order": [{"column": "0", "dir": "asc"}],
         "columns": columns,
     }
+
+
+class TestCompatImports(BaseDataTablesTest):
+    """compat.py imports get_searchpanes_options from search_panes, not filter."""
+
+    def test_get_searchpanes_options_importable_from_compat(self):
+        from mongo_datatables.datatables.compat import get_searchpanes_options
+        self.assertTrue(callable(get_searchpanes_options))
+
+    def test_get_searchpanes_options_is_same_as_search_panes(self):
+        from mongo_datatables.datatables.compat import get_searchpanes_options as compat_fn
+        from mongo_datatables.datatables.search.panes import get_searchpanes_options as sp_fn
+        self.assertIs(compat_fn, sp_fn)
+
+    def test_filter_module_does_not_export_get_searchpanes_options(self):
+        import mongo_datatables.datatables.filter as filter_mod
+        self.assertFalse(hasattr(filter_mod, "get_searchpanes_options"))
 
 
 class TestColumnSearchConditionsShim(BaseDataTablesTest):

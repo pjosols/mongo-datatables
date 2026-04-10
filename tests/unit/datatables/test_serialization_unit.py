@@ -1,75 +1,57 @@
-"""Consolidated serialization tests (float, Decimal128, Binary, Regex)."""
+"""Test DataTables serialization: float, Decimal128, Binary, Regex, formatting."""
 import json
-import math
-import uuid
 import unittest
-import pytest
+import uuid
 from decimal import Decimal
-from unittest.mock import MagicMock
 from bson import Binary, Decimal128, ObjectId, Regex
 
 from mongo_datatables import DataTables
 from mongo_datatables.datatables import DataField
 from mongo_datatables.datatables.formatting import format_result_values, process_cursor, remap_aliases
 from mongo_datatables.utils import FieldMapper
-from tests.base_test import BaseDataTablesTest
-
-
-def _make_dt_simple():
-    col = MagicMock()
-    col.list_indexes.return_value = []
-    db = MagicMock()
-    db.__getitem__ = MagicMock(return_value=col)
-    return DataTables(db, "test", {
-        "draw": "1", "start": "0", "length": "10",
-        "search": {"value": "", "regex": False},
-        "order": [], "columns": [],
-    }, data_fields=[])
+from tests.unit.base_test import BaseDataTablesTest
 
 
 # ---------------------------------------------------------------------------
 # test_float_serialization.py — TestFloatSerialization
 # ---------------------------------------------------------------------------
 
-class TestFloatSerialization:
+class TestFloatSerialization(BaseDataTablesTest):
+    """Test NaN, Inf, and finite float serialization."""
+        return DataTables(self.mongo, 'test_collection', self.request_args)
+
     def test_nan_converted_to_none(self):
-        dt = _make_dt_simple()
         d = {"score": float("nan")}
-        dt._format_result_values(d)
-        assert d["score"] is None
+        self._make_dt()._format_result_values(d)
+        self.assertIsNone(d["score"])
 
     def test_inf_converted_to_none(self):
-        dt = _make_dt_simple()
         d = {"score": float("inf")}
-        dt._format_result_values(d)
-        assert d["score"] is None
+        self._make_dt()._format_result_values(d)
+        self.assertIsNone(d["score"])
 
     def test_neg_inf_converted_to_none(self):
-        dt = _make_dt_simple()
         d = {"score": float("-inf")}
-        dt._format_result_values(d)
-        assert d["score"] is None
+        self._make_dt()._format_result_values(d)
+        self.assertIsNone(d["score"])
 
     def test_finite_float_unchanged(self):
-        dt = _make_dt_simple()
         d = {"score": 3.14}
-        dt._format_result_values(d)
-        assert d["score"] == 3.14
+        self._make_dt()._format_result_values(d)
+        self.assertEqual(d["score"], 3.14)
 
     def test_nan_in_nested_dict(self):
-        dt = _make_dt_simple()
         d = {"stats": {"avg": float("nan"), "count": 5}}
-        dt._format_result_values(d)
-        assert d["stats"]["avg"] is None
-        assert d["stats"]["count"] == 5
+        self._make_dt()._format_result_values(d)
+        self.assertIsNone(d["stats"]["avg"])
+        self.assertEqual(d["stats"]["count"], 5)
 
     def test_nan_in_list_converted_to_none(self):
-        dt = _make_dt_simple()
         d = {"values": [float("nan"), float("inf"), 1.5]}
-        dt._format_result_values(d)
-        assert d["values"][0] is None
-        assert d["values"][1] is None
-        assert d["values"][2] == 1.5
+        self._make_dt()._format_result_values(d)
+        self.assertIsNone(d["values"][0])
+        self.assertIsNone(d["values"][1])
+        self.assertEqual(d["values"][2], 1.5)
 
 
 # ---------------------------------------------------------------------------
@@ -208,57 +190,53 @@ class TestBinaryJsonSerializable(BaseDataTablesTest):
 # test_regex_serialization.py — TestRegexSerialization
 # ---------------------------------------------------------------------------
 
-class TestRegexSerialization:
+class TestRegexSerialization(BaseDataTablesTest):
+    def _make_dt(self):
+        return DataTables(self.mongo, 'test_collection', self.request_args)
+
     def test_regex_with_flags_serialized(self):
-        dt = _make_dt_simple()
         doc = {"pattern": Regex("foo.*bar", "i")}
-        dt._format_result_values(doc)
-        assert doc["pattern"] == "/foo.*bar/i"
+        self._make_dt()._format_result_values(doc)
+        self.assertEqual(doc["pattern"], "/foo.*bar/i")
 
     def test_regex_no_flags_serialized(self):
-        dt = _make_dt_simple()
         doc = {"pattern": Regex("simple")}
-        dt._format_result_values(doc)
-        assert doc["pattern"] == "/simple/"
+        self._make_dt()._format_result_values(doc)
+        self.assertEqual(doc["pattern"], "/simple/")
 
     def test_regex_multiple_flags(self):
-        dt = _make_dt_simple()
         doc = {"pattern": Regex("test", "im")}
-        dt._format_result_values(doc)
+        self._make_dt()._format_result_values(doc)
         result = doc["pattern"]
-        assert result.startswith("/test/")
-        assert "i" in result
-        assert "m" in result
+        self.assertTrue(result.startswith("/test/"))
+        self.assertIn("i", result)
+        self.assertIn("m", result)
 
     def test_regex_in_list(self):
-        dt = _make_dt_simple()
         doc = {"patterns": [Regex("alpha", "i"), Regex("beta")]}
-        dt._format_result_values(doc)
-        assert doc["patterns"][0] == "/alpha/i"
-        assert doc["patterns"][1] == "/beta/"
+        self._make_dt()._format_result_values(doc)
+        self.assertEqual(doc["patterns"][0], "/alpha/i")
+        self.assertEqual(doc["patterns"][1], "/beta/")
 
     def test_regex_json_serializable(self):
-        dt = _make_dt_simple()
         doc = {"pattern": Regex("test", "i")}
-        dt._format_result_values(doc)
+        self._make_dt()._format_result_values(doc)
         result = json.dumps(doc)
-        assert "/test/i" in result
+        self.assertIn("/test/i", result)
 
     def test_non_regex_fields_unaffected(self):
-        dt = _make_dt_simple()
         doc = {"name": "Alice", "age": 30, "pattern": Regex("x")}
-        dt._format_result_values(doc)
-        assert doc["name"] == "Alice"
-        assert doc["age"] == 30
-        assert doc["pattern"] == "/x/"
+        self._make_dt()._format_result_values(doc)
+        self.assertEqual(doc["name"], "Alice")
+        self.assertEqual(doc["age"], 30)
+        self.assertEqual(doc["pattern"], "/x/")
 
     def test_regex_in_list_json_serializable(self):
-        dt = _make_dt_simple()
         doc = {"patterns": [Regex("a", "i"), "plain_string"]}
-        dt._format_result_values(doc)
+        self._make_dt()._format_result_values(doc)
         result = json.dumps(doc)
-        assert "/a/i" in result
-        assert "plain_string" in result
+        self.assertIn("/a/i", result)
+        self.assertIn("plain_string", result)
 
 
 class TestFormattingCoverageGaps(unittest.TestCase):

@@ -1,4 +1,4 @@
-"""Tests for DataTables error handling."""
+"""Test DataTables error handling: PyMongo errors, edge cases, safe responses."""
 import copy
 import unittest
 from unittest.mock import MagicMock, patch
@@ -8,7 +8,7 @@ from pymongo.errors import PyMongoError
 import pymongo
 
 from mongo_datatables import DataTables, DataField
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 
 
 class TestDataTablesErrorHandling(BaseDataTablesTest):

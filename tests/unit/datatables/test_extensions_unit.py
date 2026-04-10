@@ -1,10 +1,10 @@
-"""Test consolidated extensions: Buttons, FixedColumns, Responsive, RowGroup, Select."""
+"""Test DataTables extensions: Buttons, FixedColumns, Responsive, RowGroup, Select."""
 from mongo_datatables import DataTables, DataField
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 
 
 class TestButtonsExtension(BaseDataTablesTest):
-    """Tests for the Buttons extension config parsing and response inclusion."""
+    """Test Buttons extension config parsing and response inclusion."""
 
     def setUp(self) -> None:
         """Set up mock collection with count and aggregate return values."""

@@ -1,13 +1,13 @@
-"""Tests for DataTables pagination functionality."""
+"""Test DataTables pagination: skip, limit, and pipeline stages."""
 import unittest
 from unittest.mock import patch
 
 from mongo_datatables import DataTables
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 
 
 class TestPagination(BaseDataTablesTest):
-    """Test cases for DataTables pagination functionality."""
+    """Test pagination in aggregation pipeline."""
 
     def _get_pipeline(self, datatables):
         with patch.object(datatables.collection, 'aggregate', return_value=[]) as mock_agg:

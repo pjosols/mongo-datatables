@@ -1,4 +1,4 @@
-"""Tests for DataTables initialization and basic properties."""
+"""Test DataTables initialization: collection access, properties, text index detection."""
 import unittest
 from unittest.mock import MagicMock, patch
 from pymongo.collection import Collection
@@ -6,7 +6,7 @@ from pymongo.database import Database
 from pymongo import MongoClient
 
 from mongo_datatables import DataTables
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 
 
 class TestInitialization(BaseDataTablesTest):

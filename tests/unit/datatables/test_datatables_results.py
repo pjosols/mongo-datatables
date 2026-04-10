@@ -1,4 +1,4 @@
-"""Tests for DataTables results and query pipeline."""
+"""Test DataTables results: pipeline construction, data formatting, complex types."""
 import unittest
 from unittest.mock import MagicMock, patch
 from bson.objectid import ObjectId
@@ -7,11 +7,11 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 
 from mongo_datatables import DataTables, DataField
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 
 
 class TestResults(BaseDataTablesTest):
-    """Test cases for DataTables results functionality."""
+    """Test results method and query pipeline."""
 
     def test_results_method(self):
         self.collection.aggregate.return_value = self.sample_docs

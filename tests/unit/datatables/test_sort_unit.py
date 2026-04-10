@@ -1,11 +1,11 @@
-"""Test consolidated sort: multi-column sort, ColReorder, orderData, orderable coercion."""
+"""Test DataTables sorting: multi-column, ColReorder, orderData, orderable coercion."""
 from unittest.mock import MagicMock
-from tests.base_test import BaseDataTablesTest
+from tests.unit.base_test import BaseDataTablesTest
 from mongo_datatables import DataTables
 
 
 class TestMultiColumnSort(BaseDataTablesTest):
-    def _make_dt(self):
+    """Test multi-column sort specification."""
         return DataTables(self.mongo, 'users', self.request_args)
 
     def test_single_column_sort_asc(self):

@@ -1,3 +1,4 @@
+"""Base test fixtures for DataTables unit tests."""
 import unittest
 from unittest.mock import MagicMock, patch
 from bson.objectid import ObjectId
