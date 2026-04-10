@@ -13,7 +13,6 @@ keywords = ["datatables", "editor", "mongodb", "pymongo", "flask", "django", "se
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -23,7 +22,7 @@ classifiers = [
     "Framework :: Flask",
     "Framework :: Django",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["pymongo>=4.6,<5", "urllib3>=2.6.3,<3"]
 
 [project.optional-dependencies]
