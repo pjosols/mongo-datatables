@@ -2,24 +2,34 @@
 
 All notable changes to mongo-datatables are documented here.
 
-## [Unreleased]
+## [2.2.0] - 2026-04-10
+
+### Added
+
+- **README**: File Uploads section documenting virus scanner integration and security validation
 
 ### Changed
 
-- Exception class docstrings in `exceptions.py` updated to Wholeshoot convention (imperative form)
-
-## [2.1.1] - 2026-04-10
-
-### Changed
-
+- `pyproject.toml`: runtime dependency corrected to `pymongo>=4.6,<5.0`; `urllib3` removed (transitive dep of pymongo, not a direct dependency)
 - Moved search modules into `datatables/search/` subpackage — internal restructuring, no public API impact
+- Pagination `length` parameter now clamped to a configurable maximum (`MAX_PAGE_SIZE=1000`) — negative or zero values fall back to `DEFAULT_PAGE_SIZE` (10)
+- ReDoS protection strengthened — additional catastrophic backtracking patterns blocked in regex validation
+- Mass assignment whitelist enforcement moved into `run_create`/`run_edit` so it applies regardless of call path
+- JSON parse in document preprocessing now gated by declared field type and capped at 64 KB
+- Upload text/plain and text/csv validation now checks for null bytes and non-printable control characters
 - Dead code, unused parameters, and stale module references removed throughout
 - Type annotations completed on remaining unannotated functions
+- Exception class docstrings updated to Wholeshoot convention
 
 ### Fixed
 
 - `editor/document.py`: declared date fields were not being parsed due to wrong attribute name (`field_type` vs `data_type`)
 - `editor/crud.py`: second `ObjectId()` call in `run_edit` now reuses the already-constructed object, eliminating an unguarded exception path
+
+### Breaking Changes
+
+- `Editor` write operations (`create`, `edit`) now require `data_fields` to be configured. Calling without a whitelist raises `InvalidDataError`. This enforces field-level write protection (CWE-915 mass assignment).
+- `DataTables` `length=-1` no longer passes through as-is — it is clamped to `DEFAULT_PAGE_SIZE` (10). Use a positive integer to set page size explicitly.
 
 ## [2.1.0] - 2026-04-07
 
