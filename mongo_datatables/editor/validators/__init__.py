@@ -23,8 +23,6 @@ from mongo_datatables.editor.validators.upload_security import (
 )
 
 __all__ = [
-    "_check_depth",
-    "_validate_request_args_structure",
     "validate_editor_request_args",
     "validate_collection_name",
     "validate_doc_id",
